@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/178inaba/cflio/internal/config"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const apiTokenURL = "https://id.atlassian.com/manage-profile/security/api-tokens"
@@ -50,7 +52,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("account email is required")
 	}
 
-	token, err := prompt(out, in, "API token (create one at "+apiTokenURL+"): ")
+	token, err := promptSecret(out, in, cmd.InOrStdin(), "API token (create one at "+apiTokenURL+"): ")
 	if err != nil {
 		return err
 	}
@@ -199,6 +201,42 @@ func prompt(out io.Writer, in *bufio.Reader, message string) (string, error) {
 		return "", fmt.Errorf("read input: %w", err)
 	}
 	return line, nil
+}
+
+// promptSecret reads a value that must not be left in the terminal's
+// scrollback. On a real terminal it echoes nothing; anywhere else — a pipe,
+// or a test's scripted stdin — it falls back to a plain line read, since
+// there is no terminal to hide the input from.
+func promptSecret(out io.Writer, in *bufio.Reader, raw io.Reader, message string) (string, error) {
+	f, isTerminal := terminalFile(raw)
+	if !isTerminal {
+		return prompt(out, in, message)
+	}
+
+	if _, err := fmt.Fprint(out, message); err != nil {
+		return "", err
+	}
+	secret, err := term.ReadPassword(int(f.Fd()))
+	// The user's Enter is swallowed along with the echo, so the following
+	// output would otherwise continue on the prompt's line.
+	if _, printErr := fmt.Fprintln(out); printErr != nil && err == nil {
+		return "", printErr
+	}
+	if err != nil {
+		return "", fmt.Errorf("read input: %w", err)
+	}
+	return strings.TrimSpace(string(secret)), nil
+}
+
+// terminalFile reports the underlying *os.File of an input stream and
+// whether it is a real terminal. Anything that is not an *os.File — the
+// readers tests script stdin with — reports (nil, false).
+func terminalFile(in io.Reader) (*os.File, bool) {
+	f, ok := in.(*os.File)
+	if !ok {
+		return nil, false
+	}
+	return f, term.IsTerminal(int(f.Fd()))
 }
 
 func readLine(r *bufio.Reader) (string, error) {

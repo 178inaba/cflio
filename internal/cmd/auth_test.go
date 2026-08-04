@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bufio"
+	"bytes"
 	"net/http"
 	"os"
 	"strings"
@@ -248,6 +250,42 @@ func TestAuthLoginKeepsTheExistingDefaultProfile(t *testing.T) {
 	}
 	if file.DefaultProfile != "other" {
 		t.Errorf("default profile = %q, want the pre-existing default kept", file.DefaultProfile)
+	}
+}
+
+func TestTerminalFile(t *testing.T) {
+	// A scripted reader is not an *os.File, so the masked prompt has to
+	// fall back to a plain line read — that fallback is what every other
+	// auth login test in this file depends on.
+	if _, ok := terminalFile(strings.NewReader("x")); ok {
+		t.Error("terminalFile(strings.Reader) reported a terminal")
+	}
+
+	// A regular file is an *os.File but not a terminal.
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	if _, ok := terminalFile(f); ok {
+		t.Error("terminalFile(regular file) reported a terminal")
+	}
+}
+
+func TestPromptSecretFallsBackToAPlainReadOffTerminal(t *testing.T) {
+	var out bytes.Buffer
+	raw := strings.NewReader("api-token\n")
+	in := bufio.NewReader(raw)
+
+	got, err := promptSecret(&out, in, raw, "API token: ")
+	if err != nil {
+		t.Fatalf("promptSecret() error = %v", err)
+	}
+	if got != "api-token" {
+		t.Errorf("promptSecret() = %q, want %q", got, "api-token")
+	}
+	if !strings.Contains(out.String(), "API token: ") {
+		t.Errorf("output = %q, want the prompt written", out.String())
 	}
 }
 
