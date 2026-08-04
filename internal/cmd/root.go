@@ -39,6 +39,9 @@ func init() {
 		`output format: "md" or "json"`)
 	rootCmd.PersistentFlags().DurationVar(&timeoutFlag, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
+
+	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(profileCmd)
 }
 
 func validateFormatFlag(cmd *cobra.Command, args []string) error {
