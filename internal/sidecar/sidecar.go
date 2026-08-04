@@ -8,6 +8,7 @@ package sidecar
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 )
 
@@ -70,11 +71,26 @@ func (m Meta) validate(path string) error {
 	if m.Status == "" {
 		missing = append(missing, "status")
 	}
-	if m.PageURL == "" {
+	// The host, not just the string, has to be there: it is what selects the
+	// profile, and a host-less URL would silently fall through to the default
+	// profile — the very fallback that is meant not to exist.
+	if u, err := url.Parse(m.PageURL); err != nil || u.Host == "" {
 		missing = append(missing, "page_url")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("sidecar %s is missing %v; re-run `cflio read` to regenerate it", path, missing)
+		return fmt.Errorf("sidecar %s is missing or has an unusable %v; re-run `cflio read` to regenerate it",
+			path, missing)
+	}
+	return nil
+}
+
+// Remove deletes the sidecar next to bodyPath if one exists. A missing
+// sidecar is not an error, so callers can use this to guarantee that no
+// stale metadata survives alongside a body they are about to replace.
+func Remove(bodyPath string) error {
+	path := Path(bodyPath)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale sidecar %s: %w", path, err)
 	}
 	return nil
 }

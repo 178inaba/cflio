@@ -64,6 +64,16 @@ func runReadPage(cmd *cobra.Command, args []string) error {
 		bodyPath = page.ID + ".xml"
 	}
 
+	// Any sidecar already sitting next to the output path describes whatever
+	// was read there before, so it is dropped first. Writing the body while
+	// a stale sidecar survives would leave a pair that names one page and
+	// holds another's content, and a later `update` would happily write this
+	// body to that page. Failing here instead leaves no sidecar at all,
+	// which `update` refuses outright.
+	if err := sidecar.Remove(bodyPath); err != nil {
+		return err
+	}
+
 	body := page.Body.Storage.Value
 	if err := writeBody(bodyPath, body); err != nil {
 		return err

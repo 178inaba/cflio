@@ -69,6 +69,32 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 	}
 }
 
+func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
+	isolateConfig(t)
+	setFlags(t, "", "md")
+	seedProfile(t, "example", testSite)
+
+	// totalSize claims far more than the server will actually hand back.
+	// Fewer results than --limit means paging stopped because the server
+	// ran out, so telling the caller to raise --limit would be useless.
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("start") == "0" {
+			_, _ = w.Write([]byte(`{"results":[{"content":{"id":"1","type":"page","title":"A"},"url":"/x"}],` +
+				`"totalSize":50}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[],"totalSize":50}`))
+	})
+
+	output, err := runSearchCmd(t, "type = page", 20)
+	if err != nil {
+		t.Fatalf("runSearch() error = %v", err)
+	}
+	if strings.Contains(output, "more results") {
+		t.Errorf("output = %q, want no notice when fewer than --limit results came back", output)
+	}
+}
+
 func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 	isolateConfig(t)
 	setFlags(t, "", "md")

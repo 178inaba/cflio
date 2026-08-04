@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // maxRawBodyInError bounds how much of an unparseable error body is echoed.
@@ -75,9 +76,14 @@ func joinNonEmpty(sep string, parts ...string) string {
 	return strings.Join(kept, sep)
 }
 
+// truncate cuts s to at most limit bytes, stepping back to a rune boundary
+// so a multi-byte character is never split into invalid UTF-8.
 func truncate(s string, limit int) string {
 	if len(s) <= limit {
 		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
 	}
 	return s[:limit] + "…"
 }

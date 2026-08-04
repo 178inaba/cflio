@@ -65,9 +65,12 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	// v1 search is the only endpoint here that reports a total, so it is
-	// the only one whose truncation notice can carry a count.
+	// the only one whose truncation notice can carry a count. The notice is
+	// gated on having actually filled the limit: Search stops early when the
+	// server runs out of hits, and in that case a totalSize larger than what
+	// came back does not mean raising --limit would fetch more.
 	notice := ""
-	if more := total - len(items); more > 0 {
+	if more := total - len(items); more > 0 && len(items) == searchLimitFlag {
 		notice = fmt.Sprintf("%d more results; raise --limit to fetch them", more)
 	}
 

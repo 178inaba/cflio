@@ -35,10 +35,14 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 func init() {
 	rootCmd.PersistentFlags().StringVar(&profileFlag, "profile", "",
 		"profile to use, overriding URL-based auto-selection and CFLIO_PROFILE")
-	rootCmd.PersistentFlags().StringVar(&formatFlag, "format", "md",
-		`output format: "md" or "json"`)
 	rootCmd.PersistentFlags().DurationVar(&timeoutFlag, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
+
+	// --format is registered per command rather than on the root, so it
+	// never appears on `auth` and `profile`, which would silently ignore it.
+	for _, cmd := range []*cobra.Command{readCmd, updateCmd, searchCmd, childrenCmd, commentsCmd} {
+		cmd.Flags().StringVar(&formatFlag, "format", "md", `output format: "md" or "json"`)
+	}
 
 	rootCmd.AddCommand(readCmd)
 	rootCmd.AddCommand(updateCmd)

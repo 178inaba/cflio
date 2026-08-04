@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // newTestClient starts an httptest server with the given handler and
@@ -437,17 +438,34 @@ func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 }
 
 func TestAPIErrorTruncatesLongRawBodies(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprint(w, strings.Repeat("x", 5000))
-	})
-
-	_, err := client.GetPage(t.Context(), "123", true)
-	if err == nil {
-		t.Fatal("GetPage() error = nil, want an error")
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "ascii", body: strings.Repeat("x", 5000)},
+		// Multi-byte runes must not be cut in half: an invalid UTF-8 tail
+		// would render as a replacement character in the user's terminal.
+		{name: "multibyte", body: strings.Repeat("あ", 5000)},
 	}
-	if len(err.Error()) > maxRawBodyInError+200 {
-		t.Errorf("error length = %d, want the raw body truncated", len(err.Error()))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = fmt.Fprint(w, tt.body)
+			})
+
+			_, err := client.GetPage(t.Context(), "123", true)
+			if err == nil {
+				t.Fatal("GetPage() error = nil, want an error")
+			}
+			if len(err.Error()) > maxRawBodyInError+200 {
+				t.Errorf("error length = %d, want the raw body truncated", len(err.Error()))
+			}
+			if !utf8.ValidString(err.Error()) {
+				t.Errorf("error = %q, want valid UTF-8 after truncation", err.Error())
+			}
+		})
 	}
 }
 

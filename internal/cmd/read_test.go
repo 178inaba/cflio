@@ -241,6 +241,44 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	}
 }
 
+func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
+	isolateConfig(t)
+	setFlags(t, "", "md")
+	seedProfile(t, "example", testSite)
+
+	// A sidecar from a previous read of a different page. If it survived a
+	// failed read of page 123456, the file would hold one page's body next
+	// to another page's metadata, and `update` would write it to the wrong
+	// page.
+	path := filepath.Join(t.TempDir(), "page.xml")
+	stale := sidecar.Meta{
+		PageID:  "999",
+		Version: 3,
+		Title:   "Some Other Page",
+		Status:  "current",
+		PageURL: testSite + "/spaces/DEV/pages/999/Other",
+	}
+	if err := sidecar.Write(path, stale); err != nil {
+		t.Fatalf("sidecar.Write() error = %v", err)
+	}
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(pageResponse(t, "<p>new</p>", "/spaces/DEV/pages/123456/Some+Page")))
+	})
+
+	if _, err := runRead(t, "123456", path); err != nil {
+		t.Fatalf("runReadPage() error = %v", err)
+	}
+
+	meta, err := sidecar.Load(path)
+	if err != nil {
+		t.Fatalf("sidecar.Load() error = %v", err)
+	}
+	if meta.PageID != "123456" {
+		t.Errorf("sidecar page_id = %q, want the newly read page", meta.PageID)
+	}
+}
+
 func TestReadWritesNothingWhenTheAPIFails(t *testing.T) {
 	isolateConfig(t)
 	setFlags(t, "", "md")

@@ -98,6 +98,18 @@ func TestLoadRejectsAnIncompleteSidecar(t *testing.T) {
 		{name: "missing title", content: `{"page_id":"1","version":7,"status":"current","page_url":"https://x/y"}`, want: "title"},
 		{name: "missing status", content: `{"page_id":"1","version":7,"title":"T","page_url":"https://x/y"}`, want: "status"},
 		{name: "missing page url", content: `{"page_id":"1","version":7,"title":"T","status":"current"}`, want: "page_url"},
+		// A host-less page_url would resolve to the default profile, which
+		// is exactly the fallback that is not supposed to exist.
+		{
+			name:    "page url without a host",
+			content: `{"page_id":"1","version":7,"title":"T","status":"current","page_url":"just-a-title"}`,
+			want:    "page_url",
+		},
+		{
+			name:    "unparseable page url",
+			content: `{"page_id":"1","version":7,"title":"T","status":"current","page_url":"://nope"}`,
+			want:    "page_url",
+		},
 	}
 
 	for _, tt := range tests {
@@ -115,6 +127,26 @@ func TestLoadRejectsAnIncompleteSidecar(t *testing.T) {
 				t.Errorf("Load() error = %q, want it to mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestRemove(t *testing.T) {
+	body := filepath.Join(t.TempDir(), "page.xml")
+
+	// Removing when there is nothing to remove is the normal first-read
+	// case, so it must not be an error.
+	if err := Remove(body); err != nil {
+		t.Fatalf("Remove() on a missing sidecar error = %v, want nil", err)
+	}
+
+	if err := Write(body, testMeta()); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if err := Remove(body); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if _, err := os.Stat(Path(body)); !os.IsNotExist(err) {
+		t.Errorf("Stat(%s) = %v, want the sidecar gone", Path(body), err)
 	}
 }
 
