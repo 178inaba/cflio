@@ -42,6 +42,9 @@ func init() {
 
 	rootCmd.AddCommand(readCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(searchCmd)
+	rootCmd.AddCommand(childrenCmd)
+	rootCmd.AddCommand(commentsCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(profileCmd)
 }
@@ -64,21 +67,27 @@ func Execute() error {
 		return nil
 	}
 
-	err = describeContextError(err)
+	err = describeContextError(ctx, err)
 	fmt.Fprintln(os.Stderr, "Error:", err)
 	return err
 }
 
 // describeContextError replaces a bare context error with one that says what
-// to do about it. net/http wraps the context error in a *url.Error, so the
-// deadline and the interrupt are only recognizable through errors.Is.
-func describeContextError(err error) error {
+// to do about it.
+//
+// The interrupt case is detected from the signal context rather than from
+// the returned error: signal.NotifyContext cancels with a cause, which the
+// transport surfaces instead of context.Canceled, so errors.Is would miss
+// it. The deadline case is the other way round — it comes from a context
+// derived per command, so only the error carries it, and net/http wraps it
+// in a *url.Error that errors.Is sees through.
+func describeContextError(signalCtx context.Context, err error) error {
 	switch {
+	case signalCtx.Err() != nil:
+		return fmt.Errorf("interrupted: %w", err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("timed out after %s: raise the deadline with --timeout (0 disables it): %w",
 			timeoutFlag, err)
-	case errors.Is(err, context.Canceled):
-		return fmt.Errorf("interrupted: %w", err)
 	default:
 		return err
 	}

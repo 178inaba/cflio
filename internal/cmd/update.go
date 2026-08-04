@@ -39,8 +39,10 @@ re-apply the edits.`,
 }
 
 func init() {
+	// No backticks in flag usage strings: cobra reads the first backtick
+	// pair as the flag's argument placeholder.
 	updateCmd.Flags().StringVarP(&updateFileFlag, "file", "f", "",
-		"file holding the edited body, as written by `cflio read`")
+		"file holding the edited body, as downloaded by cflio read")
 	updateCmd.Flags().StringVar(&updateMessageFlag, "message", defaultVersionMessage,
 		"version message recorded in the page's history")
 	if err := updateCmd.MarkFlagRequired("file"); err != nil {

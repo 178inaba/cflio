@@ -41,23 +41,34 @@ func TestCommandContextTimeout(t *testing.T) {
 func TestDescribeContextError(t *testing.T) {
 	setTimeoutFlag(t, 90*time.Second)
 
+	live := context.Background()
+	interrupted, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	tests := []struct {
 		name        string
+		signalCtx   context.Context
 		err         error
 		wantContain string
 	}{
 		{
 			name:        "deadline points at --timeout",
+			signalCtx:   live,
 			err:         fmt.Errorf("get page: %w", context.DeadlineExceeded),
 			wantContain: "--timeout",
 		},
 		{
-			name:        "cancellation reads as an interrupt",
-			err:         fmt.Errorf("get page: %w", context.Canceled),
+			// signal.NotifyContext cancels with a cause, so the transport
+			// reports that rather than context.Canceled; the signal
+			// context being done is the reliable signal.
+			name:        "a cancelled signal context reads as an interrupt",
+			signalCtx:   interrupted,
+			err:         errors.New("get page: interrupt signal received"),
 			wantContain: "interrupted",
 		},
 		{
 			name:        "other errors pass through unchanged",
+			signalCtx:   live,
 			err:         errors.New("page not found"),
 			wantContain: "page not found",
 		},
@@ -65,7 +76,7 @@ func TestDescribeContextError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := describeContextError(tt.err)
+			got := describeContextError(tt.signalCtx, tt.err)
 			if !strings.Contains(got.Error(), tt.wantContain) {
 				t.Errorf("describeContextError() = %q, want it to contain %q", got, tt.wantContain)
 			}
