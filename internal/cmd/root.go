@@ -40,6 +40,8 @@ func init() {
 	rootCmd.PersistentFlags().DurationVar(&timeoutFlag, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
+	rootCmd.AddCommand(readCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(profileCmd)
 }
