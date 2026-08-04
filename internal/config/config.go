@@ -171,7 +171,7 @@ func resolveProfile(f *File, flagProfile, urlHost string, getenv func(string) st
 	}
 
 	if urlHost != "" {
-		for _, name := range sortedNames(f) {
+		for _, name := range SortedProfileNames(f) {
 			if f.Profiles[name].Host() == urlHost {
 				return credentials(name, f.Profiles[name]), nil
 			}
@@ -212,13 +212,14 @@ func ProfileNames(f *File) string {
 	if len(f.Profiles) == 0 {
 		return "(none)"
 	}
-	return strings.Join(sortedNames(f), ", ")
+	return strings.Join(SortedProfileNames(f), ", ")
 }
 
-// sortedNames keeps both the error messages and the host-matching scan
-// deterministic; map iteration order would otherwise pick an arbitrary
-// profile when two are registered for the same host.
-func sortedNames(f *File) []string {
+// SortedProfileNames returns the registered profile names in a stable
+// order. Every listing and lookup that walks the profiles goes through it,
+// so error messages, `profile list` and the host-matching scan can never
+// disagree about ordering the way raw map iteration would.
+func SortedProfileNames(f *File) []string {
 	names := make([]string, 0, len(f.Profiles))
 	for name := range f.Profiles {
 		names = append(names, name)

@@ -1,4 +1,6 @@
-// Package format renders API results for humans and agents to read.
+// Package format holds the text helpers the commands share when rendering
+// API results: storage-XHTML decoding, search highlight-marker stripping and
+// indentation.
 //
 // The storage-to-text conversion here is display-only: it exists because
 // the comment endpoints refuse body-format=view, so comment bodies arrive
@@ -101,47 +103,21 @@ func attr(el xml.StartElement, name string) string {
 	return ""
 }
 
-// tidyLines trims each line, drops the blank runs that unwrapping markup
-// leaves behind, and trims the result.
+// tidyLines squeezes each line's whitespace down to single spaces and drops
+// the blank lines that unwrapping markup leaves behind. strings.Fields splits
+// on unicode.IsSpace, which covers the non-breaking spaces the HTML entity
+// table decodes as well as ordinary ones.
 func tidyLines(text string) string {
 	lines := strings.Split(text, "\n")
 	kept := make([]string, 0, len(lines))
 	for _, line := range lines {
-		line = strings.TrimSpace(collapseSpaces(line))
+		line = strings.Join(strings.Fields(line), " ")
 		if line == "" {
 			continue
 		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
-}
-
-// collapseSpaces squeezes runs of whitespace, including the non-breaking
-// spaces the entity table decodes, into single spaces.
-func collapseSpaces(line string) string {
-	var out strings.Builder
-	out.Grow(len(line))
-
-	inSpace := false
-	for _, r := range line {
-		if isSpace(r) {
-			inSpace = true
-			continue
-		}
-		if inSpace && out.Len() > 0 {
-			out.WriteByte(' ')
-		}
-		inSpace = false
-		out.WriteRune(r)
-	}
-	if inSpace && out.Len() > 0 {
-		out.WriteByte(' ')
-	}
-	return out.String()
-}
-
-func isSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\r' || r == '\v' || r == '\f' || r == ' '
 }
 
 // StripHighlightMarkers removes the markers Confluence search wraps around

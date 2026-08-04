@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -129,18 +128,11 @@ func runUpdatePage(cmd *cobra.Command, args []string) error {
 }
 
 func writeUpdateResult(cmd *cobra.Command, result updateResult) error {
-	out := cmd.OutOrStdout()
-
 	if formatFlag == "json" {
-		encoded, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(encoded))
-		return err
+		return writeJSON(cmd, result)
 	}
 
-	_, err := fmt.Fprintf(out, "Updated:  %s\nVersion:  %d\nMessage:  %s\nURL:      %s\n",
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated:  %s\nVersion:  %d\nMessage:  %s\nURL:      %s\n",
 		result.Title, result.Version, result.Message, result.PageURL)
 	return err
 }

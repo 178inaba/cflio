@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/178inaba/cflio/internal/config"
 	"github.com/spf13/cobra"
@@ -44,7 +43,7 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for _, name := range sortedProfileNames(file) {
+	for _, name := range config.SortedProfileNames(file) {
 		p := file.Profiles[name]
 		var err error
 		if name == file.DefaultProfile {
@@ -77,15 +76,4 @@ func runProfileUse(cmd *cobra.Command, args []string) error {
 
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Default profile set to %q.\n", name)
 	return err
-}
-
-// sortedProfileNames keeps listings and site lookups deterministic; map
-// iteration order would otherwise vary between runs.
-func sortedProfileNames(file *config.File) []string {
-	names := make([]string, 0, len(file.Profiles))
-	for name := range file.Profiles {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }

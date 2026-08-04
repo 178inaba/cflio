@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -141,21 +140,15 @@ func commentItemFrom(c confluence.Comment) commentItem {
 }
 
 func writeComments(cmd *cobra.Command, sections []commentSection) error {
-	out := cmd.OutOrStdout()
-
 	if formatFlag == "json" {
 		payload := make(map[string]any, len(sections))
 		for _, section := range sections {
 			payload[section.Key] = section
 		}
-		encoded, err := json.MarshalIndent(payload, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(encoded))
-		return err
+		return writeJSON(cmd, payload)
 	}
 
+	out := cmd.OutOrStdout()
 	for i, section := range sections {
 		if i > 0 {
 			if _, err := fmt.Fprintln(out); err != nil {

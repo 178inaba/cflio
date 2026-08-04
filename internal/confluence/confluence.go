@@ -113,9 +113,14 @@ type Page struct {
 			Value          string `json:"value"`
 		} `json:"storage"`
 	} `json:"body"`
-	Links struct {
-		WebUI string `json:"webui"`
-	} `json:"_links"`
+	Links links `json:"_links"`
+}
+
+// links is the single-entity `_links` envelope. Only the web link is
+// modelled: the API also returns edit and tiny-link variants, which cflio
+// has no use for.
+type links struct {
+	WebUI string `json:"webui"`
 }
 
 // GetPage fetches a page. withBody requests the storage representation;
@@ -240,13 +245,7 @@ type Comment struct {
 	Properties struct {
 		InlineOriginalSelection string `json:"inlineOriginalSelection"`
 	} `json:"properties"`
-	Links struct {
-		WebUI string `json:"webui"`
-	} `json:"_links"`
-
-	// Replies holds the direct replies fetched separately; the page-level
-	// endpoints return root comments only.
-	Replies []Comment `json:"-"`
+	Links links `json:"_links"`
 }
 
 // PageComments lists a page's root comments of the given kind, oldest
@@ -441,19 +440,22 @@ func (c *Client) do(req *http.Request, path string, out any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response from %s %s: %w", req.Method, path, err)
-	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Error envelopes are small, so buffering one to parse it is fine.
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read response from %s %s: %w", req.Method, path, err)
+		}
 		return newAPIError(req.Method, path, resp.StatusCode, body)
 	}
 
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(body, out); err != nil {
+	// Decoded straight from the stream rather than buffered first: a page
+	// response carries the whole body, and reading it into a []byte before
+	// unmarshalling would hold a second full copy of a multi-megabyte page.
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("parse response from %s %s: %w", req.Method, path, err)
 	}
 	return nil

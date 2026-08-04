@@ -108,7 +108,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 // first whenever that would overwrite stored credentials. aborted reports
 // that the user declined.
 func chooseProfileName(out io.Writer, in *bufio.Reader, file *config.File, site string) (name string, aborted bool, err error) {
-	for _, existing := range sortedProfileNames(file) {
+	for _, existing := range config.SortedProfileNames(file) {
 		if file.Profiles[existing].SiteURL != site {
 			continue
 		}

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -65,12 +64,9 @@ func runReadPage(cmd *cobra.Command, args []string) error {
 		bodyPath = page.ID + ".xml"
 	}
 
-	// Written verbatim, with no trailing newline added: `update` sends the
-	// file back as-is, so a single extra byte would turn a no-op update
-	// into a content change.
 	body := page.Body.Storage.Value
-	if err := os.WriteFile(bodyPath, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", bodyPath, err)
+	if err := writeBody(bodyPath, body); err != nil {
+		return err
 	}
 
 	meta := sidecar.Meta{
@@ -96,19 +92,38 @@ func runReadPage(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func writeReadResult(cmd *cobra.Command, result readResult) error {
-	out := cmd.OutOrStdout()
+// writeBody writes the page body verbatim, with no trailing newline added:
+// `update` sends the file back as-is, so a single extra byte would turn a
+// no-op update into a content change on the page.
+//
+// WriteString rather than os.WriteFile([]byte(body)): converting the body to
+// a byte slice would copy the whole page, which for the large pages this
+// tool exists to handle is the copy worth avoiding.
+func writeBody(path, body string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }() // safety net for the early return below
 
+	if _, err := f.WriteString(body); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	// Closed explicitly as well, so a flush failure is reported rather than
+	// silently swallowed by the deferred close.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("finalize %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeReadResult(cmd *cobra.Command, result readResult) error {
 	if formatFlag == "json" {
-		encoded, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(encoded))
-		return err
+		return writeJSON(cmd, result)
 	}
 
-	_, err := fmt.Fprintf(out, "Title:    %s\nVersion:  %d\nStatus:   %s\nURL:      %s\nBody:     %s (%d bytes)\nSidecar:  %s\n",
+	_, err := fmt.Fprintf(cmd.OutOrStdout(),
+		"Title:    %s\nVersion:  %d\nStatus:   %s\nURL:      %s\nBody:     %s (%d bytes)\nSidecar:  %s\n",
 		result.Title, result.Version, result.Status, result.PageURL,
 		result.BodyPath, result.Bytes, result.SidecarPath)
 	return err

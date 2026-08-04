@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -18,6 +19,18 @@ func validateLimit(limit int) error {
 	return nil
 }
 
+// writeJSON renders payload as the --format json output. Every command's
+// JSON branch goes through here so indentation and framing stay identical
+// across them.
+func writeJSON(cmd *cobra.Command, payload any) error {
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
+	return err
+}
+
 // markdownItem is a list entry that can render itself for the Markdown
 // output. The JSON output uses the concrete types' struct tags instead.
 type markdownItem interface {
@@ -27,17 +40,11 @@ type markdownItem interface {
 // writeList renders items per --format. name labels the JSON array and the
 // "no results" line, e.g. "results" or "child pages".
 func writeList[T markdownItem](cmd *cobra.Command, name string, items []T, notice string) error {
-	out := cmd.OutOrStdout()
-
 	if formatFlag == "json" {
-		encoded, err := marshalList(name, items, notice)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(encoded))
-		return err
+		return writeJSON(cmd, listPayload(name, items, notice))
 	}
 
+	out := cmd.OutOrStdout()
 	if len(items) == 0 {
 		if _, err := fmt.Fprintf(out, "No %s.\n", name); err != nil {
 			return err
@@ -56,9 +63,9 @@ func writeList[T markdownItem](cmd *cobra.Command, name string, items []T, notic
 	return nil
 }
 
-// marshalList builds {"<name>": [...], "notice": "..."} with the array
+// listPayload builds {"<name>": [...], "notice": "..."} with the array
 // always present, so a consumer can index it without a nil check.
-func marshalList[T any](name string, items []T, notice string) ([]byte, error) {
+func listPayload[T any](name string, items []T, notice string) map[string]any {
 	if items == nil {
 		items = []T{}
 	}
@@ -67,17 +74,10 @@ func marshalList[T any](name string, items []T, notice string) ([]byte, error) {
 	if notice != "" {
 		payload["notice"] = notice
 	}
-	return json.MarshalIndent(payload, "", "  ")
+	return payload
 }
 
 // jsonKey turns a human label like "child pages" into "child_pages".
 func jsonKey(name string) string {
-	key := make([]rune, 0, len(name))
-	for _, r := range name {
-		if r == ' ' {
-			r = '_'
-		}
-		key = append(key, r)
-	}
-	return string(key)
+	return strings.ReplaceAll(name, " ", "_")
 }
