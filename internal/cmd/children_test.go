@@ -46,7 +46,7 @@ func childrenAPI(t *testing.T, childrenJSON, parentWebUI string) (*int, http.Han
 	}
 }
 
-func TestChildrenListsOnlyPagesWithRoundTrippableURLs(t *testing.T) {
+func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 	isolateConfig(t)
 	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
@@ -66,6 +66,8 @@ func TestChildrenListsOnlyPagesWithRoundTrippableURLs(t *testing.T) {
 	if strings.Contains(output, "A Whiteboard") {
 		t.Errorf("output = %q, want non-page children filtered out", output)
 	}
+	// Pinning the URL exactly is what catches the empty space key. Feeding
+	// both URL forms back through pageref.Parse is TestChildPageURL's job.
 	for _, want := range []string{
 		"Child One", "ID 11", "current",
 		"Child Two", "ID 13", "archived",
