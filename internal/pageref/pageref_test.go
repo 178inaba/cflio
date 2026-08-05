@@ -42,6 +42,13 @@ func TestParse(t *testing.T) {
 			want: Ref{PageID: "999", Host: "example.atlassian.net"},
 		},
 		{
+			// The form PageURL and ChildPageURL fall back to, so `children`
+			// output stays usable as input even without a space key.
+			name: "page-id query form",
+			arg:  "https://example.atlassian.net/wiki/pages/viewpage.action?pageId=123456",
+			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+		},
+		{
 			name: "surrounding whitespace is tolerated",
 			arg:  "  https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title \n",
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
@@ -153,25 +160,77 @@ func TestPageURL(t *testing.T) {
 	}
 }
 
-func TestSpacePageURL(t *testing.T) {
-	got := SpacePageURL("https://example.atlassian.net/wiki", "DEV", "123456")
-	want := "https://example.atlassian.net/wiki/spaces/DEV/pages/123456"
-	if got != want {
-		t.Errorf("SpacePageURL() = %q, want %q", got, want)
+func TestChildPageURL(t *testing.T) {
+	const site = "https://example.atlassian.net/wiki"
+
+	tests := []struct {
+		name        string
+		parentWebUI string
+		want        string
+	}{
+		{
+			name:        "parent link with the title slug",
+			parentWebUI: "/spaces/DEV/pages/123456/Some+Page",
+			want:        site + "/spaces/DEV/pages/11",
+		},
+		{
+			name:        "parent link without the title slug",
+			parentWebUI: "/spaces/DEV/pages/123456",
+			want:        site + "/spaces/DEV/pages/11",
+		},
+		{
+			name:        "personal space",
+			parentWebUI: "/spaces/~557058:abc-def/pages/123456/Notes",
+			want:        site + "/spaces/~557058:abc-def/pages/11",
+		},
+		// Every case below has to reach the page-id form rather than build
+		// a URL around a missing key: /spaces//pages/<id> is a 404.
+		{
+			name: "parent has no link",
+			want: site + "/pages/viewpage.action?pageId=11",
+		},
+		{
+			name:        "parent link of some other shape",
+			parentWebUI: "/pages/viewpage.action",
+			want:        site + "/pages/viewpage.action?pageId=11",
+		},
+		{
+			name:        "parent link carrying a query string",
+			parentWebUI: "/spaces/DEV/pages/123456?x=1",
+			want:        site + "/pages/viewpage.action?pageId=11",
+		},
+		{
+			name:        "parent link with an empty key segment",
+			parentWebUI: "/spaces//pages/123456",
+			want:        site + "/pages/viewpage.action?pageId=11",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ChildPageURL(site, tt.parentWebUI, "11")
+			if got != tt.want {
+				t.Errorf("ChildPageURL(_, %q, _) = %q, want %q", tt.parentWebUI, got, tt.want)
+			}
+
+			// children prints these URLs, and an agent is expected to feed
+			// them straight back into `cflio read`.
+			ref, err := Parse(got)
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v", got, err)
+			}
+			if ref.PageID != "11" || ref.Host != "example.atlassian.net" {
+				t.Errorf("Parse(%q) = %+v, want page 11 on example.atlassian.net", got, ref)
+			}
+		})
 	}
 }
 
-func TestSpacePageURLRoundTripsThroughParse(t *testing.T) {
-	// children prints these URLs, and an agent is expected to feed them
-	// straight back into `cflio read`.
-	url := SpacePageURL("https://example.atlassian.net/wiki", "DEV", "123456")
-
-	ref, err := Parse(url)
-	if err != nil {
-		t.Fatalf("Parse(%q) error = %v", url, err)
-	}
-	if ref.PageID != "123456" || ref.Host != "example.atlassian.net" {
-		t.Errorf("Parse(%q) = %+v, want page 123456 on example.atlassian.net", url, ref)
+func TestChildPageURLToleratesATrailingSlashOnTheSite(t *testing.T) {
+	got := ChildPageURL("https://example.atlassian.net/wiki/", "/spaces/DEV/pages/123456", "11")
+	want := "https://example.atlassian.net/wiki/spaces/DEV/pages/11"
+	if got != want {
+		t.Errorf("ChildPageURL() = %q, want %q", got, want)
 	}
 }
 

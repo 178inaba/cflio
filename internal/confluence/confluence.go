@@ -105,7 +105,6 @@ type Page struct {
 	ID      string  `json:"id"`
 	Status  string  `json:"status"`
 	Title   string  `json:"title"`
-	SpaceID string  `json:"spaceId"`
 	Version Version `json:"version"`
 	Body    struct {
 		Storage struct {
@@ -178,26 +177,14 @@ func (c *Client) UpdatePage(ctx context.Context, req UpdatePageRequest) (*Page, 
 	return &page, nil
 }
 
-// SpaceKey returns a space's key (e.g. "DEV") given its numeric ID. Child
-// listings only carry the ID, but readable page URLs need the key.
-func (c *Client) SpaceKey(ctx context.Context, spaceID string) (string, error) {
-	var space struct {
-		Key string `json:"key"`
-	}
-	if err := c.get(ctx, "/api/v2/spaces/"+url.PathEscape(spaceID), nil, &space); err != nil {
-		return "", err
-	}
-	return space.Key, nil
-}
-
 // Child is one entry of a page's direct children. Type distinguishes pages
-// from whiteboards, folders, databases and embeds.
+// from whiteboards, folders, databases and embeds. The API returns no space
+// for a child, so callers that need one read it off the parent page.
 type Child struct {
-	ID      string `json:"id"`
-	Status  string `json:"status"`
-	Title   string `json:"title"`
-	Type    string `json:"type"`
-	SpaceID string `json:"spaceId"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Title  string `json:"title"`
+	Type   string `json:"type"`
 }
 
 // childTypePage is the Child.Type value for regular pages.

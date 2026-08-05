@@ -11,7 +11,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const testSite = "https://example.atlassian.net/wiki"
+const (
+	testSite = "https://example.atlassian.net/wiki"
+
+	// testPageWebUI is the relative link the API returns for the test page,
+	// i.e. testPageURL without the site prefix.
+	testPageWebUI = "/spaces/DEV/pages/123456/Some+Page"
+)
 
 // isolateConfig points the config package at a temporary directory and
 // clears the environment overrides, so tests never touch the real config.

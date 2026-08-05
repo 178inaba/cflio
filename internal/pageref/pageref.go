@@ -21,10 +21,15 @@ type Ref struct {
 var (
 	pageIDPattern = regexp.MustCompile(`^[0-9]+$`)
 
-	// The browser URL for a page: /wiki/spaces/<KEY>/pages/<id>[/<title>].
-	// The space key may be a personal space (~accountid), and the title
-	// slug is optional.
-	pageURLPattern = regexp.MustCompile(`^/wiki/spaces/[^/]+/pages/([0-9]+)(?:/.*)?$`)
+	// A page's path, capturing the space key and then the id. The key may
+	// be a personal space (~accountid) and the title slug is optional.
+	// The browser URL prefixes this with /wiki; the relative web link the
+	// API returns for a page does not, so both are built from one grammar
+	// to keep them from drifting apart.
+	pagePath = `/spaces/([^/]+)/pages/([0-9]+)(?:/.*)?$`
+
+	pageURLPattern = regexp.MustCompile(`^/wiki` + pagePath)
+	webUIPattern   = regexp.MustCompile(`^` + pagePath)
 
 	// Short links resolve server-side to a page; resolving them is out of
 	// scope, so they get their own message rather than "unrecognized".
@@ -50,7 +55,7 @@ func Parse(arg string) (Ref, error) {
 			"%q is a Confluence short link; open it in a browser and pass the full page URL instead", arg)
 	}
 	if match := pageURLPattern.FindStringSubmatch(path); match != nil {
-		return Ref{PageID: match[1], Host: u.Host}, nil
+		return Ref{PageID: match[2], Host: u.Host}, nil
 	}
 	// The page-ID query form, which is what `cflio read` records in a
 	// sidecar when the API returns no web link.
@@ -79,10 +84,37 @@ func PageURL(site, webui, pageID string) string {
 	return site + "/pages/viewpage.action?pageId=" + url.QueryEscape(pageID)
 }
 
-// SpacePageURL builds a page's URL from its space key. Child listings carry
-// no web link of their own, so their URLs are assembled from the parent's
-// space key, which every child shares.
-func SpacePageURL(site, spaceKey, pageID string) string {
+// ChildPageURL builds the URL of a page sitting in the same space as the page
+// parentWebUI links to, which every child of that page does. Child listings
+// carry no web link of their own, so the parent's is what they are assembled
+// from.
+//
+// When parentWebUI yields no space key it falls back to the page-ID query
+// form, which needs none: a URL built from an empty key is a 404, so the key
+// never reaches spacePageURL unless it is real.
+func ChildPageURL(site, parentWebUI, childID string) string {
+	spaceKey := spaceKeyOf(parentWebUI)
+	if spaceKey == "" {
+		return PageURL(site, "", childID)
+	}
+	return spacePageURL(site, spaceKey, childID)
+}
+
+// spaceKeyOf returns the space key embedded in the relative web link the API
+// returns for a page, or "" when the link is empty or not in that shape.
+// Every key the API has been observed to emit — including the ~accountid
+// form of a personal space — is made of characters that spacePageURL's path
+// escaping leaves alone, so the captured segment is returned undecoded.
+func spaceKeyOf(webui string) string {
+	match := webUIPattern.FindStringSubmatch(webui)
+	if match == nil {
+		return ""
+	}
+	return match[1]
+}
+
+// spacePageURL builds a page's URL from its space key.
+func spacePageURL(site, spaceKey, pageID string) string {
 	return strings.TrimSuffix(site, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
 }
 

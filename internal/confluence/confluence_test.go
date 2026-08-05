@@ -171,13 +171,13 @@ func TestChildPagesFiltersNonPagesAndCountsPagesTowardTheLimit(t *testing.T) {
 	// Two whiteboards are interleaved with the pages, so a client that
 	// counted raw children would return fewer pages than asked for.
 	page1 := `{"results":[
-		{"id":"1","type":"page","title":"P1","status":"current","spaceId":"9"},
+		{"id":"1","type":"page","title":"P1","status":"current"},
 		{"id":"2","type":"whiteboard","title":"W1"},
-		{"id":"3","type":"page","title":"P2","status":"current","spaceId":"9"}
+		{"id":"3","type":"page","title":"P2","status":"current"}
 	],"_links":{"next":"/wiki/api/v2/pages/10/direct-children?cursor=CURSOR2&limit=3"}}`
 	page2 := `{"results":[
 		{"id":"4","type":"folder","title":"F1"},
-		{"id":"5","type":"page","title":"P3","status":"archived","spaceId":"9"}
+		{"id":"5","type":"page","title":"P3","status":"archived"}
 	],"_links":{}}`
 
 	var gotCursors []string

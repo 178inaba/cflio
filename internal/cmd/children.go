@@ -61,24 +61,26 @@ func runChildren(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Child listings carry a space ID but no link of their own. Every child
-	// of a page lives in that page's space, so one lookup covers them all.
-	spaceKeys := map[string]string{}
+	// Child listings carry neither a link of their own nor the child's own
+	// space. Every child of a page lives in that page's space, so the
+	// parent's web link is what their URLs are built from — one lookup for
+	// the whole listing, and none at all when there is nothing to build.
+	parentWebUI := ""
+	if len(children) > 0 {
+		parent, err := client.GetPage(ctx, ref.PageID, false)
+		if err != nil {
+			return err
+		}
+		parentWebUI = parent.Links.WebUI
+	}
+
 	items := make([]childItem, 0, len(children))
 	for _, child := range children {
-		key, ok := spaceKeys[child.SpaceID]
-		if !ok {
-			if key, err = client.SpaceKey(ctx, child.SpaceID); err != nil {
-				return err
-			}
-			spaceKeys[child.SpaceID] = key
-		}
-
 		items = append(items, childItem{
 			Title:  child.Title,
 			ID:     child.ID,
 			Status: child.Status,
-			URL:    pageref.SpacePageURL(creds.SiteURL, key, child.ID),
+			URL:    pageref.ChildPageURL(creds.SiteURL, parentWebUI, child.ID),
 		})
 	}
 
