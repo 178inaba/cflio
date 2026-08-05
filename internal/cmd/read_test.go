@@ -19,7 +19,6 @@ func pageResponse(t *testing.T, body, webui string) string {
 		"id":      "123456",
 		"status":  "current",
 		"title":   "Some Page",
-		"spaceId": "789",
 		"version": map[string]any{"number": 7},
 		"body":    map[string]any{"storage": map[string]any{"representation": "storage", "value": body}},
 		"_links":  map[string]any{"webui": webui},
@@ -55,7 +54,7 @@ func TestReadWritesTheBodyByteForByte(t *testing.T) {
 		if got := r.URL.Query().Get("body-format"); got != "storage" {
 			t.Errorf("body-format = %q, want storage", got)
 		}
-		_, _ = w.Write([]byte(pageResponse(t, body, "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
@@ -87,7 +86,7 @@ func TestReadWritesTheSidecar(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
@@ -117,7 +116,7 @@ func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
@@ -166,7 +165,7 @@ func TestReadDefaultsTheOutputPathToThePageID(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
 	dir := t.TempDir()
@@ -186,7 +185,7 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(pageResponse(t, "<p>secret body</p>", "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, "<p>secret body</p>", testPageWebUI)))
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
@@ -263,7 +262,7 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 	}
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(pageResponse(t, "<p>new</p>", "/spaces/DEV/pages/123456/Some+Page")))
+		_, _ = w.Write([]byte(pageResponse(t, "<p>new</p>", testPageWebUI)))
 	})
 
 	if _, err := runRead(t, "123456", path); err != nil {

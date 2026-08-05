@@ -14,7 +14,7 @@ import (
 	"github.com/178inaba/cflio/internal/sidecar"
 )
 
-const testPageURL = testSite + "/spaces/DEV/pages/123456/Some+Page"
+const testPageURL = testSite + testPageWebUI
 
 // seedReadPage writes a body file and its sidecar, as `cflio read` would.
 func seedReadPage(t *testing.T, body string, meta sidecar.Meta) string {

@@ -20,18 +20,26 @@ func runChildrenCmd(t *testing.T, arg string, limit int) (string, error) {
 }
 
 // childrenAPI answers the direct-children listing with childrenJSON and the
-// space lookup with a fixed key.
-func childrenAPI(t *testing.T, childrenJSON string) (*int, http.HandlerFunc) {
+// parent page lookup with a page whose web link is parentWebUI, counting the
+// parent lookups.
+//
+// Both paths are matched exactly. A looser match silently answers requests
+// the command should not be making at all — that is how the command shipped
+// asking for /api/v2/spaces/ with no ID, and how its tests kept passing.
+func childrenAPI(t *testing.T, childrenJSON, parentWebUI string) (*int, http.HandlerFunc) {
 	t.Helper()
 
-	spaceLookups := 0
-	return &spaceLookups, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/direct-children"):
+	// The page testPageURL and a bare "123456" both refer to.
+	const parentPath = "/wiki/api/v2/pages/123456"
+
+	parentLookups := 0
+	return &parentLookups, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case parentPath + "/direct-children":
 			_, _ = w.Write([]byte(childrenJSON))
-		case strings.Contains(r.URL.Path, "/spaces/"):
-			spaceLookups++
-			_, _ = w.Write([]byte(`{"id":"789","key":"DEV"}`))
+		case parentPath:
+			parentLookups++
+			_, _ = w.Write([]byte(pageResponse(t, "", parentWebUI)))
 		default:
 			t.Errorf("unexpected request to %s", r.URL.Path)
 		}
@@ -44,10 +52,10 @@ func TestChildrenListsOnlyPagesWithRoundTrippableURLs(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	lookups, handler := childrenAPI(t, `{"results":[
-		{"id":"11","type":"page","title":"Child One","status":"current","spaceId":"789"},
-		{"id":"12","type":"whiteboard","title":"A Whiteboard","spaceId":"789"},
-		{"id":"13","type":"page","title":"Child Two","status":"archived","spaceId":"789"}
-	],"_links":{}}`)
+		{"id":"11","type":"page","title":"Child One","status":"current"},
+		{"id":"12","type":"whiteboard","title":"A Whiteboard"},
+		{"id":"13","type":"page","title":"Child Two","status":"archived"}
+	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
@@ -67,9 +75,10 @@ func TestChildrenListsOnlyPagesWithRoundTrippableURLs(t *testing.T) {
 			t.Errorf("output = %q, want it to contain %q", output, want)
 		}
 	}
+
 	// One lookup covers every child: they all live in the parent's space.
 	if *lookups != 1 {
-		t.Errorf("space lookups = %d, want 1 for a single space", *lookups)
+		t.Errorf("parent lookups = %d, want 1 for the whole listing", *lookups)
 	}
 }
 
@@ -79,9 +88,9 @@ func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	_, handler := childrenAPI(t, `{"results":[
-		{"id":"11","type":"page","title":"One","status":"current","spaceId":"789"},
-		{"id":"12","type":"page","title":"Two","status":"current","spaceId":"789"}
-	],"_links":{}}`)
+		{"id":"11","type":"page","title":"One","status":"current"},
+		{"id":"12","type":"page","title":"Two","status":"current"}
+	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
 	output, err := runChildrenCmd(t, testPageURL, 1)
@@ -129,8 +138,8 @@ func TestChildrenJSONOutput(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	_, handler := childrenAPI(t, `{"results":[
-		{"id":"11","type":"page","title":"Child One","status":"current","spaceId":"789"}
-	],"_links":{}}`)
+		{"id":"11","type":"page","title":"Child One","status":"current"}
+	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
@@ -162,7 +171,7 @@ func TestChildrenWithNoChildren(t *testing.T) {
 	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
-	_, handler := childrenAPI(t, `{"results":[],"_links":{}}`)
+	lookups, handler := childrenAPI(t, `{"results":[],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
@@ -171,6 +180,33 @@ func TestChildrenWithNoChildren(t *testing.T) {
 	}
 	if !strings.Contains(output, "No child pages.") {
 		t.Errorf("output = %q, want it to say there are none", output)
+	}
+	// With no children there is no URL to build, so the space key nobody
+	// needs is not worth a request.
+	if *lookups != 0 {
+		t.Errorf("parent lookups = %d, want 0 for a leaf page", *lookups)
+	}
+}
+
+func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
+	isolateConfig(t)
+	setFlags(t, "", "md")
+	seedProfile(t, "example", testSite)
+
+	// The real API always returns a web link for a page, so this degraded
+	// path is only ever exercised here. It has to still produce a URL that
+	// reaches the child: the empty space key it replaces was a 404.
+	_, handler := childrenAPI(t, `{"results":[
+		{"id":"11","type":"page","title":"Child One","status":"current"}
+	],"_links":{}}`, "")
+	startAPI(t, handler)
+
+	output, err := runChildrenCmd(t, testPageURL, 100)
+	if err != nil {
+		t.Fatalf("runChildren() error = %v", err)
+	}
+	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(output, want) {
+		t.Errorf("output = %q, want it to contain the page-id form %q", output, want)
 	}
 }
 
