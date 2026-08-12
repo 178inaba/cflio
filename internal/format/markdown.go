@@ -214,7 +214,7 @@ func isInlineElement(n *node) bool {
 		}
 	case "ac":
 		switch n.local {
-		case "link", "image":
+		case "link", "image", "emoticon":
 			return true
 		}
 	}
@@ -541,6 +541,8 @@ func (r *renderer) inlineNode(n *node) string {
 			return r.link(n)
 		case "image":
 			return r.image(n)
+		case "emoticon":
+			return emoticon(n)
 		}
 	}
 	if n.space == "" {
@@ -617,6 +619,24 @@ func (r *renderer) link(n *node) string {
 		return escapeText(target.attr["filename"])
 	}
 	return body
+}
+
+// emoticon renders <ac:emoticon>, which carries its own text: the emoji
+// itself on newer pages, a shortname otherwise. It is worth keeping because
+// an emoticon is often a cell's entire content — a tick in a status column —
+// and it is the one thing that would vanish without leaving a placeholder to
+// count.
+func emoticon(n *node) string {
+	if fallback := n.attr["emoji-fallback"]; fallback != "" {
+		return escapeText(fallback)
+	}
+	if shortname := n.attr["emoji-shortname"]; shortname != "" {
+		return escapeText(shortname)
+	}
+	if name := n.attr["name"]; name != "" {
+		return ":" + escapeText(name) + ":"
+	}
+	return ""
 }
 
 // riChild returns the ri: element naming what a link or an image points at.

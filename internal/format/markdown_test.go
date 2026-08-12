@@ -180,6 +180,41 @@ func TestToMarkdownEscapesOnlyWhatWouldBeMisread(t *testing.T) {
 	}
 }
 
+// Emoticons carry meaning a reader acts on — a tick in a status column is
+// the cell's whole content — and they are the one degradation that would be
+// invisible: they leave no placeholder and nothing to count.
+func TestToMarkdownKeepsEmoticonsAsText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "the emoji fallback is preferred",
+			in:   `<p>done <ac:emoticon ac:name="tick" ac:emoji-shortname=":check_mark:" ac:emoji-fallback="✅"/></p>`,
+			want: "done ✅\n",
+		},
+		{
+			name: "the shortname stands in when there is no fallback",
+			in:   `<p>rated <ac:emoticon ac:name="blue-star" ac:emoji-shortname=":star:"/></p>`,
+			want: "rated :star:\n",
+		},
+		{
+			name: "an old-style emoticon becomes its name in shortname form",
+			in:   `<p>nice <ac:emoticon ac:name="smile"/></p>`,
+			want: "nice :smile:\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToMarkdown(tt.in, Options{}).Markdown; got != tt.want {
+				t.Errorf("ToMarkdown(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToMarkdownKeepsGoingOnAwkwardInput(t *testing.T) {
 	tests := []struct {
 		name string
