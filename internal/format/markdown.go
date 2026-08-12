@@ -263,6 +263,13 @@ func (r *renderer) block(n *node) ([]block, bool) {
 		return quote(r.blocks(n.children)), true
 	case "pre":
 		return []block{{text: fence("", rawText(n))}}, true
+	case "div", "dl", "dt", "dd":
+		// Containers with no Markdown of their own, recognised anyway so
+		// they end the paragraph they interrupt. Splicing them into the
+		// surrounding text like an unknown inline element would run the
+		// words of two blocks together, which loses content as surely as
+		// dropping it — pasted HTML brings these in regularly.
+		return r.blocks(n.children), true
 	}
 	return nil, false
 }
@@ -290,9 +297,12 @@ func listBlock(items []string) []block {
 	return []block{{text: strings.Join(items, "\n"), isList: true}}
 }
 
+// listItem renders one item under marker. li may be nil: a task can arrive
+// without an ac:task-body, and this converter is contracted never to fail on
+// input it did not expect.
 func (r *renderer) listItem(li *node, marker string) string {
 	var body strings.Builder
-	for i, b := range r.blocks(li.children) {
+	for i, b := range r.blocks(li.childNodes()) {
 		if i > 0 {
 			if b.isList {
 				body.WriteString("\n")

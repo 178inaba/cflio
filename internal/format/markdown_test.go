@@ -207,6 +207,22 @@ func TestToMarkdownKeepsGoingOnAwkwardInput(t *testing.T) {
 			want: "kept\n",
 		},
 		{
+			name: "a task with no body does not abort the conversion",
+			in: `<ac:task-list><ac:task><ac:task-id>1</ac:task-id>` +
+				`<ac:task-status>complete</ac:task-status></ac:task></ac:task-list>`,
+			want: "- [x]\n",
+		},
+		{
+			name: "adjacent unknown block containers do not run their text together",
+			in:   "<div>alpha</div><div>beta</div>",
+			want: "alpha\n\nbeta\n",
+		},
+		{
+			name: "a definition list keeps its terms and definitions apart",
+			in:   "<dl><dt>Term</dt><dd>Definition</dd></dl>",
+			want: "Term\n\nDefinition\n",
+		},
+		{
 			name: "plain text outside any element is kept",
 			in:   "just words",
 			want: "just words\n",
