@@ -1,0 +1,2 @@
+<table><tbody><tr><th>Name</th><th>Notes</th></tr><tr><td>alpha</td><td><p>First para</p><p>Second para</p></td></tr><tr><td colspan="2">spans both columns</td></tr></tbody></table>
+<table><tbody><tr><td>no</td><td>header</td></tr><tr><td>a | b</td><td>c</td></tr></tbody></table>

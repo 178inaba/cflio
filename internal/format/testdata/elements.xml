@@ -1,0 +1,14 @@
+<h1>Release notes</h1>
+<p>Plain paragraph with <strong>bold</strong>, <em>italic</em>, <code>inline code</code> and <s>struck</s> text.</p>
+<p>First line<br />Second line</p>
+<p>&nbsp;</p>
+<h2>Lists</h2>
+<ul><li>one</li><li>two<ul><li>nested</li></ul></li></ul>
+<ol><li>first</li><li>second</li></ol>
+<h3>Links and images</h3>
+<p>See <a href="https://example.com/docs">the docs</a>.</p>
+<p><ac:image ac:alt="Diagram"><ri:url ri:value="https://example.com/d.png" /></ac:image></p>
+<p><ac:image><ri:attachment ri:filename="chart.png" /></ac:image></p>
+<hr />
+<blockquote><p>Quoted text</p></blockquote>
+<p>Effects with no Markdown equivalent: <u>underlined</u>, <sub>sub</sub> and <sup>sup</sup>.</p>

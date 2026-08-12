@@ -1,0 +1,5 @@
+<ac:structured-macro ac:name="info"><ac:rich-text-body><p>Heads up.</p></ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="note"><ac:parameter ac:name="title">Careful</ac:parameter><ac:rich-text-body><p>Read this twice.</p></ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="warning"><ac:rich-text-body><p>Do not do that.</p></ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="tip"><ac:rich-text-body><p>Try this instead.</p></ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="panel"><ac:rich-text-body><p>Generic panel.</p><ul><li>with a list</li></ul></ac:rich-text-body></ac:structured-macro>

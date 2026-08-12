@@ -2,11 +2,13 @@
 // API results: storage-XHTML decoding, search highlight-marker stripping and
 // indentation.
 //
-// The storage-to-text conversion here is display-only: it exists because
-// the comment endpoints refuse body-format=view, so comment bodies arrive
-// as storage XHTML and have to be made readable locally. Page bodies never
-// pass through it — those are written to and read from files untouched, so
-// the round-trip stays byte-lossless.
+// Nothing here is part of an edit round-trip. A page body that will be
+// written back is read from and written to a file untouched, so that path
+// stays byte-lossless; the conversions in this package produce output for
+// reading only. StripStorage exists because the comment endpoints refuse
+// body-format=view, so comment bodies arrive as storage XHTML and have to be
+// made readable locally, and ToMarkdown converts a page body for `read
+// --markdown`, whose output carries no sidecar and cannot be updated.
 package format
 
 import (

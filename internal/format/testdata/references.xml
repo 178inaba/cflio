@@ -1,0 +1,4 @@
+<p>Ping <ac:link><ri:user ri:account-id="557058:1a2b-3c4d" /></ac:link> about this.</p>
+<p>See <ac:link><ri:page ri:space-key="DEV" ri:content-title="Deployment Runbook" /></ac:link> for the steps.</p>
+<p>Same space: <ac:link><ri:page ri:content-title="Other Page" /><ac:plain-text-link-body><![CDATA[the other page]]></ac:plain-text-link-body></ac:link>.</p>
+<p>Attachment: <ac:link><ri:attachment ri:filename="spec.pdf" /></ac:link>.</p>
