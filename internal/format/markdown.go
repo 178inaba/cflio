@@ -43,14 +43,24 @@ type Result struct {
 // this converter has never seen still yields the text inside it.
 func ToMarkdown(storage string, opts Options) Result {
 	r := &renderer{opts: opts}
-	markdown := joinBlocks(r.blocks(parseStorage(storage).children))
-	if markdown != "" {
+
+	// Assembled in one pass: appending the trailing newline afterwards would
+	// copy the whole body a second time, and this tool exists for the pages
+	// where that is worth avoiding.
+	var out strings.Builder
+	for i, b := range r.blocks(parseStorage(storage).children) {
+		if i > 0 {
+			out.WriteString("\n\n")
+		}
+		out.WriteString(b.text)
+	}
+	if out.Len() > 0 {
 		// Unlike the storage path, which writes the API's bytes back
 		// verbatim, nothing here has to survive a byte comparison.
-		markdown += "\n"
+		out.WriteByte('\n')
 	}
 
-	result := Result{Markdown: markdown}
+	result := Result{Markdown: out.String()}
 	for name, count := range r.unsupported {
 		result.Unsupported = append(result.Unsupported, name)
 		result.UnsupportedCount += count
@@ -89,14 +99,7 @@ func (n *node) child(space, local string) *node {
 // that a token stream cannot give: a table's header separator depends on its
 // first row, and a list item's indentation on what nests under it.
 func parseStorage(storage string) *node {
-	decoder := xml.NewDecoder(strings.NewReader(storage))
-	// Same configuration as StripStorage, and for the same reasons: storage
-	// is a fragment with undeclared ac:/ri: prefixes and HTML entities, and
-	// HTMLAutoClose would swallow <ac:link>…</ac:link>. It is also what makes
-	// this CDATA-safe — an HTML5 parser reads <![CDATA[…]]> as a bogus comment
-	// and drops every code macro's body.
-	decoder.Strict = false
-	decoder.Entity = xml.HTMLEntity
+	decoder := newStorageDecoder(storage)
 
 	root := &node{}
 	stack := []*node{root}
@@ -179,10 +182,10 @@ func (r *renderer) blocks(nodes []*node) []block {
 	var walk func(nodes []*node)
 	walk = func(nodes []*node) {
 		for _, n := range nodes {
-			switch {
-			case isBlockElement(n):
+			switch rendered, isBlock := r.block(n); {
+			case isBlock:
 				flush()
-				out = append(out, r.block(n)...)
+				out = append(out, rendered...)
 			case n.isText() || isInlineElement(n):
 				paragraph.WriteString(r.inlineNode(n))
 			default:
@@ -199,22 +202,6 @@ func (r *renderer) blocks(nodes []*node) []block {
 	flush()
 
 	return out
-}
-
-func isBlockElement(n *node) bool {
-	switch n.space {
-	case "":
-		switch n.local {
-		case "p", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "ul", "ol", "table", "blockquote", "pre":
-			return true
-		}
-	case "ac":
-		switch n.local {
-		case "structured-macro", "adf-extension", "task-list":
-			return true
-		}
-	}
-	return false
 }
 
 func isInlineElement(n *node) bool {
@@ -234,41 +221,50 @@ func isInlineElement(n *node) bool {
 	return false
 }
 
-func (r *renderer) block(n *node) []block {
+// block renders a block-level element, reporting whether it recognised one.
+// Recognition and rendering are the same switch on purpose: a second list of
+// block tag names would silently disagree with this one, and an element
+// missing from it degrades into the unknown-element path without a word.
+func (r *renderer) block(n *node) ([]block, bool) {
 	if n.space == "ac" {
 		switch n.local {
 		case "structured-macro":
-			return r.macro(n)
+			return r.macro(n), true
 		case "adf-extension":
-			return r.adfExtension(n)
+			return r.adfExtension(n), true
 		case "task-list":
-			return r.taskList(n)
+			return r.taskList(n), true
 		}
-		return nil
+		return nil, false
+	}
+	if n.space != "" {
+		return nil, false
 	}
 
 	switch n.local {
 	case "p":
 		if text := strings.TrimSpace(r.inlineChildren(n)); text != "" {
-			return []block{{text: escapeBlockStarts(text)}}
+			return []block{{text: escapeBlockStarts(text)}}, true
 		}
+		return nil, true
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		if text := strings.TrimSpace(r.inlineChildren(n)); text != "" {
 			level, _ := strconv.Atoi(n.local[1:])
-			return []block{{text: strings.Repeat("#", level) + " " + text}}
+			return []block{{text: strings.Repeat("#", level) + " " + text}}, true
 		}
+		return nil, true
 	case "hr":
-		return []block{{text: "---"}}
+		return []block{{text: "---"}}, true
 	case "ul", "ol":
-		return r.list(n)
+		return r.list(n), true
 	case "table":
-		return r.table(n)
+		return r.table(n), true
 	case "blockquote":
-		return quote(r.blocks(n.children))
+		return quote(r.blocks(n.children)), true
 	case "pre":
-		return []block{{text: fence("", rawText(n))}}
+		return []block{{text: fence("", rawText(n))}}, true
 	}
-	return nil
+	return nil, false
 }
 
 func (r *renderer) list(n *node) []block {
@@ -284,6 +280,10 @@ func (r *renderer) list(n *node) []block {
 		}
 		items = append(items, r.listItem(child, marker))
 	}
+	return listBlock(items)
+}
+
+func listBlock(items []string) []block {
 	if len(items) == 0 {
 		return nil
 	}
@@ -329,10 +329,7 @@ func (r *renderer) taskList(n *node) []block {
 		}
 		items = append(items, r.listItem(task.child("ac", "task-body"), marker))
 	}
-	if len(items) == 0 {
-		return nil
-	}
-	return []block{{text: strings.Join(items, "\n"), isList: true}}
+	return listBlock(items)
 }
 
 // table renders a Markdown table. Structure degrades where Markdown cannot
@@ -405,7 +402,7 @@ func (r *renderer) rowCells(row *node) []string {
 		// A cell is one Markdown table cell however much structure it holds,
 		// so blocks collapse to spaces and pipes are escaped rather than
 		// ending the cell early.
-		text := strings.Join(strings.Fields(joinBlocks(r.blocks(cell.children))), " ")
+		text := strings.TrimSpace(collapseSpace(joinBlocks(r.blocks(cell.children))))
 		texts = append(texts, strings.ReplaceAll(text, "|", `\|`))
 	}
 	return texts
@@ -451,8 +448,13 @@ func (r *renderer) macro(n *node) []block {
 	// declaring "this part is body text" — dropping it would silently delete
 	// everything an expand or a section wraps. Parameters and plain-text
 	// bodies are macro configuration, so they stay out.
-	blocks := []block{{text: "[unsupported macro: " + name + "]"}}
-	return append(blocks, r.blocks(n.child("ac", "rich-text-body").childNodes())...)
+	return r.placeholder("[unsupported macro: "+name+"]", n.child("ac", "rich-text-body"))
+}
+
+// placeholder marks an element this converter cannot represent and keeps
+// whatever body text it wraps.
+func (r *renderer) placeholder(text string, body *node) []block {
+	return append([]block{{text: text}}, r.blocks(body.childNodes())...)
 }
 
 func (r *renderer) panel(n *node, kind string) []block {
@@ -472,8 +474,7 @@ func (r *renderer) panel(n *node, kind string) []block {
 func (r *renderer) adfExtension(n *node) []block {
 	r.unrepresentable("adf-extension")
 
-	blocks := []block{{text: "[unsupported adf-extension]"}}
-	return append(blocks, r.blocks(n.child("ac", "adf-fallback").childNodes())...)
+	return r.placeholder("[unsupported adf-extension]", n.child("ac", "adf-fallback"))
 }
 
 // childNodes is nil-safe so callers can reach into a body element that may
@@ -576,35 +577,46 @@ func (r *renderer) anchor(n *node) string {
 func (r *renderer) link(n *node) string {
 	body := r.linkBody(n)
 
-	for _, child := range n.children {
-		if child.space != "ri" {
-			continue
+	target := riChild(n)
+	if target == nil {
+		// An anchor-only link, which names no resource of its own.
+		return body
+	}
+
+	switch target.local {
+	case "user":
+		id := target.attr["account-id"]
+		if name := r.opts.UserNames[id]; name != "" {
+			return "@" + escapeText(name)
 		}
-		switch child.local {
-		case "user":
-			id := child.attr["account-id"]
-			if name := r.opts.UserNames[id]; name != "" {
-				return "@" + escapeText(name)
-			}
-			return "@" + escapeText(id)
-		case "page":
-			title := child.attr["content-title"]
-			text := body
-			if text == "" {
-				text = escapeText(title)
-			}
-			if url := r.opts.PageURLs[PageRef{SpaceKey: child.attr["space-key"], Title: title}]; url != "" {
-				return "[" + text + "](" + url + ")"
-			}
-			return text
-		case "attachment":
-			if body != "" {
-				return body
-			}
-			return escapeText(child.attr["filename"])
+		return "@" + escapeText(id)
+	case "page":
+		title := target.attr["content-title"]
+		text := body
+		if text == "" {
+			text = escapeText(title)
 		}
+		if url := r.opts.PageURLs[PageRef{SpaceKey: target.attr["space-key"], Title: title}]; url != "" {
+			return "[" + text + "](" + url + ")"
+		}
+		return text
+	case "attachment":
+		if body != "" {
+			return body
+		}
+		return escapeText(target.attr["filename"])
 	}
 	return body
+}
+
+// riChild returns the ri: element naming what a link or an image points at.
+func riChild(n *node) *node {
+	for _, child := range n.children {
+		if child.space == "ri" {
+			return child
+		}
+	}
+	return nil
 }
 
 func (r *renderer) linkBody(n *node) string {
@@ -618,15 +630,12 @@ func (r *renderer) linkBody(n *node) string {
 // offline, and cflio does not support attachments, so the filename is the
 // useful thing to keep.
 func (r *renderer) image(n *node) string {
-	for _, child := range n.children {
-		if child.space != "ri" {
-			continue
-		}
-		switch child.local {
+	if source := riChild(n); source != nil {
+		switch source.local {
 		case "url":
-			return "![" + escapeText(n.attr["alt"]) + "](" + child.attr["value"] + ")"
+			return "![" + escapeText(n.attr["alt"]) + "](" + source.attr["value"] + ")"
 		case "attachment":
-			return escapeText(child.attr["filename"])
+			return escapeText(source.attr["filename"])
 		}
 	}
 	return escapeText(n.attr["alt"])
@@ -640,6 +649,12 @@ func rawText(n *node) string {
 	}
 	if n.isText() {
 		return n.text
+	}
+	// A code macro's body is one CDATA run, so the decoder hands it over as a
+	// single text child. Returning it directly saves copying what is often
+	// the largest string on the page.
+	if len(n.children) == 1 && n.children[0].isText() {
+		return n.children[0].text
 	}
 
 	var out strings.Builder
