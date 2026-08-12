@@ -1,0 +1,4 @@
+<ac:structured-macro ac:name="expand" ac:local-id="9f2e1d3c"><ac:parameter ac:name="title">More detail</ac:parameter><ac:rich-text-body><p>Text that must survive the placeholder.</p></ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">ABC-123</ac:parameter></ac:structured-macro>
+<ac:adf-extension><ac:adf-node type="panel"><ac:adf-attribute key="panel-type">info</ac:adf-attribute><ac:adf-content><p>ADF body that has no storage semantics</p></ac:adf-content></ac:adf-node><ac:adf-fallback><p>Fallback rendering of the panel.</p></ac:adf-fallback></ac:adf-extension>
+<ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">ABC-456</ac:parameter></ac:structured-macro>

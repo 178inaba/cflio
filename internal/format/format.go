@@ -2,11 +2,13 @@
 // API results: storage-XHTML decoding, search highlight-marker stripping and
 // indentation.
 //
-// The storage-to-text conversion here is display-only: it exists because
-// the comment endpoints refuse body-format=view, so comment bodies arrive
-// as storage XHTML and have to be made readable locally. Page bodies never
-// pass through it — those are written to and read from files untouched, so
-// the round-trip stays byte-lossless.
+// Nothing here is part of an edit round-trip. A page body that will be
+// written back is read from and written to a file untouched, so that path
+// stays byte-lossless; the conversions in this package produce output for
+// reading only. StripStorage exists because the comment endpoints refuse
+// body-format=view, so comment bodies arrive as storage XHTML and have to be
+// made readable locally, and ToMarkdown converts a page body for `read
+// --markdown`, whose output carries no sidecar and cannot be updated.
 package format
 
 import (
@@ -31,22 +33,32 @@ var blockElements = map[string]bool{
 	"blockquote": true, "pre": true,
 }
 
+// newStorageDecoder configures a decoder for storage XHTML. Every reader of
+// a storage body goes through here so the settings cannot drift apart.
+//
+// Storage format is a fragment, not a document: it uses undeclared ac:/ri:
+// prefixes and HTML entities like &nbsp;. Non-strict mode with the HTML
+// entity table copes with both, and also closes stray tags so malformed
+// markup does not discard the rest of the body. It is what makes CDATA
+// sections survive, too: an HTML5 parser reads <![CDATA[…]]> as a bogus
+// comment and drops every code macro's body.
+//
+// xml.HTMLAutoClose is deliberately NOT set: it treats every element whose
+// local name is an HTML void element as self-closing, which swallows
+// Confluence's <ac:link>…</ac:link> — the wrapper around every mention and
+// page link — and drops everything after it.
+func newStorageDecoder(storage string) *xml.Decoder {
+	decoder := xml.NewDecoder(strings.NewReader(storage))
+	decoder.Strict = false
+	decoder.Entity = xml.HTMLEntity
+	return decoder
+}
+
 // StripStorage turns storage XHTML into readable plain text on a
 // best-effort basis: text is kept, block elements become line breaks, list
 // items get a bullet, and user mentions become their account ID.
 func StripStorage(storage string) string {
-	decoder := xml.NewDecoder(strings.NewReader(storage))
-	// Storage format is a fragment, not a document: it uses undeclared
-	// ac:/ri: prefixes and HTML entities like &nbsp;. Non-strict mode with
-	// the HTML entity table copes with both, and also closes stray tags so
-	// malformed markup does not discard the rest of a comment.
-	//
-	// xml.HTMLAutoClose is deliberately NOT set: it treats every element
-	// whose local name is an HTML void element as self-closing, which
-	// swallows Confluence's <ac:link>…</ac:link> — the wrapper around every
-	// mention and page link — and drops everything after it.
-	decoder.Strict = false
-	decoder.Entity = xml.HTMLEntity
+	decoder := newStorageDecoder(storage)
 
 	var out strings.Builder
 	for {

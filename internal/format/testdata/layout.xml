@@ -1,0 +1,3 @@
+<ac:layout><ac:layout-section ac:type="two_equal" ac:breakout-mode="default"><ac:layout-cell><p>Left column text.</p></ac:layout-cell><ac:layout-cell><p>Right column text.</p></ac:layout-cell></ac:layout-section></ac:layout>
+<p>A paragraph with <ac:inline-comment-marker ac:ref="7c1f4a2b">an inline comment anchored on it</ac:inline-comment-marker> in the middle.</p>
+<p ac:local-id="a1b2c3d4">A paragraph carrying attribute noise.</p>

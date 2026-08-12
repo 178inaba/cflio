@@ -66,7 +66,7 @@ func TestWriteRecordsEveryRequiredField(t *testing.T) {
 	}
 }
 
-func TestLoadMissingSidecarSaysToReadFirst(t *testing.T) {
+func TestLoadMissingSidecarPointsAtAReadThatProducesOne(t *testing.T) {
 	body := filepath.Join(t.TempDir(), "page.xml")
 	if err := os.WriteFile(body, []byte("<p>hi</p>"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -77,12 +77,14 @@ func TestLoadMissingSidecarSaysToReadFirst(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for a missing sidecar")
 	}
 	// Writing to a page that was never read is structurally impossible, so
-	// the error has to point at the way out.
-	if !strings.Contains(err.Error(), "cflio read") {
-		t.Errorf("Load() error = %q, want it to point at `cflio read`", err)
-	}
-	if !strings.Contains(err.Error(), Path(body)) {
-		t.Errorf("Load() error = %q, want it to name the expected sidecar path", err)
+	// the error has to point at the way out. Naming --markdown is what makes
+	// that way out reachable: a plain "run `cflio read`" is satisfied by
+	// re-running the Markdown read that produced this sidecar-less file, and
+	// the caller lands right back here.
+	for _, want := range []string{"cflio read", "--markdown", Path(body)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error = %q, want it to mention %q", err, want)
+		}
 	}
 }
 

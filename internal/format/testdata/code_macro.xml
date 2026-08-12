@@ -1,0 +1,4 @@
+<ac:structured-macro ac:name="code" ac:schema-version="1" ac:local-id="e5f9a1b2"><ac:parameter ac:name="language">go</ac:parameter><ac:plain-text-body><![CDATA[func main() {
+	fmt.Println("`hi`")
+}]]></ac:plain-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[no language parameter here]]></ac:plain-text-body></ac:structured-macro>

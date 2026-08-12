@@ -14,9 +14,10 @@ the diff costs tokens.
 
 - **The body never passes through the model.** Bodies go to and from files; stdout carries metadata
   and exploration results only.
-- **Lossless round-trip.** The body is stored and sent as the server's own `storage` representation,
-  byte for byte. There is no format converter, so macros and layout you did not touch come back
-  unchanged.
+- **Lossless round-trip.** A body that will be written back is stored and sent as the server's own
+  `storage` representation, byte for byte. Nothing converts it on the way through, so macros and
+  layout you did not touch come back unchanged. (`read --markdown` converts a body for *reading*;
+  that file is deliberately not updatable.)
 - **Never silently overwrite someone else's edit.** Updates are locked against the version captured
   at read time, and there is no `--force`.
 
@@ -54,6 +55,9 @@ cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+No
 cflio update -f page.xml
 cflio update -f page.xml --message 'Clarify the rollback steps'
 
+# Just reading it? Get Markdown instead of storage XHTML
+cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes --markdown
+
 # Explore
 cflio search 'type = page and space = "DEV" and text ~ "release notes"'
 cflio children 123456
@@ -78,6 +82,30 @@ updating the same file without re-reading.
 
 Every version `cflio` writes carries a message (`Updated via cflio` by default, `--message` to
 override) so agent edits are identifiable in the page history.
+
+### Reading a page without editing it
+
+Storage XHTML is the right representation for editing and the wrong one for reading: `ac:` macros,
+`ri:` references and `local-id` noise are most of the bytes. `read --markdown` converts the body to
+Markdown locally — the request still asks the API for `storage`, which is the only representation
+that carries macros and code bodies intact — and writes `<page-id>.md` by default.
+
+That file has **no sidecar** and cannot be written back: `update` refuses it, by design. So use
+`--markdown` when a page is only going to be read, and the storage default when it might be edited.
+The differing default filenames mean reading a page both ways leaves two files rather than one
+overwriting the other.
+
+The conversion is best-effort and says where it fell short. Unknown elements pass their text
+through, tables keep every cell's content even when the structure cannot survive, and macros the
+converter does not handle become a grep-able placeholder followed by whatever body text they wrap.
+Anything that became a placeholder is counted in the command's output:
+
+```
+Degraded: 3 (adf-extension, jira)
+```
+
+If that line is absent, nothing was lost. If it is present and you need the part that degraded,
+read the page again without `--markdown`.
 
 ### Multiple sites
 
@@ -118,9 +146,12 @@ reach for `cflio`. Install it by either:
 
 - **Confluence Cloud only.** Data Center and Server are out of scope.
 - **Comment display is best-effort.** The comment API offers no rendered representation, so comment
-  bodies are converted from storage XHTML to plain text locally. This affects display only: page
-  bodies are never converted. `comments` shows root comments and their direct replies; replies to
-  replies are not fetched. Authors appear as Atlassian account IDs.
+  bodies are converted from storage XHTML to plain text locally. `comments` shows root comments and
+  their direct replies; replies to replies are not fetched. Authors appear as Atlassian account IDs.
+- **Local conversion never feeds an update.** Both converted outputs — comment bodies and
+  `read --markdown` — are for reading only. A body that will be written back is never converted.
+  Mentions and page links in Markdown mode render as account IDs and page titles, since a page
+  carries no resolved names or URLs and the conversion makes no requests.
 - **Short links** (`/wiki/x/…`) are not resolved — open one in a browser and pass the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - Creating, deleting and moving pages, posting comments, attachments, and ADF (the representation

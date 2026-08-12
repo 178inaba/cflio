@@ -37,8 +37,13 @@ func Load(bodyPath string) (Meta, error) {
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return Meta{}, fmt.Errorf("no sidecar at %s: run `cflio read` on the page first, "+
-			"then edit the downloaded file and update it", path)
+		// --markdown is named because it is the reachable way to end up
+		// here: that mode writes no sidecar by design, and an instruction to
+		// just "run `cflio read`" is satisfied by re-running the same
+		// Markdown read, which lands the caller back in this error.
+		return Meta{}, fmt.Errorf("no sidecar at %s: the file was not produced by `cflio read`, "+
+			"or it was read with --markdown, whose output carries no sidecar and cannot be written "+
+			"back; run `cflio read` on the page without --markdown, edit that file, and update it", path)
 	}
 	if err != nil {
 		return Meta{}, fmt.Errorf("read sidecar %s: %w", path, err)
