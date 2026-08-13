@@ -142,6 +142,18 @@ reach for `cflio`. Install it by either:
 - using a skill installer that consumes GitHub repos directly, e.g.
   [`npx skills`](https://www.npmjs.com/package/skills).
 
+## Development
+
+```sh
+go test -race ./...
+
+# Lint runs in Docker so the version matches CI — see compose.yaml
+docker compose run --rm lint
+
+# Let golangci-lint apply the fixes it can make itself
+docker compose run --rm lint --fix
+```
+
 ## Notes and limitations
 
 - **Confluence Cloud only.** Data Center and Server are out of scope.
