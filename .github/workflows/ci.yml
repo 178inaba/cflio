@@ -37,7 +37,8 @@ jobs:
       # would leave this job green and silently unpinned. Any other malformed
       # value already makes the action throw. This needs nothing but the
       # checkout, so it runs before the toolchain install.
-      - id: version
+      - name: Read the golangci-lint version from compose.yaml
+        id: version
         run: |
           image=$(yq '.services.lint.image' compose.yaml)
           version=${image##*:}
