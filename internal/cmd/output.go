@@ -36,6 +36,14 @@ func validateLimit(limit int) error {
 // has to name the bad format, not the missing file.
 func addFormatFlag(cmd *cobra.Command, outFormat *string) {
 	cmd.Flags().StringVar(outFormat, "format", formatMarkdown, `output format: "md" or "json"`)
+
+	// The check owns PreRunE outright. Overwriting one that a command had
+	// already set would silently drop whichever of the two lost, and the
+	// loss would not show up until someone passed a bad --format, so fail
+	// while the tree is being built instead.
+	if cmd.PreRunE != nil {
+		panic(fmt.Sprintf("addFormatFlag: %s already sets PreRunE", cmd.Name()))
+	}
 	cmd.PreRunE = func(*cobra.Command, []string) error {
 		if *outFormat != formatMarkdown && *outFormat != formatJSON {
 			return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, *outFormat)

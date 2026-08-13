@@ -81,7 +81,12 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, erro
 	root.SetErr(out)
 	root.SetIn(strings.NewReader(stdin))
 	// Never nil: cobra falls back to os.Args[1:] for a nil argument list,
-	// which under `go test` means the -test.* flags.
+	// which under `go test` means the -test.* flags. A caller that passes
+	// no arguments at all — to exercise bare `cflio` — would hit exactly
+	// that, so the variadic's nil is normalised here.
+	if args == nil {
+		args = []string{}
+	}
 	root.SetArgs(args)
 
 	err := root.ExecuteContext(t.Context())
