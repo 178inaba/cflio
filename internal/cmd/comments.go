@@ -15,23 +15,31 @@ import (
 // comment costs an extra request for its replies.
 const defaultCommentsLimit = 25
 
-var commentsLimitFlag int
+func newCommentsCmd(g *globalFlags) *cobra.Command {
+	var (
+		limit     int
+		outFormat string
+	)
 
-var commentsCmd = &cobra.Command{
-	Use:   "comments <page-url|page-id>",
-	Short: "Read a page's footer and inline comments",
-	Long: `Print a page's footer comments and inline comments, oldest first, with
+	cmd := &cobra.Command{
+		Use:   "comments <page-url|page-id>",
+		Short: "Read a page's footer and inline comments",
+		Long: `Print a page's footer comments and inline comments, oldest first, with
 their direct replies. Inline comments also show the text they are anchored
 to and whether they are resolved.
 
 Read-only: cflio never posts or replies.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runComments,
-}
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runComments(cmd, args, g, limit, outFormat)
+		},
+	}
 
-func init() {
-	commentsCmd.Flags().IntVar(&commentsLimitFlag, "limit", defaultCommentsLimit,
+	cmd.Flags().IntVar(&limit, "limit", defaultCommentsLimit,
 		"maximum number of root comments per section, and replies per comment")
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
 }
 
 // commentItem is one rendered comment. Author is an Atlassian account ID:
@@ -54,8 +62,8 @@ type commentSection struct {
 	Notice   string        `json:"notice,omitempty"`
 }
 
-func runComments(cmd *cobra.Command, args []string) error {
-	if err := validateLimit(commentsLimitFlag); err != nil {
+func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+	if err := validateLimit(limit); err != nil {
 		return err
 	}
 
@@ -64,12 +72,12 @@ func runComments(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, _, err := resolveClient(ref.Host)
+	client, _, err := resolveClient(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext(cmd)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	sections := make([]commentSection, 0, 2)
@@ -81,7 +89,7 @@ func runComments(cmd *cobra.Command, args []string) error {
 		{confluence.FooterComments, "Footer comments", "footer_comments"},
 		{confluence.InlineComments, "Inline comments", "inline_comments"},
 	} {
-		section, err := collectComments(ctx, client, kind.kind, ref.PageID)
+		section, err := collectComments(ctx, client, kind.kind, ref.PageID, limit)
 		if err != nil {
 			return err
 		}
@@ -89,11 +97,11 @@ func runComments(cmd *cobra.Command, args []string) error {
 		sections = append(sections, section)
 	}
 
-	return writeComments(cmd, sections)
+	return writeComments(cmd, outFormat, sections)
 }
 
-func collectComments(ctx context.Context, client *confluence.Client, kind confluence.CommentKind, pageID string) (commentSection, error) {
-	roots, hasMore, err := client.PageComments(ctx, kind, pageID, commentsLimitFlag)
+func collectComments(ctx context.Context, client *confluence.Client, kind confluence.CommentKind, pageID string, limit int) (commentSection, error) {
+	roots, hasMore, err := client.PageComments(ctx, kind, pageID, limit)
 	if err != nil {
 		return commentSection{}, err
 	}
@@ -109,7 +117,7 @@ func collectComments(ctx context.Context, client *confluence.Client, kind conflu
 		// The page-level endpoints return root comments only, so replies
 		// have to be fetched per comment or the answers to every question
 		// would silently go missing.
-		replies, moreReplies, err := client.CommentReplies(ctx, kind, root.ID, commentsLimitFlag)
+		replies, moreReplies, err := client.CommentReplies(ctx, kind, root.ID, limit)
 		if err != nil {
 			return commentSection{}, err
 		}
@@ -139,8 +147,8 @@ func commentItemFrom(c confluence.Comment) commentItem {
 	}
 }
 
-func writeComments(cmd *cobra.Command, sections []commentSection) error {
-	if formatFlag == "json" {
+func writeComments(cmd *cobra.Command, outFormat string, sections []commentSection) error {
+	if outFormat == formatJSON {
 		payload := make(map[string]any, len(sections))
 		for _, section := range sections {
 			payload[section.Key] = section

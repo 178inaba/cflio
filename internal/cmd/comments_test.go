@@ -7,16 +7,9 @@ import (
 	"testing"
 )
 
-func runCommentsCmd(t *testing.T, arg string, limit int) (string, error) {
+func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	original := commentsLimitFlag
-	commentsLimitFlag = limit
-	t.Cleanup(func() { commentsLimitFlag = original })
-
-	cmd, out := newTestCommand(t)
-	err := runComments(cmd, []string{arg})
-	return out.String(), err
+	return runLimitCmd(t, "comments", arg, limit, extra...)
 }
 
 // commentsAPI routes the four calls comments makes: the two root listings
@@ -49,7 +42,6 @@ const emptyComments = `{"results":[],"_links":{}}`
 
 func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	footer := `{"results":[{"id":"f1","version":{"createdAt":"2026-01-01T10:00:00Z","authorId":"acc-author"},` +
@@ -66,7 +58,7 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 
 	for _, want := range []string{
@@ -95,7 +87,6 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 
 func TestCommentsIndentsRepliesUnderTheirParent(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},` +
@@ -108,7 +99,7 @@ func TestCommentsIndentsRepliesUnderTheirParent(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if !strings.Contains(output, "\n  - acc-2") {
 		t.Errorf("output = %q, want the reply indented under its parent", output)
@@ -117,7 +108,6 @@ func TestCommentsIndentsRepliesUnderTheirParent(t *testing.T) {
 
 func TestCommentsRequestsRepliesOnlyForRoots(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},"body":{"storage":{"value":"<p>a</p>"}}},` +
@@ -133,7 +123,7 @@ func TestCommentsRequestsRepliesOnlyForRoots(t *testing.T) {
 	})
 
 	if _, err := runCommentsCmd(t, testPageURL, 25); err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if len(replyCalls) != 2 {
 		t.Errorf("reply requests = %v, want one per root comment", replyCalls)
@@ -147,14 +137,13 @@ func TestCommentsRequestsRepliesOnlyForRoots(t *testing.T) {
 
 func TestCommentsWithNone(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, commentsAPI(t, emptyComments, emptyComments, nil))
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if strings.Count(output, "None.") != 2 {
 		t.Errorf("output = %q, want both sections to report none", output)
@@ -163,7 +152,6 @@ func TestCommentsWithNone(t *testing.T) {
 
 func TestCommentsReportsTruncation(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},"body":{"storage":{"value":"<p>a</p>"}}},` +
@@ -172,7 +160,7 @@ func TestCommentsReportsTruncation(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 1)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if !strings.Contains(output, "--limit") {
 		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
@@ -181,7 +169,6 @@ func TestCommentsReportsTruncation(t *testing.T) {
 
 func TestCommentsJSONOutput(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
 	seedProfile(t, "example", testSite)
 
 	inline := `{"results":[{"id":"i1","version":{"createdAt":"2026-01-02T10:00:00Z","authorId":"acc-1"},` +
@@ -193,9 +180,9 @@ func TestCommentsJSONOutput(t *testing.T) {
 	}
 	startAPI(t, commentsAPI(t, emptyComments, inline, replies))
 
-	output, err := runCommentsCmd(t, testPageURL, 25)
+	output, err := runCommentsCmd(t, testPageURL, 25, "--format", "json")
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 
 	var got struct {
@@ -230,7 +217,6 @@ func TestCommentsJSONOutput(t *testing.T) {
 
 func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +224,6 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	})
 
 	if _, err := runCommentsCmd(t, testPageURL, maxLimit+1); err == nil {
-		t.Error("runComments() error = nil for an oversized --limit, want an error")
+		t.Error("comments error = nil for an oversized --limit, want an error")
 	}
 }

@@ -7,16 +7,9 @@ import (
 	"testing"
 )
 
-func runChildrenCmd(t *testing.T, arg string, limit int) (string, error) {
+func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	original := childrenLimitFlag
-	childrenLimitFlag = limit
-	t.Cleanup(func() { childrenLimitFlag = original })
-
-	cmd, out := newTestCommand(t)
-	err := runChildren(cmd, []string{arg})
-	return out.String(), err
+	return runLimitCmd(t, "children", arg, limit, extra...)
 }
 
 // childrenAPI answers the direct-children listing with childrenJSON and the
@@ -48,7 +41,6 @@ func childrenAPI(t *testing.T, childrenJSON, parentWebUI string) (*int, http.Han
 
 func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	lookups, handler := childrenAPI(t, `{"results":[
@@ -60,7 +52,7 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 
 	if strings.Contains(output, "A Whiteboard") {
@@ -86,7 +78,6 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 
 func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	_, handler := childrenAPI(t, `{"results":[
@@ -97,7 +88,7 @@ func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 1)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if !strings.Contains(output, "--limit") {
 		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
@@ -113,7 +104,6 @@ func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 
 func TestChildrenAcceptsABarePageID(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	var gotPath string
@@ -127,7 +117,7 @@ func TestChildrenAcceptsABarePageID(t *testing.T) {
 	})
 
 	if _, err := runChildrenCmd(t, "123456", 100); err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if gotPath != "/wiki/api/v2/pages/123456/direct-children" {
 		t.Errorf("path = %q, want the page id from the bare argument", gotPath)
@@ -136,7 +126,6 @@ func TestChildrenAcceptsABarePageID(t *testing.T) {
 
 func TestChildrenJSONOutput(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
 	seedProfile(t, "example", testSite)
 
 	_, handler := childrenAPI(t, `{"results":[
@@ -144,9 +133,9 @@ func TestChildrenJSONOutput(t *testing.T) {
 	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 100)
+	output, err := runChildrenCmd(t, testPageURL, 100, "--format", "json")
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 
 	var got struct {
@@ -170,7 +159,6 @@ func TestChildrenJSONOutput(t *testing.T) {
 
 func TestChildrenWithNoChildren(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	lookups, handler := childrenAPI(t, `{"results":[],"_links":{}}`, testPageWebUI)
@@ -178,7 +166,7 @@ func TestChildrenWithNoChildren(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if !strings.Contains(output, "No child pages.") {
 		t.Errorf("output = %q, want it to say there are none", output)
@@ -192,7 +180,6 @@ func TestChildrenWithNoChildren(t *testing.T) {
 
 func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// The real API always returns a web link for a page, so this degraded
@@ -205,7 +192,7 @@ func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(output, want) {
 		t.Errorf("output = %q, want it to contain the page-id form %q", output, want)
@@ -214,7 +201,6 @@ func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 
 func TestChildrenRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +208,6 @@ func TestChildrenRejectsAnOutOfRangeLimit(t *testing.T) {
 	})
 
 	if _, err := runChildrenCmd(t, testPageURL, 0); err == nil {
-		t.Error("runChildren() error = nil for --limit 0, want an error")
+		t.Error("children error = nil for --limit 0, want an error")
 	}
 }

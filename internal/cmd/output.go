@@ -12,11 +12,44 @@ import (
 // of paged requests against the invocation's deadline.
 const maxLimit = 1000
 
+// The two --format values.
+const (
+	formatMarkdown = "md"
+	formatJSON     = "json"
+)
+
 func validateLimit(limit int) error {
 	if limit < 1 || limit > maxLimit {
 		return fmt.Errorf("invalid --limit %d: must be between 1 and %d", limit, maxLimit)
 	}
 	return nil
+}
+
+// addFormatFlag registers --format on a single command, along with the check
+// that rejects an unknown value. It is registered per command rather than on
+// the root so it never appears on `auth` and `profile`, which would silently
+// ignore it; pairing the two here means a command cannot take the flag
+// without also validating it.
+//
+// The check hangs off PreRunE rather than starting RunE because cobra
+// validates required flags in between: `update --format bogus` with no -f
+// has to name the bad format, not the missing file.
+func addFormatFlag(cmd *cobra.Command, outFormat *string) {
+	cmd.Flags().StringVar(outFormat, "format", formatMarkdown, `output format: "md" or "json"`)
+
+	// The check owns PreRunE outright. Overwriting one that a command had
+	// already set would silently drop whichever of the two lost, and the
+	// loss would not show up until someone passed a bad --format, so fail
+	// while the tree is being built instead.
+	if cmd.PreRunE != nil {
+		panic(fmt.Sprintf("addFormatFlag: %s already sets PreRunE", cmd.Name()))
+	}
+	cmd.PreRunE = func(*cobra.Command, []string) error {
+		if *outFormat != formatMarkdown && *outFormat != formatJSON {
+			return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, *outFormat)
+		}
+		return nil
+	}
 }
 
 // writeJSON renders payload as the --format json output. Every command's
@@ -39,8 +72,8 @@ type markdownItem interface {
 
 // writeList renders items per --format. name labels the JSON array and the
 // "no results" line, e.g. "results" or "child pages".
-func writeList[T markdownItem](cmd *cobra.Command, name string, items []T, notice string) error {
-	if formatFlag == "json" {
+func writeList[T markdownItem](cmd *cobra.Command, outFormat, name string, items []T, notice string) error {
+	if outFormat == formatJSON {
 		return writeJSON(cmd, listPayload(name, items, notice))
 	}
 

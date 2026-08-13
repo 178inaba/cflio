@@ -15,23 +15,27 @@ import (
 
 const apiTokenURL = "https://id.atlassian.com/manage-profile/security/api-tokens"
 
-var authCmd = &cobra.Command{
-	Use:   "auth",
-	Short: "Manage authentication",
+func newAuthCmd(g *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Manage authentication",
+	}
+	cmd.AddCommand(newAuthLoginCmd(g))
+	return cmd
 }
 
-var authLoginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Register a Confluence Cloud site interactively",
-	Args:  cobra.NoArgs,
-	RunE:  runAuthLogin,
+func newAuthLoginCmd(g *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "login",
+		Short: "Register a Confluence Cloud site interactively",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuthLogin(cmd, g)
+		},
+	}
 }
 
-func init() {
-	authCmd.AddCommand(authLoginCmd)
-}
-
-func runAuthLogin(cmd *cobra.Command, args []string) error {
+func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	in := bufio.NewReader(cmd.InOrStdin())
 	out := cmd.OutOrStdout()
 
@@ -67,7 +71,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 
 	// The deadline starts here rather than at the top of RunE: the prompts
 	// above are human-paced, and a slow typist should not hit --timeout.
-	ctx, cancel := commandContext(cmd)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	user, err := client.CurrentUser(ctx)

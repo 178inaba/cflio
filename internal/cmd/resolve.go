@@ -18,13 +18,13 @@ var clientFactory = defaultClientFactory
 // resolveClient picks the profile for this invocation and builds a client
 // for it. urlHost is the host of the page the command addresses, or "" for
 // commands that name no particular site (search, bare page IDs).
-func resolveClient(urlHost string) (*confluence.Client, config.Credentials, error) {
+func resolveClient(profile, urlHost string) (*confluence.Client, config.Credentials, error) {
 	file, err := config.Load()
 	if err != nil {
 		return nil, config.Credentials{}, err
 	}
 
-	creds, err := config.Resolve(file, profileFlag, urlHost, os.Getenv)
+	creds, err := config.Resolve(file, profile, urlHost, os.Getenv)
 	if err != nil {
 		return nil, config.Credentials{}, err
 	}

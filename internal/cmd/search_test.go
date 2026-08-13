@@ -1,27 +1,21 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 )
 
-func runSearchCmd(t *testing.T, cql string, limit int) (string, error) {
+func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	original := searchLimitFlag
-	searchLimitFlag = limit
-	t.Cleanup(func() { searchLimitFlag = original })
-
-	cmd, out := newTestCommand(t)
-	err := runSearch(cmd, []string{cql})
-	return out.String(), err
+	return runLimitCmd(t, "search", cql, limit, extra...)
 }
 
 func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	cql := `type = page and space = "DEV" and text ~ "release notes"`
@@ -35,7 +29,7 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 
 	output, err := runSearchCmd(t, cql, 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if gotCQL != cql {
 		t.Errorf("cql = %q, want it passed through unchanged as %q", gotCQL, cql)
@@ -49,7 +43,6 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 
 func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +52,7 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 1)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if !strings.Contains(output, "4 more results") {
 		t.Errorf("output = %q, want a notice saying 4 results remain (5 total - 1 shown)", output)
@@ -71,7 +64,6 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 
 func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// totalSize claims far more than the server will actually hand back.
@@ -88,7 +80,7 @@ func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "more results") {
 		t.Errorf("output = %q, want no notice when fewer than --limit results came back", output)
@@ -97,7 +89,6 @@ func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 
 func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +98,7 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "more results") {
 		t.Errorf("output = %q, want no truncation notice", output)
@@ -116,7 +107,6 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 
 func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +118,7 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 
 	output, err := runSearchCmd(t, "release", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "@@@hl@@@") || strings.Contains(output, "@@@endhl@@@") {
 		t.Errorf("output = %q, want the highlight markers stripped", output)
@@ -145,7 +135,6 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 
 func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +144,7 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if !strings.Contains(output, "https://elsewhere.example/p/1") {
 		t.Errorf("output = %q, want an already-absolute url left as-is", output)
@@ -167,7 +156,6 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 
 func TestSearchJSONOutput(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -175,9 +163,9 @@ func TestSearchJSONOutput(t *testing.T) {
 			`"totalSize":3}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 1)
+	output, err := runSearchCmd(t, "type = page", 1, "--format", "json")
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 
 	var got struct {
@@ -213,16 +201,15 @@ func TestSearchEmptyResults(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", tt.format)
 			seedProfile(t, "example", testSite)
 
 			startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
 			})
 
-			output, err := runSearchCmd(t, "type = page", 20)
+			output, err := runSearchCmd(t, "type = page", 20, "--format", tt.format)
 			if err != nil {
-				t.Fatalf("runSearch() error = %v", err)
+				t.Fatalf("search error = %v", err)
 			}
 			if !strings.Contains(output, tt.want) {
 				t.Errorf("output = %q, want it to contain %q", output, tt.want)
@@ -233,7 +220,6 @@ func TestSearchEmptyResults(t *testing.T) {
 
 func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -242,14 +228,31 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 
 	for _, limit := range []int{0, -1, maxLimit + 1} {
 		if _, err := runSearchCmd(t, "type = page", limit); err == nil {
-			t.Errorf("runSearch() error = nil for --limit %d, want an error", limit)
+			t.Errorf("search error = nil for --limit %d, want an error", limit)
 		}
+	}
+}
+
+// TestSearchHonoursTheTimeoutFlag covers the root persistent flags reaching
+// a request: their values are only final after parsing, so a constructor
+// that read them while building the tree would leave every invocation on
+// the default deadline.
+func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the API was called despite an already-expired deadline")
+	})
+
+	_, err := runSearchCmd(t, "type = page", 20, "--timeout=1ns")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
 	}
 }
 
 func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
@@ -260,7 +263,7 @@ func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	})
 
 	if _, err := runSearchCmd(t, "type = page", 20); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if gotUser == "" {
 		t.Error("search sent no credentials; it should fall back to the default profile")

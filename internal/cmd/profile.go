@@ -7,28 +7,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var profileCmd = &cobra.Command{
-	Use:   "profile",
-	Short: "Manage named site profiles",
+func newProfileCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "profile",
+		Short: "Manage named site profiles",
+	}
+	cmd.AddCommand(newProfileListCmd(), newProfileUseCmd())
+	return cmd
 }
 
-var profileListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List registered profiles",
-	Args:  cobra.NoArgs,
-	RunE:  runProfileList,
+func newProfileListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List registered profiles",
+		Args:  cobra.NoArgs,
+		RunE:  runProfileList,
+	}
 }
 
-var profileUseCmd = &cobra.Command{
-	Use:   "use <name>",
-	Short: "Switch the default profile",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runProfileUse,
-}
-
-func init() {
-	profileCmd.AddCommand(profileListCmd)
-	profileCmd.AddCommand(profileUseCmd)
+func newProfileUseCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "use <name>",
+		Short: "Switch the default profile",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runProfileUse,
+	}
 }
 
 func runProfileList(cmd *cobra.Command, args []string) error {

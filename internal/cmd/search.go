@@ -11,25 +11,33 @@ import (
 
 const defaultSearchLimit = 20
 
-var searchLimitFlag int
+func newSearchCmd(g *globalFlags) *cobra.Command {
+	var (
+		limit     int
+		outFormat string
+	)
 
-var searchCmd = &cobra.Command{
-	Use:   "search <cql>",
-	Short: "Search content with CQL",
-	Long: `Search with Confluence Query Language.
+	cmd := &cobra.Command{
+		Use:   "search <cql>",
+		Short: "Search content with CQL",
+		Long: `Search with Confluence Query Language.
 
 The query is passed to Confluence unchanged, so use CQL's own syntax
 (e.g. 'type = page and space = "DEV" and text ~ "release notes"').
 
 CQL matches more than pages — blog posts, attachments and comments can come
 back too — so each result shows its type rather than being filtered out.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runSearch,
-}
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSearch(cmd, args, g, limit, outFormat)
+		},
+	}
 
-func init() {
-	searchCmd.Flags().IntVar(&searchLimitFlag, "limit", defaultSearchLimit,
+	cmd.Flags().IntVar(&limit, "limit", defaultSearchLimit,
 		"maximum number of results to fetch")
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
 }
 
 // searchItem is one rendered result. ID is empty for hits that are not
@@ -41,20 +49,20 @@ type searchItem struct {
 	URL   string `json:"url"`
 }
 
-func runSearch(cmd *cobra.Command, args []string) error {
-	if err := validateLimit(searchLimitFlag); err != nil {
+func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+	if err := validateLimit(limit); err != nil {
 		return err
 	}
 
-	client, creds, err := resolveClient("")
+	client, creds, err := resolveClient(g.profile, "")
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext(cmd)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	results, total, err := client.Search(ctx, args[0], searchLimitFlag)
+	results, total, err := client.Search(ctx, args[0], limit)
 	if err != nil {
 		return err
 	}
@@ -70,11 +78,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// server runs out of hits, and in that case a totalSize larger than what
 	// came back does not mean raising --limit would fetch more.
 	notice := ""
-	if more := total - len(items); more > 0 && len(items) == searchLimitFlag {
+	if more := total - len(items); more > 0 && len(items) == limit {
 		notice = fmt.Sprintf("%d more results; raise --limit to fetch them", more)
 	}
 
-	return writeList(cmd, "results", items, notice)
+	return writeList(cmd, outFormat, "results", items, notice)
 }
 
 func searchItemFrom(r confluence.SearchResult, site string) searchItem {

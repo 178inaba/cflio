@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -24,11 +25,10 @@ func TestCommandContextTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			setTimeoutFlag(t, tt.timeout)
-
 			cmd := &cobra.Command{}
 			cmd.SetContext(context.Background())
-			ctx, cancel := commandContext(cmd)
+
+			ctx, cancel := commandContext(cmd, tt.timeout)
 			defer cancel()
 
 			if _, ok := ctx.Deadline(); ok != tt.wantDeadline {
@@ -38,9 +38,62 @@ func TestCommandContextTimeout(t *testing.T) {
 	}
 }
 
-func TestDescribeContextError(t *testing.T) {
-	setTimeoutFlag(t, 90*time.Second)
+// TestFormatFlagRegistration pins down which commands take --format: it is
+// registered per command so `auth` and `profile`, which have no output to
+// format, reject it rather than silently ignoring it.
+func TestFormatFlagRegistration(t *testing.T) {
+	want := map[string]bool{
+		"read":     true,
+		"update":   true,
+		"search":   true,
+		"children": true,
+		"comments": true,
+		"auth":     false,
+		"profile":  false,
+	}
 
+	root := newRootCmd(&globalFlags{})
+	got := make(map[string]bool, len(want))
+	for _, cmd := range root.Commands() {
+		got[cmd.Name()] = cmd.Flags().Lookup("format") != nil
+	}
+
+	if !maps.Equal(got, want) {
+		t.Errorf("commands with --format = %v, want %v", got, want)
+	}
+}
+
+func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "before the command runs", args: []string{"read", "--format", "bogus", "123456"}},
+		{
+			// The check hangs off PreRunE, which cobra runs before it
+			// validates required flags. Moving it into RunE would report
+			// the missing -f here instead.
+			name: "before cobra reports a missing required flag",
+			args: []string{"update", "--format", "bogus"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+
+			_, err := runCflio(t, tt.args...)
+			if err == nil {
+				t.Fatalf("%v error = nil, want an error", tt.args)
+			}
+			if want := `invalid --format "bogus"`; !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
+func TestDescribeContextError(t *testing.T) {
 	live := context.Background()
 	interrupted, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -76,7 +129,7 @@ func TestDescribeContextError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := describeContextError(tt.signalCtx, tt.err)
+			got := describeContextError(tt.signalCtx, tt.err, defaultTimeout)
 			if !strings.Contains(got.Error(), tt.wantContain) {
 				t.Errorf("describeContextError() = %q, want it to contain %q", got, tt.wantContain)
 			}
@@ -85,13 +138,4 @@ func TestDescribeContextError(t *testing.T) {
 			}
 		})
 	}
-}
-
-// setTimeoutFlag overrides the package-level --timeout binding for one test
-// and restores it afterwards.
-func setTimeoutFlag(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := timeoutFlag
-	timeoutFlag = d
-	t.Cleanup(func() { timeoutFlag = original })
 }

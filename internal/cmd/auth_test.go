@@ -16,11 +16,7 @@ func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (string, e
 	t.Helper()
 
 	startAPI(t, handler)
-	cmd, out := newTestCommand(t)
-	cmd.SetIn(strings.NewReader(answers))
-
-	err := runAuthLogin(cmd, nil)
-	return out.String(), err
+	return runCflioWithStdin(t, answers, "auth", "login")
 }
 
 func okCurrentUser(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +25,6 @@ func okCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 func TestAuthLoginRegistersAProfile(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 
 	var gotPath, gotAuth string
 	output, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
@@ -38,7 +33,7 @@ func TestAuthLoginRegistersAProfile(t *testing.T) {
 			okCurrentUser(w, r)
 		})
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v", err)
+		t.Fatalf("auth login error = %v", err)
 	}
 
 	if gotPath != "/wiki/rest/api/user/current" {
@@ -79,10 +74,9 @@ func TestAuthLoginNormalizesThePastedSiteURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", "md")
 
 			if _, err := runLogin(t, tt.input+"\na@example.com\napi-token\n\n", okCurrentUser); err != nil {
-				t.Fatalf("runAuthLogin() error = %v", err)
+				t.Fatalf("auth login error = %v", err)
 			}
 
 			file, err := config.Load()
@@ -100,13 +94,12 @@ func TestAuthLoginRejectsInvalidSiteURLs(t *testing.T) {
 	for _, input := range []string{"", "   ", "http://example.atlassian.net", "https:///wiki"} {
 		t.Run(input, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", "md")
 
 			_, err := runLogin(t, input+"\n", func(w http.ResponseWriter, r *http.Request) {
 				t.Error("the API was called despite an invalid site url")
 			})
 			if err == nil {
-				t.Fatalf("runAuthLogin() error = nil for site %q, want an error", input)
+				t.Fatalf("auth login error = nil for site %q, want an error", input)
 			}
 			assertNoConfigWritten(t)
 		})
@@ -115,7 +108,6 @@ func TestAuthLoginRejectsInvalidSiteURLs(t *testing.T) {
 
 func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 
 	output, err := runLogin(t, "https://example.atlassian.net\na@example.com\nbad-token\n\n",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +115,7 @@ func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 			_, _ = w.Write([]byte(`{"message":"Basic auth with password is not allowed"}`))
 		})
 	if err == nil {
-		t.Fatal("runAuthLogin() error = nil, want an error for rejected credentials")
+		t.Fatal("auth login error = nil, want an error for rejected credentials")
 	}
 	if !strings.Contains(err.Error(), "401") {
 		t.Errorf("error = %q, want it to surface the status", err)
@@ -146,13 +138,12 @@ func TestAuthLoginRequiresEmailAndToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", "md")
 
 			_, err := runLogin(t, tt.answers, func(w http.ResponseWriter, r *http.Request) {
 				t.Error("the API was called despite missing credentials")
 			})
 			if err == nil {
-				t.Fatal("runAuthLogin() error = nil, want an error")
+				t.Fatal("auth login error = nil, want an error")
 			}
 			assertNoConfigWritten(t)
 		})
@@ -161,11 +152,10 @@ func TestAuthLoginRequiresEmailAndToken(t *testing.T) {
 
 func TestAuthLoginAcceptsACustomProfileName(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 
 	if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\nwork\n",
 		okCurrentUser); err != nil {
-		t.Fatalf("runAuthLogin() error = %v", err)
+		t.Fatalf("auth login error = %v", err)
 	}
 
 	file, err := config.Load()
@@ -193,12 +183,11 @@ func TestAuthLoginRotatesTheTokenAfterConfirmation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", "md")
 			seedProfile(t, "example", testSite)
 
 			if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\nnew-token\n"+tt.answer+"\n",
 				okCurrentUser); err != nil {
-				t.Fatalf("runAuthLogin() error = %v", err)
+				t.Fatalf("auth login error = %v", err)
 			}
 
 			file, err := config.Load()
@@ -217,12 +206,11 @@ func TestAuthLoginRotatesTheTokenAfterConfirmation(t *testing.T) {
 
 func TestAuthLoginConfirmsBeforeReusingANameFromAnotherSite(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", "https://other.atlassian.net/wiki")
 
 	if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\nexample\nn\n",
 		okCurrentUser); err != nil {
-		t.Fatalf("runAuthLogin() error = %v", err)
+		t.Fatalf("auth login error = %v", err)
 	}
 
 	file, err := config.Load()
@@ -236,12 +224,11 @@ func TestAuthLoginConfirmsBeforeReusingANameFromAnotherSite(t *testing.T) {
 
 func TestAuthLoginKeepsTheExistingDefaultProfile(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
 	if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
 		okCurrentUser); err != nil {
-		t.Fatalf("runAuthLogin() error = %v", err)
+		t.Fatalf("auth login error = %v", err)
 	}
 
 	file, err := config.Load()
