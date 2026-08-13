@@ -19,34 +19,40 @@ const defaultVersionMessage = "Updated via cflio"
 // from a sidecar captured against a published page would be wrong.
 const statusCurrent = "current"
 
-var (
-	updateFileFlag    string
-	updateMessageFlag string
-)
+func newUpdateCmd() *cobra.Command {
+	var (
+		file      string
+		message   string
+		outFormat string
+	)
 
-var updateCmd = &cobra.Command{
-	Use:   "update -f <file>",
-	Short: "Write an edited page body back to Confluence",
-	Long: `Write a file previously downloaded with ` + "`cflio read`" + ` back to its page.
+	cmd := &cobra.Command{
+		Use:   "update -f <file>",
+		Short: "Write an edited page body back to Confluence",
+		Long: `Write a file previously downloaded with ` + "`cflio read`" + ` back to its page.
 
 The page, the profile and the expected version all come from the file's
 sidecar, so an update can never target the wrong page. If the page changed
 on the server since it was read, the update is refused: re-read the page and
 re-apply the edits.`,
-	Args: cobra.NoArgs,
-	RunE: runUpdatePage,
-}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runUpdatePage(cmd, file, message, outFormat)
+		},
+	}
 
-func init() {
 	// No backticks in flag usage strings: cobra reads the first backtick
 	// pair as the flag's argument placeholder.
-	updateCmd.Flags().StringVarP(&updateFileFlag, "file", "f", "",
+	cmd.Flags().StringVarP(&file, "file", "f", "",
 		"file holding the edited body, as downloaded by cflio read")
-	updateCmd.Flags().StringVar(&updateMessageFlag, "message", defaultVersionMessage,
+	cmd.Flags().StringVar(&message, "message", defaultVersionMessage,
 		"version message recorded in the page's history")
-	if err := updateCmd.MarkFlagRequired("file"); err != nil {
+	if err := cmd.MarkFlagRequired("file"); err != nil {
 		panic(err)
 	}
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
 }
 
 // updateResult is what update prints on success.
@@ -58,8 +64,8 @@ type updateResult struct {
 	Message string `json:"message"`
 }
 
-func runUpdatePage(cmd *cobra.Command, args []string) error {
-	meta, err := sidecar.Load(updateFileFlag)
+func runUpdatePage(cmd *cobra.Command, file, message, outFormat string) error {
+	meta, err := sidecar.Load(file)
 	if err != nil {
 		return err
 	}
@@ -68,17 +74,20 @@ func runUpdatePage(cmd *cobra.Command, args []string) error {
 			meta.PageID, meta.Status, statusCurrent)
 	}
 
-	body, err := os.ReadFile(updateFileFlag)
+	body, err := os.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", updateFileFlag, err)
+		return fmt.Errorf("read %s: %w", file, err)
 	}
 
-	client, _, err := resolveClient(pageref.HostOf(meta.PageURL))
+	client, _, err := resolveClient(cmd, pageref.HostOf(meta.PageURL))
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext(cmd)
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
 	// Optimistic lock: the expected version is the one captured at read
@@ -99,7 +108,9 @@ func runUpdatePage(cmd *cobra.Command, args []string) error {
 			meta.PageID, current.Status, statusCurrent)
 	}
 
-	message := updateMessageFlag
+	// An explicitly empty --message still gets the default: Confluence
+	// shows the version message in page history, and a blank one there says
+	// nothing about where the edit came from.
 	if message == "" {
 		message = defaultVersionMessage
 	}
@@ -114,11 +125,11 @@ func runUpdatePage(cmd *cobra.Command, args []string) error {
 	// Record the version the server actually assigned, so the next
 	// edit-update cycle works without a fresh read.
 	meta.Version = updated.Version.Number
-	if err := sidecar.Write(updateFileFlag, meta); err != nil {
+	if err := sidecar.Write(file, meta); err != nil {
 		return err
 	}
 
-	return writeUpdateResult(cmd, updateResult{
+	return writeUpdateResult(cmd, outFormat, updateResult{
 		PageID:  meta.PageID,
 		Version: meta.Version,
 		Title:   meta.Title,
@@ -127,8 +138,8 @@ func runUpdatePage(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func writeUpdateResult(cmd *cobra.Command, result updateResult) error {
-	if formatFlag == "json" {
+func writeUpdateResult(cmd *cobra.Command, outFormat string, result updateResult) error {
+	if outFormat == "json" {
 		return writeJSON(cmd, result)
 	}
 

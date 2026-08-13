@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/178inaba/cflio/internal/config"
 	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/spf13/cobra"
 )
 
 const (
@@ -62,24 +62,27 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
-// newTestCommand returns a command whose output is captured, along with the
-// buffer holding it.
-func newTestCommand(t *testing.T) (*cobra.Command, *bytes.Buffer) {
+// runCflio builds a fresh command tree and runs args through it, returning
+// the captured output. Every case gets its own tree, so no flag value
+// survives into the next test.
+func runCflio(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-
-	cmd := &cobra.Command{}
-	cmd.SetContext(t.Context())
-	out := &bytes.Buffer{}
-	cmd.SetOut(out)
-	cmd.SetErr(out)
-	return cmd, out
+	return runCflioWithStdin(t, "", args...)
 }
 
-// setFlags overrides the package-level flag bindings for one test.
-func setFlags(t *testing.T, profile, format string) {
+// runCflioWithStdin is runCflio for the commands that prompt.
+func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
 	t.Helper()
 
-	originalProfile, originalFormat := profileFlag, formatFlag
-	profileFlag, formatFlag = profile, format
-	t.Cleanup(func() { profileFlag, formatFlag = originalProfile, originalFormat })
+	root := newRootCmd()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetIn(strings.NewReader(stdin))
+	// Never nil: cobra falls back to os.Args[1:] for a nil argument list,
+	// which under `go test` means the -test.* flags.
+	root.SetArgs(args)
+
+	err := root.ExecuteContext(t.Context())
+	return out.String(), err
 }

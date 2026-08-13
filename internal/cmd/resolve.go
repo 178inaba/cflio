@@ -5,6 +5,7 @@ import (
 
 	"github.com/178inaba/cflio/internal/config"
 	"github.com/178inaba/cflio/internal/confluence"
+	"github.com/spf13/cobra"
 )
 
 // defaultClientFactory builds a production client. Tests override
@@ -18,13 +19,21 @@ var clientFactory = defaultClientFactory
 // resolveClient picks the profile for this invocation and builds a client
 // for it. urlHost is the host of the page the command addresses, or "" for
 // commands that name no particular site (search, bare page IDs).
-func resolveClient(urlHost string) (*confluence.Client, config.Credentials, error) {
+//
+// --profile is read off the command rather than passed in: it is a root
+// persistent flag, so the subcommand constructors have no local to capture.
+func resolveClient(cmd *cobra.Command, urlHost string) (*confluence.Client, config.Credentials, error) {
+	profile, err := cmd.Flags().GetString("profile")
+	if err != nil {
+		return nil, config.Credentials{}, err
+	}
+
 	file, err := config.Load()
 	if err != nil {
 		return nil, config.Credentials{}, err
 	}
 
-	creds, err := config.Resolve(file, profileFlag, urlHost, os.Getenv)
+	creds, err := config.Resolve(file, profile, urlHost, os.Getenv)
 	if err != nil {
 		return nil, config.Credentials{}, err
 	}

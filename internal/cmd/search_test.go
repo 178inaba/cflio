@@ -2,26 +2,23 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 )
 
-func runSearchCmd(t *testing.T, cql string, limit int) (string, error) {
+func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (string, error) {
 	t.Helper()
 
-	original := searchLimitFlag
-	searchLimitFlag = limit
-	t.Cleanup(func() { searchLimitFlag = original })
-
-	cmd, out := newTestCommand(t)
-	err := runSearch(cmd, []string{cql})
-	return out.String(), err
+	// --limit=N rather than --limit N: the negative values the range check
+	// is tested with would otherwise look like flags.
+	args := append([]string{"search", fmt.Sprintf("--limit=%d", limit)}, extra...)
+	return runCflio(t, append(args, cql)...)
 }
 
 func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	cql := `type = page and space = "DEV" and text ~ "release notes"`
@@ -49,7 +46,6 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 
 func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +67,6 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 
 func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// totalSize claims far more than the server will actually hand back.
@@ -97,7 +92,6 @@ func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 
 func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +110,6 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 
 func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +138,6 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 
 func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +159,6 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 
 func TestSearchJSONOutput(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +166,7 @@ func TestSearchJSONOutput(t *testing.T) {
 			`"totalSize":3}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 1)
+	output, err := runSearchCmd(t, "type = page", 1, "--format", "json")
 	if err != nil {
 		t.Fatalf("runSearch() error = %v", err)
 	}
@@ -213,14 +204,13 @@ func TestSearchEmptyResults(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", tt.format)
 			seedProfile(t, "example", testSite)
 
 			startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
 			})
 
-			output, err := runSearchCmd(t, "type = page", 20)
+			output, err := runSearchCmd(t, "type = page", 20, "--format", tt.format)
 			if err != nil {
 				t.Fatalf("runSearch() error = %v", err)
 			}
@@ -233,7 +223,6 @@ func TestSearchEmptyResults(t *testing.T) {
 
 func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +238,6 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 
 func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 

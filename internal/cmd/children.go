@@ -9,22 +9,30 @@ import (
 
 const defaultChildrenLimit = 100
 
-var childrenLimitFlag int
+func newChildrenCmd() *cobra.Command {
+	var (
+		limit     int
+		outFormat string
+	)
 
-var childrenCmd = &cobra.Command{
-	Use:   "children <page-url|page-id>",
-	Short: "List a page's direct child pages",
-	Long: `List the pages directly beneath a page.
+	cmd := &cobra.Command{
+		Use:   "children <page-url|page-id>",
+		Short: "List a page's direct child pages",
+		Long: `List the pages directly beneath a page.
 
 Only one level is listed: to walk further down the tree, run the command
 again on a child.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runChildren,
-}
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runChildren(cmd, args, limit, outFormat)
+		},
+	}
 
-func init() {
-	childrenCmd.Flags().IntVar(&childrenLimitFlag, "limit", defaultChildrenLimit,
+	cmd.Flags().IntVar(&limit, "limit", defaultChildrenLimit,
 		"maximum number of child pages to fetch")
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
 }
 
 type childItem struct {
@@ -38,8 +46,8 @@ func (c childItem) markdown() string {
 	return fmt.Sprintf("- **%s** (ID %s, %s)\n  %s", c.Title, c.ID, c.Status, c.URL)
 }
 
-func runChildren(cmd *cobra.Command, args []string) error {
-	if err := validateLimit(childrenLimitFlag); err != nil {
+func runChildren(cmd *cobra.Command, args []string, limit int, outFormat string) error {
+	if err := validateLimit(limit); err != nil {
 		return err
 	}
 
@@ -48,15 +56,18 @@ func runChildren(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, creds, err := resolveClient(ref.Host)
+	client, creds, err := resolveClient(cmd, ref.Host)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext(cmd)
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
-	children, hasMore, err := client.ChildPages(ctx, ref.PageID, childrenLimitFlag)
+	children, hasMore, err := client.ChildPages(ctx, ref.PageID, limit)
 	if err != nil {
 		return err
 	}
@@ -91,5 +102,5 @@ func runChildren(cmd *cobra.Command, args []string) error {
 		notice = "More child pages available; raise --limit to fetch them."
 	}
 
-	return writeList(cmd, "child pages", items, notice)
+	return writeList(cmd, outFormat, "child pages", items, notice)
 }

@@ -30,30 +30,21 @@ func pageResponse(t *testing.T, body, webui string) string {
 	return string(payload)
 }
 
-func runRead(t *testing.T, arg, outPath string) (string, error) {
+// runRead runs `read`, leaving --output off when outPath is empty so the
+// default naming is exercised.
+func runRead(t *testing.T, arg, outPath string, extra ...string) (string, error) {
 	t.Helper()
 
-	original := readOutputFlag
-	readOutputFlag = outPath
-	t.Cleanup(func() { readOutputFlag = original })
-
-	cmd, out := newTestCommand(t)
-	err := runReadPage(cmd, []string{arg})
-	return out.String(), err
-}
-
-// setReadMarkdown turns on --markdown for one test.
-func setReadMarkdown(t *testing.T) {
-	t.Helper()
-
-	original := readMarkdownFlag
-	readMarkdownFlag = true
-	t.Cleanup(func() { readMarkdownFlag = original })
+	args := []string{"read"}
+	if outPath != "" {
+		args = append(args, "--output", outPath)
+	}
+	args = append(args, extra...)
+	return runCflio(t, append(args, arg)...)
 }
 
 func TestReadWritesTheBodyByteForByte(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// No trailing newline, entities left encoded, a macro intact: the file
@@ -92,7 +83,6 @@ func TestReadWritesTheBodyByteForByte(t *testing.T) {
 
 func TestReadWritesTheSidecar(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +112,6 @@ func TestReadWritesTheSidecar(t *testing.T) {
 
 func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +136,6 @@ func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 
 func TestReadFallsBackWhenTheAPIReturnsNoWebLink(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +159,6 @@ func TestReadFallsBackWhenTheAPIReturnsNoWebLink(t *testing.T) {
 
 func TestReadDefaultsTheOutputPathToThePageID(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +178,6 @@ func TestReadDefaultsTheOutputPathToThePageID(t *testing.T) {
 
 func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +185,7 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
-	output, err := runRead(t, testPageURL, path)
+	output, err := runRead(t, testPageURL, path, "--format", "json")
 	if err != nil {
 		t.Fatalf("runReadPage() error = %v", err)
 	}
@@ -218,7 +204,6 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 
 func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +217,6 @@ func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 
 func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +236,6 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 
 func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// A sidecar from a previous read of a different page. If it survived a
@@ -290,8 +273,6 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 
 func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
-	setReadMarkdown(t)
 	seedProfile(t, "example", testSite)
 
 	body := `<h1>Release notes</h1><p>Ping <ac:link><ri:user ri:account-id="acc-123"/></ac:link>.</p>`
@@ -305,7 +286,7 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.md")
-	output, err := runRead(t, testPageURL, path)
+	output, err := runRead(t, testPageURL, path, "--markdown")
 	if err != nil {
 		t.Fatalf("runReadPage() error = %v", err)
 	}
@@ -334,8 +315,6 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 
 func TestReadMarkdownDefaultsTheOutputPathToAMarkdownFile(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
-	setReadMarkdown(t)
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +324,7 @@ func TestReadMarkdownDefaultsTheOutputPathToAMarkdownFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	if _, err := runRead(t, "123456", ""); err != nil {
+	if _, err := runRead(t, "123456", "", "--markdown"); err != nil {
 		t.Fatalf("runReadPage() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "123456.md")); err != nil {
@@ -360,8 +339,6 @@ func TestReadMarkdownDefaultsTheOutputPathToAMarkdownFile(t *testing.T) {
 
 func TestReadMarkdownDropsAStaleSidecar(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
-	setReadMarkdown(t)
 	seedProfile(t, "example", testSite)
 
 	// Converting over a file that was previously read in storage mode must
@@ -383,7 +360,7 @@ func TestReadMarkdownDropsAStaleSidecar(t *testing.T) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
-	if _, err := runRead(t, "123456", path); err != nil {
+	if _, err := runRead(t, "123456", path, "--markdown"); err != nil {
 		t.Fatalf("runReadPage() error = %v", err)
 	}
 	if _, err := os.Stat(sidecar.Path(path)); !os.IsNotExist(err) {
@@ -399,15 +376,13 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 
 	t.Run("text output", func(t *testing.T) {
 		isolateConfig(t)
-		setFlags(t, "", "md")
-		setReadMarkdown(t)
 		seedProfile(t, "example", testSite)
 
 		startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
-		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"))
+		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"), "--markdown")
 		if err != nil {
 			t.Fatalf("runReadPage() error = %v", err)
 		}
@@ -420,15 +395,14 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 
 	t.Run("json output", func(t *testing.T) {
 		isolateConfig(t)
-		setFlags(t, "", "json")
-		setReadMarkdown(t)
 		seedProfile(t, "example", testSite)
 
 		startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
-		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"))
+		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
+			"--markdown", "--format", "json")
 		if err != nil {
 			t.Fatalf("runReadPage() error = %v", err)
 		}
@@ -451,15 +425,14 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 
 func TestReadMarkdownReportsNothingWhenTheConversionIsClean(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "json")
-	setReadMarkdown(t)
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>plain</p>", testPageWebUI)))
 	})
 
-	output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"))
+	output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
+		"--markdown", "--format", "json")
 	if err != nil {
 		t.Fatalf("runReadPage() error = %v", err)
 	}
@@ -477,7 +450,6 @@ func TestReadMarkdownReportsNothingWhenTheConversionIsClean(t *testing.T) {
 
 func TestReadWritesNothingWhenTheAPIFails(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {

@@ -79,26 +79,20 @@ func (s *updateStub) handler(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func runUpdate(t *testing.T, path, message string) (string, error) {
+// runUpdate runs `update`, leaving --message off when message is empty so
+// the flag's default is exercised.
+func runUpdate(t *testing.T, path, message string, extra ...string) (string, error) {
 	t.Helper()
 
-	setUpdateFlags(t, path, message)
-	cmd, out := newTestCommand(t)
-	err := runUpdatePage(cmd, nil)
-	return out.String(), err
-}
-
-func setUpdateFlags(t *testing.T, path, message string) {
-	t.Helper()
-
-	originalFile, originalMessage := updateFileFlag, updateMessageFlag
-	updateFileFlag, updateMessageFlag = path, message
-	t.Cleanup(func() { updateFileFlag, updateMessageFlag = originalFile, originalMessage })
+	args := []string{"update", "-f", path}
+	if message != "" {
+		args = append(args, "--message", message)
+	}
+	return runCflio(t, append(args, extra...)...)
 }
 
 func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	// A body with a macro and characters JSON escaping would mangle.
@@ -139,7 +133,6 @@ func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 
 func TestUpdateUsesTheMessageFlag(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	path := seedReadPage(t, "<p>hi</p>", currentMeta())
 
@@ -156,7 +149,6 @@ func TestUpdateUsesTheMessageFlag(t *testing.T) {
 
 func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	path := seedReadPage(t, "<p>edited</p>", currentMeta())
 
@@ -188,7 +180,6 @@ func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 
 func TestUpdateTwiceWithoutReReading(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	path := seedReadPage(t, "<p>first</p>", currentMeta())
 
@@ -247,7 +238,6 @@ func TestUpdateRefusesNonCurrentPages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
-			setFlags(t, "", "md")
 			seedProfile(t, "example", testSite)
 
 			meta := currentMeta()
@@ -273,7 +263,6 @@ func TestUpdateRefusesNonCurrentPages(t *testing.T) {
 
 func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	path := filepath.Join(t.TempDir(), "page.xml")
@@ -295,7 +284,6 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 
 func TestUpdateResolvesTheProfileFromTheSidecarURL(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
@@ -322,7 +310,6 @@ func TestUpdateResolvesTheProfileFromTheSidecarURL(t *testing.T) {
 
 func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "other", "md")
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
@@ -331,7 +318,7 @@ func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 		t.Error("the API was called despite a profile/site conflict")
 	})
 
-	_, err := runUpdate(t, path, "")
+	_, err := runUpdate(t, path, "", "--profile", "other")
 	if err == nil {
 		t.Fatal("runUpdatePage() error = nil, want a conflict error")
 	}
@@ -344,7 +331,6 @@ func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 
 func TestUpdateFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	isolateConfig(t)
-	setFlags(t, "", "md")
 	seedProfile(t, "example", testSite)
 
 	meta := currentMeta()
