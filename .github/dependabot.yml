@@ -3,13 +3,13 @@ updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     cooldown:
       default-days: 14
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     cooldown:
       default-days: 14
   # Bumps the golangci-lint image tag in compose.yaml, which is where the
@@ -17,6 +17,6 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     cooldown:
       default-days: 14
