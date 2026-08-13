@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # No separate build step: go test compiles every matched package,
+      # including ones without test files (the root main.go), so a compile
+      # failure there fails this step too.
+      - run: go test -race ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Required by golangci-lint-action, and the Go problem matcher it
+      # registers is what turns findings into inline PR annotations.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # Without the guard, a compose.yaml whose shape changed would yield an
+      # empty version, the action would silently fall back to its own default,
+      # and the pin would stop applying while the job stayed green.
+      - id: version
+        run: |
+          image=$(yq '.services.lint.image' compose.yaml)
+          version=${image##*:}
+          [[ "$version" == v* ]] || { echo "::error::could not read the golangci-lint version from compose.yaml (got '$version')"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ steps.version.outputs.version }}
