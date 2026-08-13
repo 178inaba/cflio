@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,7 +75,7 @@ func runCflio(t *testing.T, args ...string) (string, error) {
 func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
 	t.Helper()
 
-	root := newRootCmd()
+	root := newRootCmd(&globalFlags{})
 	out := &bytes.Buffer{}
 	root.SetOut(out)
 	root.SetErr(out)
@@ -85,4 +86,15 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, erro
 
 	err := root.ExecuteContext(t.Context())
 	return out.String(), err
+}
+
+// runLimitCmd runs one of the listing commands with an explicit --limit.
+//
+// --limit=N rather than --limit N: the range check is tested with negative
+// values, which would otherwise be read as flags rather than as the value.
+func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (string, error) {
+	t.Helper()
+
+	args := append([]string{name, fmt.Sprintf("--limit=%d", limit)}, extra...)
+	return runCflio(t, append(args, arg)...)
 }

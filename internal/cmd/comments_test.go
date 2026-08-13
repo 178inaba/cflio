@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,9 +9,7 @@ import (
 
 func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	args := append([]string{"comments", fmt.Sprintf("--limit=%d", limit)}, extra...)
-	return runCflio(t, append(args, arg)...)
+	return runLimitCmd(t, "comments", arg, limit, extra...)
 }
 
 // commentsAPI routes the four calls comments makes: the two root listings

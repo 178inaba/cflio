@@ -12,6 +12,13 @@ import (
 // of paged requests against the invocation's deadline.
 const maxLimit = 1000
 
+// The two --format values. Named so adding a third is a compile error at
+// every site rather than a literal to grep for.
+const (
+	formatMarkdown = "md"
+	formatJSON     = "json"
+)
+
 func validateLimit(limit int) error {
 	if limit < 1 || limit > maxLimit {
 		return fmt.Errorf("invalid --limit %d: must be between 1 and %d", limit, maxLimit)
@@ -23,7 +30,7 @@ func validateLimit(limit int) error {
 // command rather than on the root so it never appears on `auth` and
 // `profile`, which would silently ignore it.
 func addFormatFlag(cmd *cobra.Command, format *string) {
-	cmd.Flags().StringVar(format, "format", "md", `output format: "md" or "json"`)
+	cmd.Flags().StringVar(format, "format", formatMarkdown, `output format: "md" or "json"`)
 }
 
 // validateFormatFlag rejects an unknown --format before any request goes out.
@@ -35,7 +42,7 @@ func validateFormatFlag(cmd *cobra.Command, _ []string) error {
 	if flag == nil {
 		return nil
 	}
-	if value := flag.Value.String(); value != "md" && value != "json" {
+	if value := flag.Value.String(); value != formatMarkdown && value != formatJSON {
 		return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, value)
 	}
 	return nil
@@ -62,7 +69,7 @@ type markdownItem interface {
 // writeList renders items per --format. name labels the JSON array and the
 // "no results" line, e.g. "results" or "child pages".
 func writeList[T markdownItem](cmd *cobra.Command, format, name string, items []T, notice string) error {
-	if format == "json" {
+	if format == formatJSON {
 		return writeJSON(cmd, listPayload(name, items, notice))
 	}
 

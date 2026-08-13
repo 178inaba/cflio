@@ -19,7 +19,7 @@ const defaultVersionMessage = "Updated via cflio"
 // from a sidecar captured against a published page would be wrong.
 const statusCurrent = "current"
 
-func newUpdateCmd() *cobra.Command {
+func newUpdateCmd(g *globalFlags) *cobra.Command {
 	var (
 		file      string
 		message   string
@@ -37,7 +37,7 @@ on the server since it was read, the update is refused: re-read the page and
 re-apply the edits.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runUpdatePage(cmd, file, message, outFormat)
+			return runUpdatePage(cmd, g, file, message, outFormat)
 		},
 	}
 
@@ -64,7 +64,7 @@ type updateResult struct {
 	Message string `json:"message"`
 }
 
-func runUpdatePage(cmd *cobra.Command, file, message, outFormat string) error {
+func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, outFormat string) error {
 	meta, err := sidecar.Load(file)
 	if err != nil {
 		return err
@@ -79,15 +79,12 @@ func runUpdatePage(cmd *cobra.Command, file, message, outFormat string) error {
 		return fmt.Errorf("read %s: %w", file, err)
 	}
 
-	client, _, err := resolveClient(cmd, pageref.HostOf(meta.PageURL))
+	client, _, err := resolveClient(g.profile, pageref.HostOf(meta.PageURL))
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	// Optimistic lock: the expected version is the one captured at read
@@ -139,7 +136,7 @@ func runUpdatePage(cmd *cobra.Command, file, message, outFormat string) error {
 }
 
 func writeUpdateResult(cmd *cobra.Command, outFormat string, result updateResult) error {
-	if outFormat == "json" {
+	if outFormat == formatJSON {
 		return writeJSON(cmd, result)
 	}
 

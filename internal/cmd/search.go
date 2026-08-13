@@ -11,8 +11,7 @@ import (
 
 const defaultSearchLimit = 20
 
-func newSearchCmd() *cobra.Command {
-	// outFormat rather than format: this file imports internal/format.
+func newSearchCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
 		outFormat string
@@ -30,7 +29,7 @@ CQL matches more than pages — blog posts, attachments and comments can come
 back too — so each result shows its type rather than being filtered out.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSearch(cmd, args, limit, outFormat)
+			return runSearch(cmd, args, g, limit, outFormat)
 		},
 	}
 
@@ -50,20 +49,17 @@ type searchItem struct {
 	URL   string `json:"url"`
 }
 
-func runSearch(cmd *cobra.Command, args []string, limit int, outFormat string) error {
+func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}
 
-	client, creds, err := resolveClient(cmd, "")
+	client, creds, err := resolveClient(g.profile, "")
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	results, total, err := client.Search(ctx, args[0], limit)

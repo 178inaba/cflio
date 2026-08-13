@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 func TestCommandContextTimeout(t *testing.T) {
@@ -23,19 +25,10 @@ func TestCommandContextTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The real root, so the test binds to the actual --timeout
-			// registration rather than a copy of it.
-			root := newRootCmd()
-			if err := root.ParseFlags([]string{"--timeout=" + tt.timeout.String()}); err != nil {
-				t.Fatalf("ParseFlags() error = %v", err)
-			}
-			// Only ExecuteC fills the command's context in.
-			root.SetContext(context.Background())
+			cmd := &cobra.Command{}
+			cmd.SetContext(context.Background())
 
-			ctx, cancel, err := commandContext(root)
-			if err != nil {
-				t.Fatalf("commandContext() error = %v", err)
-			}
+			ctx, cancel := commandContext(cmd, tt.timeout)
 			defer cancel()
 
 			if _, ok := ctx.Deadline(); ok != tt.wantDeadline {
@@ -59,7 +52,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"profile":  false,
 	}
 
-	root := newRootCmd()
+	root := newRootCmd(&globalFlags{})
 	got := make(map[string]bool, len(want))
 	for _, cmd := range root.Commands() {
 		got[cmd.Name()] = cmd.Flags().Lookup("format") != nil

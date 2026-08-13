@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,11 +9,7 @@ import (
 
 func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	// --limit=N rather than --limit N: the negative values the range check
-	// is tested with would otherwise look like flags.
-	args := append([]string{"children", fmt.Sprintf("--limit=%d", limit)}, extra...)
-	return runCflio(t, append(args, arg)...)
+	return runLimitCmd(t, "children", arg, limit, extra...)
 }
 
 // childrenAPI answers the direct-children listing with childrenJSON and the

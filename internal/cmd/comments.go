@@ -15,8 +15,7 @@ import (
 // comment costs an extra request for its replies.
 const defaultCommentsLimit = 25
 
-func newCommentsCmd() *cobra.Command {
-	// outFormat rather than format: this file imports internal/format.
+func newCommentsCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
 		outFormat string
@@ -32,7 +31,7 @@ to and whether they are resolved.
 Read-only: cflio never posts or replies.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runComments(cmd, args, limit, outFormat)
+			return runComments(cmd, args, g, limit, outFormat)
 		},
 	}
 
@@ -63,7 +62,7 @@ type commentSection struct {
 	Notice   string        `json:"notice,omitempty"`
 }
 
-func runComments(cmd *cobra.Command, args []string, limit int, outFormat string) error {
+func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}
@@ -73,15 +72,12 @@ func runComments(cmd *cobra.Command, args []string, limit int, outFormat string)
 		return err
 	}
 
-	client, _, err := resolveClient(cmd, ref.Host)
+	client, _, err := resolveClient(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	sections := make([]commentSection, 0, 2)
@@ -152,7 +148,7 @@ func commentItemFrom(c confluence.Comment) commentItem {
 }
 
 func writeComments(cmd *cobra.Command, outFormat string, sections []commentSection) error {
-	if outFormat == "json" {
+	if outFormat == formatJSON {
 		payload := make(map[string]any, len(sections))
 		for _, section := range sections {
 			payload[section.Key] = section

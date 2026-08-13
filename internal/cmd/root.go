@@ -15,7 +15,19 @@ import (
 
 const defaultTimeout = 90 * time.Second
 
-func newRootCmd() *cobra.Command {
+// globalFlags holds the root's persistent flags. Every subcommand that reads
+// one takes this pointer, so the flag names stay type-checked instead of
+// being looked up by string at each site.
+//
+// pflag fills the fields in as it parses, which is after the tree is built:
+// a constructor that copied a field would capture the zero value, so RunE
+// must read them when it runs.
+type globalFlags struct {
+	profile string
+	timeout time.Duration
+}
+
+func newRootCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cflio",
 		Short: "Confluence CLI for AI coding agents",
@@ -27,18 +39,20 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 		PersistentPreRunE: validateFormatFlag,
 	}
 
-	cmd.PersistentFlags().String("profile", "",
+	cmd.PersistentFlags().StringVar(&g.profile, "profile", "",
 		"profile to use, overriding URL-based auto-selection and CFLIO_PROFILE")
-	cmd.PersistentFlags().Duration("timeout", defaultTimeout,
+	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
+	// `profile` takes no globalFlags: it neither issues a request nor
+	// resolves a profile to talk to.
 	cmd.AddCommand(
-		newReadCmd(),
-		newUpdateCmd(),
-		newSearchCmd(),
-		newChildrenCmd(),
-		newCommentsCmd(),
-		newAuthCmd(),
+		newReadCmd(g),
+		newUpdateCmd(g),
+		newSearchCmd(g),
+		newChildrenCmd(g),
+		newCommentsCmd(g),
+		newAuthCmd(g),
 		newProfileCmd(),
 	)
 	return cmd
@@ -50,20 +64,13 @@ func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	root := newRootCmd()
-	err := root.ExecuteContext(ctx)
+	g := &globalFlags{}
+	err := newRootCmd(g).ExecuteContext(ctx)
 	if err == nil {
 		return nil
 	}
 
-	// Read off the persistent flag set rather than root.Flags(): the
-	// subcommand that parsed --timeout wrote through to the same flag, but
-	// cobra only merges the persistent flags into root.Flags() when there
-	// were arguments to strip. The lookup itself cannot fail for a flag
-	// registered in newRootCmd.
-	timeout, _ := root.PersistentFlags().GetDuration("timeout")
-
-	err = describeContextError(ctx, err, timeout)
+	err = describeContextError(ctx, err, g.timeout)
 	fmt.Fprintln(os.Stderr, "Error:", err)
 	return err
 }
@@ -96,14 +103,9 @@ func describeContextError(signalCtx context.Context, err error, timeout time.Dur
 //
 // A zero timeout means no deadline: context.WithTimeout(ctx, 0) would expire
 // immediately, so that case returns the command's context unchanged.
-func commandContext(cmd *cobra.Command) (context.Context, context.CancelFunc, error) {
-	timeout, err := cmd.Flags().GetDuration("timeout")
-	if err != nil {
-		return nil, nil, err
-	}
+func commandContext(cmd *cobra.Command, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
-		return cmd.Context(), func() {}, nil
+		return cmd.Context(), func() {}
 	}
-	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
-	return ctx, cancel, nil
+	return context.WithTimeout(cmd.Context(), timeout)
 }

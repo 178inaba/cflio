@@ -11,8 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newReadCmd() *cobra.Command {
-	// outFormat rather than format: this file imports internal/format.
+func newReadCmd(g *globalFlags) *cobra.Command {
 	var (
 		outPath   string
 		markdown  bool
@@ -33,7 +32,7 @@ carries no sidecar and cannot be written back, so use it when the page is
 only going to be read, and the storage default when it might be edited.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReadPage(cmd, args, outPath, markdown, outFormat)
+			return runReadPage(cmd, args, g, outPath, markdown, outFormat)
 		},
 	}
 
@@ -66,21 +65,18 @@ type readResult struct {
 	UnsupportedCount int      `json:"unsupported_count,omitempty"`
 }
 
-func runReadPage(cmd *cobra.Command, args []string, outPath string, markdown bool, outFormat string) error {
+func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, outFormat string) error {
 	ref, err := pageref.Parse(args[0])
 	if err != nil {
 		return err
 	}
 
-	client, creds, err := resolveClient(cmd, ref.Host)
+	client, creds, err := resolveClient(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	page, err := client.GetPage(ctx, ref.PageID, true)
@@ -182,7 +178,7 @@ func writeBody(path, body string) error {
 }
 
 func writeReadResult(cmd *cobra.Command, outFormat string, result readResult) error {
-	if outFormat == "json" {
+	if outFormat == formatJSON {
 		return writeJSON(cmd, result)
 	}
 

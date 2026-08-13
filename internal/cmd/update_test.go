@@ -147,6 +147,24 @@ func TestUpdateUsesTheMessageFlag(t *testing.T) {
 	}
 }
 
+// An explicitly blank --message falls back to the default rather than
+// recording an empty line in the page's history.
+func TestUpdateWithAnEmptyMessageFallsBackToTheDefault(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	path := seedReadPage(t, "<p>hi</p>", currentMeta())
+
+	stub := &updateStub{serverVersion: 7}
+	startAPI(t, stub.handler(t))
+
+	if _, err := runUpdate(t, path, "", "--message="); err != nil {
+		t.Fatalf("runUpdatePage() error = %v", err)
+	}
+	if got := stub.puts[0].Version.Message; got != defaultVersionMessage {
+		t.Errorf("version message = %q, want the default %q", got, defaultVersionMessage)
+	}
+}
+
 func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)

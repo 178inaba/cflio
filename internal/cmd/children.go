@@ -9,7 +9,7 @@ import (
 
 const defaultChildrenLimit = 100
 
-func newChildrenCmd() *cobra.Command {
+func newChildrenCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
 		outFormat string
@@ -24,7 +24,7 @@ Only one level is listed: to walk further down the tree, run the command
 again on a child.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runChildren(cmd, args, limit, outFormat)
+			return runChildren(cmd, args, g, limit, outFormat)
 		},
 	}
 
@@ -46,7 +46,7 @@ func (c childItem) markdown() string {
 	return fmt.Sprintf("- **%s** (ID %s, %s)\n  %s", c.Title, c.ID, c.Status, c.URL)
 }
 
-func runChildren(cmd *cobra.Command, args []string, limit int, outFormat string) error {
+func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}
@@ -56,15 +56,12 @@ func runChildren(cmd *cobra.Command, args []string, limit int, outFormat string)
 		return err
 	}
 
-	client, creds, err := resolveClient(cmd, ref.Host)
+	client, creds, err := resolveClient(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	children, hasMore, err := client.ChildPages(ctx, ref.PageID, limit)

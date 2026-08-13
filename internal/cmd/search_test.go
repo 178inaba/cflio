@@ -1,8 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,11 +11,7 @@ import (
 
 func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (string, error) {
 	t.Helper()
-
-	// --limit=N rather than --limit N: the negative values the range check
-	// is tested with would otherwise look like flags.
-	args := append([]string{"search", fmt.Sprintf("--limit=%d", limit)}, extra...)
-	return runCflio(t, append(args, cql)...)
+	return runLimitCmd(t, "search", cql, limit, extra...)
 }
 
 func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
@@ -233,6 +230,24 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 		if _, err := runSearchCmd(t, "type = page", limit); err == nil {
 			t.Errorf("runSearch() error = nil for --limit %d, want an error", limit)
 		}
+	}
+}
+
+// TestSearchHonoursTheTimeoutFlag covers the root persistent flags reaching
+// a request: their values are only final after parsing, so a constructor
+// that read them while building the tree would leave every invocation on
+// the default deadline.
+func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the API was called despite an already-expired deadline")
+	})
+
+	_, err := runSearchCmd(t, "type = page", 20, "--timeout=1ns")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
 	}
 }
 
