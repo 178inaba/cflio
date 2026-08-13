@@ -34,9 +34,8 @@ func newRootCmd(g *globalFlags) *cobra.Command {
 		Long: `cflio reads a Confluence page's storage-format body into a local file and
 writes the edited file back, so an AI coding agent can edit pages with its
 regular file-editing tools instead of regenerating the whole body as tokens.`,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
-		PersistentPreRunE: validateFormatFlag,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	cmd.PersistentFlags().StringVar(&g.profile, "profile", "",

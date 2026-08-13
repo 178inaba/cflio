@@ -79,15 +79,10 @@ func (s *updateStub) handler(t *testing.T) http.HandlerFunc {
 	}
 }
 
-// runUpdate runs `update`, leaving --message off when message is empty so
-// the flag's default is exercised.
-func runUpdate(t *testing.T, path, message string, extra ...string) (string, error) {
+func runUpdate(t *testing.T, path string, extra ...string) (string, error) {
 	t.Helper()
 
 	args := []string{"update", "-f", path}
-	if message != "" {
-		args = append(args, "--message", message)
-	}
 	return runCflio(t, append(args, extra...)...)
 }
 
@@ -102,9 +97,9 @@ func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	output, err := runUpdate(t, path, "")
+	output, err := runUpdate(t, path)
 	if err != nil {
-		t.Fatalf("runUpdatePage() error = %v", err)
+		t.Fatalf("update error = %v", err)
 	}
 
 	if len(stub.puts) != 1 {
@@ -139,8 +134,8 @@ func TestUpdateUsesTheMessageFlag(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runUpdate(t, path, "Fix the typo"); err != nil {
-		t.Fatalf("runUpdatePage() error = %v", err)
+	if _, err := runUpdate(t, path, "--message", "Fix the typo"); err != nil {
+		t.Fatalf("update error = %v", err)
 	}
 	if got := stub.puts[0].Version.Message; got != "Fix the typo" {
 		t.Errorf("version message = %q, want the --message value", got)
@@ -157,8 +152,8 @@ func TestUpdateWithAnEmptyMessageFallsBackToTheDefault(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runUpdate(t, path, "", "--message="); err != nil {
-		t.Fatalf("runUpdatePage() error = %v", err)
+	if _, err := runUpdate(t, path, "--message="); err != nil {
+		t.Fatalf("update error = %v", err)
 	}
 	if got := stub.puts[0].Version.Message; got != defaultVersionMessage {
 		t.Errorf("version message = %q, want the default %q", got, defaultVersionMessage)
@@ -173,9 +168,9 @@ func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 	stub := &updateStub{serverVersion: 9}
 	startAPI(t, stub.handler(t))
 
-	_, err := runUpdate(t, path, "")
+	_, err := runUpdate(t, path)
 	if err == nil {
-		t.Fatal("runUpdatePage() error = nil, want a version-conflict error")
+		t.Fatal("update error = nil, want a version-conflict error")
 	}
 	if len(stub.puts) != 0 {
 		t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
@@ -204,8 +199,8 @@ func TestUpdateTwiceWithoutReReading(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runUpdate(t, path, ""); err != nil {
-		t.Fatalf("first runUpdatePage() error = %v", err)
+	if _, err := runUpdate(t, path); err != nil {
+		t.Fatalf("first update error = %v", err)
 	}
 
 	meta, err := sidecar.Load(path)
@@ -222,8 +217,8 @@ func TestUpdateTwiceWithoutReReading(t *testing.T) {
 	}
 	stub.serverVersion = 8
 
-	if _, err := runUpdate(t, path, ""); err != nil {
-		t.Fatalf("second runUpdatePage() error = %v", err)
+	if _, err := runUpdate(t, path); err != nil {
+		t.Fatalf("second update error = %v", err)
 	}
 	if len(stub.puts) != 2 {
 		t.Fatalf("PUT requests = %d, want 2", len(stub.puts))
@@ -265,9 +260,9 @@ func TestUpdateRefusesNonCurrentPages(t *testing.T) {
 			stub := &updateStub{serverVersion: 7, serverStatus: tt.serverStatus}
 			startAPI(t, stub.handler(t))
 
-			_, err := runUpdate(t, path, "")
+			_, err := runUpdate(t, path)
 			if err == nil {
-				t.Fatal("runUpdatePage() error = nil, want an error")
+				t.Fatal("update error = nil, want an error")
 			}
 			if len(stub.puts) != 0 {
 				t.Errorf("PUT requests = %d, want none", len(stub.puts))
@@ -291,9 +286,9 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 		t.Error("the API was called without a sidecar")
 	})
 
-	_, err := runUpdate(t, path, "")
+	_, err := runUpdate(t, path)
 	if err == nil {
-		t.Fatal("runUpdatePage() error = nil, want an error")
+		t.Fatal("update error = nil, want an error")
 	}
 	if !strings.Contains(err.Error(), "cflio read") {
 		t.Errorf("error = %q, want it to point at `cflio read`", err)
@@ -318,8 +313,8 @@ func TestUpdateResolvesTheProfileFromTheSidecarURL(t *testing.T) {
 		inner(w, r)
 	})
 
-	if _, err := runUpdate(t, path, ""); err != nil {
-		t.Fatalf("runUpdatePage() error = %v", err)
+	if _, err := runUpdate(t, path); err != nil {
+		t.Fatalf("update error = %v", err)
 	}
 	if gotToken == "" {
 		t.Fatal("no credentials were sent")
@@ -336,9 +331,9 @@ func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 		t.Error("the API was called despite a profile/site conflict")
 	})
 
-	_, err := runUpdate(t, path, "", "--profile", "other")
+	_, err := runUpdate(t, path, "--profile", "other")
 	if err == nil {
-		t.Fatal("runUpdatePage() error = nil, want a conflict error")
+		t.Fatal("update error = nil, want a conflict error")
 	}
 	for _, want := range []string{"other", "example.atlassian.net"} {
 		if !strings.Contains(err.Error(), want) {
@@ -359,9 +354,9 @@ func TestUpdateFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 		t.Error("the API was called for an unregistered site")
 	})
 
-	_, err := runUpdate(t, path, "")
+	_, err := runUpdate(t, path)
 	if err == nil {
-		t.Fatal("runUpdatePage() error = nil, want an error")
+		t.Fatal("update error = nil, want an error")
 	}
 	for _, want := range []string{"unknown.atlassian.net", "example", "cflio auth login"} {
 		if !strings.Contains(err.Error(), want) {

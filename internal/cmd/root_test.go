@@ -63,6 +63,36 @@ func TestFormatFlagRegistration(t *testing.T) {
 	}
 }
 
+func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "before the command runs", args: []string{"read", "--format", "bogus", "123456"}},
+		{
+			// The check hangs off PreRunE, which cobra runs before it
+			// validates required flags. Moving it into RunE would report
+			// the missing -f here instead.
+			name: "before cobra reports a missing required flag",
+			args: []string{"update", "--format", "bogus"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+
+			_, err := runCflio(t, tt.args...)
+			if err == nil {
+				t.Fatalf("%v error = nil, want an error", tt.args)
+			}
+			if want := `invalid --format "bogus"`; !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
 func TestDescribeContextError(t *testing.T) {
 	live := context.Background()
 	interrupted, cancel := context.WithCancel(context.Background())

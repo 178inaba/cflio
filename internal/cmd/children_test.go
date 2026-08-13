@@ -52,7 +52,7 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 
 	if strings.Contains(output, "A Whiteboard") {
@@ -88,7 +88,7 @@ func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 1)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if !strings.Contains(output, "--limit") {
 		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
@@ -117,7 +117,7 @@ func TestChildrenAcceptsABarePageID(t *testing.T) {
 	})
 
 	if _, err := runChildrenCmd(t, "123456", 100); err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if gotPath != "/wiki/api/v2/pages/123456/direct-children" {
 		t.Errorf("path = %q, want the page id from the bare argument", gotPath)
@@ -135,7 +135,7 @@ func TestChildrenJSONOutput(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100, "--format", "json")
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 
 	var got struct {
@@ -166,7 +166,7 @@ func TestChildrenWithNoChildren(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if !strings.Contains(output, "No child pages.") {
 		t.Errorf("output = %q, want it to say there are none", output)
@@ -192,7 +192,7 @@ func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 
 	output, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
-		t.Fatalf("runChildren() error = %v", err)
+		t.Fatalf("children error = %v", err)
 	}
 	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(output, want) {
 		t.Errorf("output = %q, want it to contain the page-id form %q", output, want)
@@ -208,6 +208,6 @@ func TestChildrenRejectsAnOutOfRangeLimit(t *testing.T) {
 	})
 
 	if _, err := runChildrenCmd(t, testPageURL, 0); err == nil {
-		t.Error("runChildren() error = nil for --limit 0, want an error")
+		t.Error("children error = nil for --limit 0, want an error")
 	}
 }

@@ -29,7 +29,7 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 
 	output, err := runSearchCmd(t, cql, 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if gotCQL != cql {
 		t.Errorf("cql = %q, want it passed through unchanged as %q", gotCQL, cql)
@@ -52,7 +52,7 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 1)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if !strings.Contains(output, "4 more results") {
 		t.Errorf("output = %q, want a notice saying 4 results remain (5 total - 1 shown)", output)
@@ -80,7 +80,7 @@ func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "more results") {
 		t.Errorf("output = %q, want no notice when fewer than --limit results came back", output)
@@ -98,7 +98,7 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "more results") {
 		t.Errorf("output = %q, want no truncation notice", output)
@@ -118,7 +118,7 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 
 	output, err := runSearchCmd(t, "release", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if strings.Contains(output, "@@@hl@@@") || strings.Contains(output, "@@@endhl@@@") {
 		t.Errorf("output = %q, want the highlight markers stripped", output)
@@ -144,7 +144,7 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if !strings.Contains(output, "https://elsewhere.example/p/1") {
 		t.Errorf("output = %q, want an already-absolute url left as-is", output)
@@ -165,7 +165,7 @@ func TestSearchJSONOutput(t *testing.T) {
 
 	output, err := runSearchCmd(t, "type = page", 1, "--format", "json")
 	if err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 
 	var got struct {
@@ -209,7 +209,7 @@ func TestSearchEmptyResults(t *testing.T) {
 
 			output, err := runSearchCmd(t, "type = page", 20, "--format", tt.format)
 			if err != nil {
-				t.Fatalf("runSearch() error = %v", err)
+				t.Fatalf("search error = %v", err)
 			}
 			if !strings.Contains(output, tt.want) {
 				t.Errorf("output = %q, want it to contain %q", output, tt.want)
@@ -228,7 +228,7 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 
 	for _, limit := range []int{0, -1, maxLimit + 1} {
 		if _, err := runSearchCmd(t, "type = page", limit); err == nil {
-			t.Errorf("runSearch() error = nil for --limit %d, want an error", limit)
+			t.Errorf("search error = nil for --limit %d, want an error", limit)
 		}
 	}
 }
@@ -263,7 +263,7 @@ func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	})
 
 	if _, err := runSearchCmd(t, "type = page", 20); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+		t.Fatalf("search error = %v", err)
 	}
 	if gotUser == "" {
 		t.Error("search sent no credentials; it should fall back to the default profile")

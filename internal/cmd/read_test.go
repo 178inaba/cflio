@@ -61,7 +61,7 @@ func TestReadWritesTheBodyByteForByte(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "page.xml")
 	output, err := runRead(t, testPageURL, path)
 	if err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	written, err := os.ReadFile(path)
@@ -91,7 +91,7 @@ func TestReadWritesTheSidecar(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "page.xml")
 	if _, err := runRead(t, testPageURL, path); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	meta, err := sidecar.Load(path)
@@ -120,7 +120,7 @@ func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "page.xml")
 	if _, err := runRead(t, "123456", path); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	meta, err := sidecar.Load(path)
@@ -144,7 +144,7 @@ func TestReadFallsBackWhenTheAPIReturnsNoWebLink(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "page.xml")
 	if _, err := runRead(t, "123456", path); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	meta, err := sidecar.Load(path)
@@ -169,7 +169,7 @@ func TestReadDefaultsTheOutputPathToThePageID(t *testing.T) {
 	t.Chdir(dir)
 
 	if _, err := runRead(t, "123456", ""); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "123456.xml")); err != nil {
 		t.Errorf("Stat(123456.xml) error = %v, want the default output file", err)
@@ -187,7 +187,7 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "page.xml")
 	output, err := runRead(t, testPageURL, path, "--format", "json")
 	if err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	var got map[string]any
@@ -211,7 +211,7 @@ func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 	})
 
 	if _, err := runRead(t, "https://example.atlassian.net/wiki/x/AbCdEf", ""); err == nil {
-		t.Fatal("runReadPage() error = nil, want an error for a short link")
+		t.Fatal("read error = nil, want an error for a short link")
 	}
 }
 
@@ -225,7 +225,7 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 
 	_, err := runRead(t, "https://unknown.atlassian.net/wiki/spaces/DEV/pages/1/T", "")
 	if err == nil {
-		t.Fatal("runReadPage() error = nil, want an error")
+		t.Fatal("read error = nil, want an error")
 	}
 	for _, want := range []string{"unknown.atlassian.net", "example", "cflio auth login"} {
 		if !strings.Contains(err.Error(), want) {
@@ -259,7 +259,7 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 	})
 
 	if _, err := runRead(t, "123456", path); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	meta, err := sidecar.Load(path)
@@ -288,7 +288,7 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "page.md")
 	output, err := runRead(t, testPageURL, path, "--markdown")
 	if err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	written, err := os.ReadFile(path)
@@ -325,7 +325,7 @@ func TestReadMarkdownDefaultsTheOutputPathToAMarkdownFile(t *testing.T) {
 	t.Chdir(dir)
 
 	if _, err := runRead(t, "123456", "", "--markdown"); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "123456.md")); err != nil {
 		t.Errorf("Stat(123456.md) error = %v, want the default output file", err)
@@ -361,7 +361,7 @@ func TestReadMarkdownDropsAStaleSidecar(t *testing.T) {
 	})
 
 	if _, err := runRead(t, "123456", path, "--markdown"); err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 	if _, err := os.Stat(sidecar.Path(path)); !os.IsNotExist(err) {
 		t.Errorf("Stat(%s) = %v, want the stale sidecar removed", sidecar.Path(path), err)
@@ -384,7 +384,7 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 
 		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"), "--markdown")
 		if err != nil {
-			t.Fatalf("runReadPage() error = %v", err)
+			t.Fatalf("read error = %v", err)
 		}
 		// The reader decides whether to re-read in storage mode from this
 		// line, before opening the file.
@@ -404,7 +404,7 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
 			"--markdown", "--format", "json")
 		if err != nil {
-			t.Fatalf("runReadPage() error = %v", err)
+			t.Fatalf("read error = %v", err)
 		}
 
 		var got map[string]any
@@ -434,7 +434,7 @@ func TestReadMarkdownReportsNothingWhenTheConversionIsClean(t *testing.T) {
 	output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
 		"--markdown", "--format", "json")
 	if err != nil {
-		t.Fatalf("runReadPage() error = %v", err)
+		t.Fatalf("read error = %v", err)
 	}
 
 	var got map[string]any
@@ -459,7 +459,7 @@ func TestReadWritesNothingWhenTheAPIFails(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "page.xml")
 	if _, err := runRead(t, testPageURL, path); err == nil {
-		t.Fatal("runReadPage() error = nil, want an error")
+		t.Fatal("read error = nil, want an error")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("Stat(%s) = %v, want no file written on failure", path, err)

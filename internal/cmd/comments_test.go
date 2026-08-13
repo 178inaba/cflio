@@ -58,7 +58,7 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 
 	for _, want := range []string{
@@ -99,7 +99,7 @@ func TestCommentsIndentsRepliesUnderTheirParent(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if !strings.Contains(output, "\n  - acc-2") {
 		t.Errorf("output = %q, want the reply indented under its parent", output)
@@ -123,7 +123,7 @@ func TestCommentsRequestsRepliesOnlyForRoots(t *testing.T) {
 	})
 
 	if _, err := runCommentsCmd(t, testPageURL, 25); err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if len(replyCalls) != 2 {
 		t.Errorf("reply requests = %v, want one per root comment", replyCalls)
@@ -143,7 +143,7 @@ func TestCommentsWithNone(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if strings.Count(output, "None.") != 2 {
 		t.Errorf("output = %q, want both sections to report none", output)
@@ -160,7 +160,7 @@ func TestCommentsReportsTruncation(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 1)
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 	if !strings.Contains(output, "--limit") {
 		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
@@ -182,7 +182,7 @@ func TestCommentsJSONOutput(t *testing.T) {
 
 	output, err := runCommentsCmd(t, testPageURL, 25, "--format", "json")
 	if err != nil {
-		t.Fatalf("runComments() error = %v", err)
+		t.Fatalf("comments error = %v", err)
 	}
 
 	var got struct {
@@ -224,6 +224,6 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	})
 
 	if _, err := runCommentsCmd(t, testPageURL, maxLimit+1); err == nil {
-		t.Error("runComments() error = nil for an oversized --limit, want an error")
+		t.Error("comments error = nil for an oversized --limit, want an error")
 	}
 }
