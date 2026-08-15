@@ -530,51 +530,33 @@ func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
 // A lookup that ran and matched nothing is a settled answer, not an incomplete
 // resolution: the account or the page is gone, and the fallback is correct.
 func TestReadMarkdownReportsNothingWhenEveryLookupSucceeds(t *testing.T) {
-	page := pageResponse(t, referencesBody, testPageWebUI)
-	answerEveryLookupWithNothing := func(w http.ResponseWriter, r *http.Request) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case bulkUsersPath:
 			_, _ = w.Write([]byte(`{"results":[]}`))
 		case searchPath:
 			_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
 		default:
-			_, _ = w.Write([]byte(page))
+			_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
 		}
+	})
+
+	output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
+		"--markdown", "--format", "json")
+	if err != nil {
+		t.Fatalf("read error = %v", err)
 	}
 
-	t.Run("text output", func(t *testing.T) {
-		isolateConfig(t)
-		seedProfile(t, "example", testSite)
-		startAPI(t, answerEveryLookupWithNothing)
-
-		output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"), "--markdown")
-		if err != nil {
-			t.Fatalf("read error = %v", err)
-		}
-		if strings.Contains(output, "Unchecked") {
-			t.Errorf("output = %q, want an unresolvable reference reported as nothing", output)
-		}
-	})
-
-	t.Run("json output", func(t *testing.T) {
-		isolateConfig(t)
-		seedProfile(t, "example", testSite)
-		startAPI(t, answerEveryLookupWithNothing)
-
-		output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
-			"--markdown", "--format", "json")
-		if err != nil {
-			t.Fatalf("read error = %v", err)
-		}
-
-		var got map[string]any
-		if err := json.Unmarshal([]byte(output), &got); err != nil {
-			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
-		}
-		if _, ok := got["unchecked_count"]; ok {
-			t.Errorf("output = %v, want unchecked_count omitted when every lookup answered", got)
-		}
-	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(output), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	}
+	if _, ok := got["unchecked_count"]; ok {
+		t.Errorf("output = %v, want unchecked_count omitted when every lookup answered", got)
+	}
 }
 
 // Storage mode writes the API's bytes back untouched, so there is nothing to

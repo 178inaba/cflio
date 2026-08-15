@@ -117,7 +117,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	body := page.Body.Storage.Value
 	var (
 		converted format.Result
-		unchecked int
+		resolved  references
 	)
 	if markdown {
 		// The request above still asked for the storage representation, which
@@ -125,9 +125,8 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		// Converting it is purely local; what the converter cannot do itself
 		// is turn the identifiers a body names into names and URLs, so that
 		// much is looked up first and handed in.
-		var opts format.Options
-		opts, unchecked = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
-		converted = format.ToMarkdown(body, opts)
+		resolved = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
+		converted = format.ToMarkdown(body, resolved.opts)
 		body = converted.Markdown
 	}
 	if err := writeBody(bodyPath, body); err != nil {
@@ -152,7 +151,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		Bytes:            len(body),
 		Unsupported:      converted.Unsupported,
 		UnsupportedCount: converted.UnsupportedCount,
-		UncheckedCount:   unchecked,
+		UncheckedCount:   resolved.unchecked,
 	}
 
 	// A converted body is not a checkout: it carries no version lock and can
@@ -169,6 +168,18 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	return writeReadResult(cmd, outFormat, result)
 }
 
+// references is a resolution pass and how much of it went unanswered, the
+// counterpart to format.Result for the lookups that precede the conversion.
+type references struct {
+	opts format.Options
+	// unchecked counts the distinct references whose lookup produced no
+	// answer, either because the request failed or because there was nothing
+	// to query. A lookup that ran and came back empty is not one of them —
+	// that reference is unresolvable, which is a settled answer rather than a
+	// missing one.
+	unchecked int
+}
+
 // resolveReferences looks up the names and URLs the converter cannot derive
 // from the body alone: a mention carries an account ID, and a page link
 // carries a space key and a title but no address.
@@ -181,12 +192,9 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 // and the rendering already degrades to the identifier; failing the read over
 // it would deny the caller the other 99% of the page over a detail.
 //
-// The failures are counted instead, and the count returned: it is the number
-// of distinct references whose lookup produced no answer, either because the
-// request failed or because there was nothing to query. A lookup that ran and
-// came back empty is not one of them — that reference is unresolvable, which
-// is a settled answer rather than a missing one.
-func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) (format.Options, int) {
+// The failures are counted instead and reported alongside the resolution, the
+// way ToMarkdown reports what it could not represent alongside the Markdown.
+func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) references {
 	refs := format.References(storage)
 
 	var opts format.Options
@@ -210,8 +218,8 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 	if len(refs.Pages) > 0 {
 		opts.PageURLs = make(map[format.PageRef]string, len(refs.Pages))
 	}
-	groups, dropped := pagesBySpace(refs.Pages, spaceKey)
-	unchecked += dropped
+	groups, unkeyed := pagesBySpace(refs.Pages, spaceKey)
+	unchecked += unkeyed
 	for key, group := range groups {
 		titles := make([]string, 0, len(group))
 		for _, ref := range group {
@@ -243,27 +251,26 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 		}
 	}
 
-	return opts, unchecked
+	return references{opts: opts, unchecked: unchecked}
 }
 
 // pagesBySpace groups page references by the space each one resolves in,
 // which for a reference that names no space is the page's own. References
 // that resolve in no space at all are dropped: with no key there is nothing
-// to query. How many were dropped is returned alongside the groups, because a
-// reference that was never looked up leaves the same question open as one
-// whose lookup failed.
-func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (map[string][]format.PageRef, int) {
-	groups := make(map[string][]format.PageRef)
-	var dropped int
+// to query. How many were dropped is returned as unkeyed, because a reference
+// that was never looked up leaves the same question open as one whose lookup
+// failed.
+func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (groups map[string][]format.PageRef, unkeyed int) {
+	groups = make(map[string][]format.PageRef)
 	for _, ref := range refs {
 		key := cmp.Or(ref.SpaceKey, pageSpaceKey)
 		if key == "" {
-			dropped++
+			unkeyed++
 			continue
 		}
 		groups[key] = append(groups[key], ref)
 	}
-	return groups, dropped
+	return groups, unkeyed
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:
