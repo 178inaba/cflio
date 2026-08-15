@@ -18,7 +18,7 @@ func newReadCmd(g *globalFlags) *cobra.Command {
 	var (
 		outPath   string
 		markdown  bool
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -68,7 +68,7 @@ type readResult struct {
 	UnsupportedCount int      `json:"unsupported_count,omitempty"`
 }
 
-func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, outFormat string) error {
+func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, outFormat format.Format) error {
 	ref, err := pageref.Parse(args[0])
 	if err != nil {
 		return err
@@ -261,8 +261,11 @@ func writeBody(path, body string) error {
 	return nil
 }
 
-func writeReadResult(cmd *cobra.Command, outFormat string, result readResult) error {
-	if outFormat == formatJSON {
+func writeReadResult(cmd *cobra.Command, outFormat format.Format, result readResult) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if outFormat == format.JSON {
 		return writeJSON(cmd, result)
 	}
 

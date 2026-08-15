@@ -1,6 +1,77 @@
 package format
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestFormatSet(t *testing.T) {
+	tests := []struct {
+		name string
+		// start is what the receiver holds before Set runs. The accepted
+		// values start from one no case assigns, so a Set that writes nothing
+		// fails; the rejected ones start from a real value, so a Set that
+		// writes before validating clobbers it.
+		start   Format
+		in      string
+		want    Format
+		wantErr bool
+	}{
+		{name: "md", start: Format(""), in: "md", want: Markdown},
+		{name: "json", start: Format(""), in: "json", want: JSON},
+		{name: "unknown value leaves the receiver alone", start: Markdown, in: "bogus", want: Markdown, wantErr: true},
+		{name: "empty value leaves the receiver alone", start: Markdown, in: "", want: Markdown, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.start
+			err := got.Set(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Format.Set(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			}
+			if tt.wantErr {
+				if want := fmt.Sprintf("invalid --format %q", tt.in); !strings.Contains(err.Error(), want) {
+					t.Errorf("Format.Set(%q) error = %q, want it to contain %q", tt.in, err, want)
+				}
+			}
+			if got != tt.want {
+				t.Errorf("after Format.Set(%q) the receiver is %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		f       Format
+		wantErr bool
+	}{
+		{name: "md", f: Markdown},
+		{name: "json", f: JSON},
+		// Set is not the only way to build a Format: these two type-check,
+		// which is why the callers that branch on one keep the guard.
+		{name: "converted from an arbitrary string", f: Format("xml"), wantErr: true},
+		{name: "the zero value", f: Format(""), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.f.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Format(%q).Validate() error = %v, wantErr %v", string(tt.f), err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				return
+			}
+			if want := fmt.Sprintf("invalid --format %q", string(tt.f)); !strings.Contains(err.Error(), want) {
+				t.Errorf("Format(%q).Validate() error = %q, want it to contain %q", string(tt.f), err, want)
+			}
+		})
+	}
+}
 
 func TestStripHighlightMarkers(t *testing.T) {
 	tests := []struct {

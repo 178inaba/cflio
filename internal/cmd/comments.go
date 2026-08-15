@@ -18,7 +18,7 @@ const defaultCommentsLimit = 25
 func newCommentsCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -64,7 +64,7 @@ type commentSection struct {
 	Notice   string        `json:"notice,omitempty"`
 }
 
-func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat format.Format) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}
@@ -149,8 +149,11 @@ func commentItemFrom(c confluence.Comment) commentItem {
 	}
 }
 
-func writeComments(cmd *cobra.Command, outFormat string, sections []commentSection) error {
-	if outFormat == formatJSON {
+func writeComments(cmd *cobra.Command, outFormat format.Format, sections []commentSection) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if outFormat == format.JSON {
 		payload := make(map[string]any, len(sections))
 		for _, section := range sections {
 			payload[section.Key] = section
