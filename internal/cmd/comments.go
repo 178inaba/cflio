@@ -43,7 +43,9 @@ Read-only: cflio never posts or replies.`,
 }
 
 // commentItem is one rendered comment. Author is an Atlassian account ID:
-// resolving display names would cost a request per distinct author.
+// resolving display names would cost a request per distinct author. Body is
+// Markdown with no trailing newline, so whatever renders it terminates it
+// itself.
 type commentItem struct {
 	ID        string        `json:"id"`
 	Author    string        `json:"author_account_id"`
@@ -141,8 +143,6 @@ func commentItemFrom(c confluence.Comment) commentItem {
 		// Comment endpoints reject body-format=view, so the storage XHTML is
 		// converted here, by the same converter `read --markdown` uses: a
 		// comment carries code blocks and tables as often as a page does.
-		// The trailing newline goes because the caller indents this body and
-		// adds its own, which would otherwise leave a blank line per comment.
 		Body:      strings.TrimSuffix(format.ToMarkdown(c.Body.Storage.Value, format.Options{}).Markdown, "\n"),
 		Highlight: c.Properties.InlineOriginalSelection,
 		Status:    c.ResolutionStatus,

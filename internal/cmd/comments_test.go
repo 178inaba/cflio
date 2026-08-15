@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -93,12 +94,15 @@ func TestCommentsRendersBodiesAsMarkdown(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},"body":{"storage":{"value":"` +
-		`<ac:structured-macro ac:name=\"code\"><ac:parameter ac:name=\"language\">go</ac:parameter>` +
+	// Written as plain markup and escaped by strconv.Quote rather than by
+	// hand like the fixtures above: a code macro and a mention carry enough
+	// quoted attributes that hand-escaping them stops being readable.
+	body := `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">go</ac:parameter>` +
 		`<ac:plain-text-body><![CDATA[println(hello)]]></ac:plain-text-body></ac:structured-macro>` +
 		`<table><tbody><tr><th>Key</th><th>Value</th></tr><tr><td>a</td><td>1</td></tr></tbody></table>` +
-		`<p>ping <ac:link><ri:user ri:account-id=\"acc-9\"/></ac:link></p>` +
-		`"}}}],"_links":{}}`
+		`<p>ping <ac:link><ri:user ri:account-id="acc-9"/></ac:link></p>`
+	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},"body":{"storage":{"value":` +
+		strconv.Quote(body) + `}}}],"_links":{}}`
 	startAPI(t, commentsAPI(t, footer, emptyComments, nil))
 
 	output, err := runCommentsCmd(t, testPageURL, 25)
