@@ -204,6 +204,14 @@ func TestReferencesCollectsWhatLinkRendering(t *testing.T) {
 				`<ac:link><ri:page ri:space-key="DEV" ri:content-title=""/></ac:link></p>`,
 			want: Refs{},
 		},
+		{
+			// ac:image reaches the same ri: children, so collecting from
+			// anything but a link would spend a lookup on a reference the
+			// renderer never resolves.
+			name: "an image target is not a link target",
+			in:   `<p><ac:image><ri:page ri:space-key="DEV" ri:content-title="Runbook"/></ac:image></p>`,
+			want: Refs{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -212,17 +220,6 @@ func TestReferencesCollectsWhatLinkRendering(t *testing.T) {
 				t.Errorf("References(%q) = %+v, want %+v", tt.in, got, tt.want)
 			}
 		})
-	}
-}
-
-// The reference an image points at is not a link target: ac:image reaches
-// riChild too, and collecting from it would spend a lookup on something
-// link() never renders.
-func TestReferencesIgnoresImageTargets(t *testing.T) {
-	in := `<p><ac:image><ri:page ri:space-key="DEV" ri:content-title="Runbook"/></ac:image></p>`
-
-	if got := References(in); !reflect.DeepEqual(got, Refs{}) {
-		t.Errorf("References(%q) = %+v, want nothing collected", in, got)
 	}
 }
 

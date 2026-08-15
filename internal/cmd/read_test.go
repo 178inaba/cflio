@@ -378,21 +378,38 @@ func TestReadMarkdownResolvesMentionsAndPageLinks(t *testing.T) {
 	if len(searchedCQL) != 2 {
 		t.Errorf("search requests = %d (%v), want one per space", len(searchedCQL), searchedCQL)
 	}
+
+	// A resolved link is only worth emitting if cflio can follow it, which is
+	// the whole reason the URL is looked up rather than assembled from the
+	// space key and title the body carries.
+	_, link, ok := strings.Cut(string(written), "](")
+	if !ok {
+		t.Fatalf("file = %q, want a Markdown link", written)
+	}
+	target, _, _ := strings.Cut(link, ")")
+	ref, err := pageref.Parse(target)
+	if err != nil {
+		t.Fatalf("pageref.Parse(%q) error = %v, want the emitted link to be readable", target, err)
+	}
+	if ref.PageID != "777" {
+		t.Errorf("parsed page id = %q, want the resolved page 777", ref.PageID)
+	}
 }
 
-// A link is only worth emitting if cflio can follow it: the whole point of
-// resolving a page reference is that the target can be fed back to `read`.
-func TestReadMarkdownEmitsPageLinksThatCanBeReadBack(t *testing.T) {
+// A link to a page in the same space names no space key, so it can only be
+// resolved against the space the page itself is in. When the API returns no
+// web link, there is no key to resolve against and the reference falls back
+// rather than being looked up in the wrong space.
+func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	body := `<p><ac:link><ri:page ri:space-key="OPS" ri:content-title="Runbook"/></ac:link></p>`
+	body := `<p>See <ac:link><ri:page ri:content-title="Onboarding"/></ac:link>.</p>`
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == searchPath {
-			_, _ = w.Write([]byte(`{"results":[{"content":{"id":"777","type":"page","title":"Runbook"}}],"totalSize":1}`))
-			return
+			t.Error("a same-space link was searched for with no space to search in")
 		}
-		_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
+		_, _ = w.Write([]byte(pageResponse(t, body, "")))
 	})
 
 	path := filepath.Join(t.TempDir(), "page.md")
@@ -404,19 +421,8 @@ func TestReadMarkdownEmitsPageLinksThatCanBeReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-
-	_, link, ok := strings.Cut(string(written), "](")
-	if !ok {
-		t.Fatalf("file = %q, want a Markdown link", written)
-	}
-
-	target := strings.TrimSuffix(link, ")\n")
-	ref, err := pageref.Parse(target)
-	if err != nil {
-		t.Fatalf("pageref.Parse(%q) error = %v, want the emitted link to be readable", target, err)
-	}
-	if ref.PageID != "777" {
-		t.Errorf("parsed page id = %q, want the resolved page 777", ref.PageID)
+	if want := "See Onboarding.\n"; string(written) != want {
+		t.Errorf("file = %q, want the unresolved fallback %q", written, want)
 	}
 }
 

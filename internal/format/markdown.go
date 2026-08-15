@@ -43,9 +43,9 @@ type Refs struct {
 }
 
 // References collects what a caller has to resolve for ToMarkdown to render
-// names and URLs instead of identifiers. It reads the same ac:link targets
-// the renderer does, through the same accessor, so the set collected here and
-// the set consulted during rendering cannot drift apart.
+// names and URLs instead of identifiers. It walks for the same ac:link
+// targets link renders, through the same accessor; the kinds worth resolving
+// are listed in collectTarget, which link has to be kept in step with.
 //
 // Parsing the body twice — once here, once in ToMarkdown — is the price of
 // keeping the converter a pure function. Returning the references from the
@@ -77,6 +77,10 @@ func References(storage string) Refs {
 // collectTarget records the resource a link names, if it is one that
 // resolving would change the rendering of. A target carrying no identifier is
 // dropped: the lookup could not match, and the renderer already falls back.
+//
+// The kinds handled here are the ones link consults Options for. Teaching
+// link to resolve a further kind means adding it here too, or the resolution
+// it now expects will never be looked up.
 func collectTarget(target *node, accountIDs map[string]struct{}, pages map[PageRef]struct{}) {
 	if target == nil {
 		return
@@ -673,6 +677,9 @@ func (r *renderer) anchor(n *node) string {
 // them, so an unresolved target renders as text: a URL built here from a
 // space key and a title is not a form pageref.Parse accepts, which would make
 // it a link cflio itself cannot follow.
+//
+// The target kinds resolved from Options are the ones collectTarget gathers;
+// the two are kept in step by hand.
 func (r *renderer) link(n *node) string {
 	body := r.linkBody(n)
 

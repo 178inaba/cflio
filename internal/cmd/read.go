@@ -183,6 +183,9 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 		}
 	}
 
+	if len(refs.Pages) > 0 {
+		opts.PageURLs = make(map[format.PageRef]string, len(refs.Pages))
+	}
 	for key, group := range pagesBySpace(refs.Pages, spaceKey) {
 		titles := make([]string, 0, len(group))
 		for _, ref := range group {
@@ -206,9 +209,6 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 
 		for _, ref := range group {
 			if id := ids[ref.Title]; id != "" {
-				if opts.PageURLs == nil {
-					opts.PageURLs = make(map[format.PageRef]string)
-				}
 				// Keyed by the reference exactly as the body wrote it, empty
 				// space key and all: that is what the converter looks up.
 				opts.PageURLs[ref] = pageref.SpacePageURL(siteURL, key, id)
