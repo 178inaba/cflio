@@ -94,7 +94,8 @@ Mentions and page links are resolved on the way: a mention becomes the person's 
 link to another page becomes a Markdown link you can pass straight back to `cflio read`. That costs
 a couple of extra requests, batched so the count does not grow with the number of links. A reference
 that cannot be resolved — a deleted account, a page this token cannot see — falls back to the
-account ID or the bare page title rather than failing the read.
+account ID or the bare page title rather than failing the read. So does one whose lookup failed
+outright, and the output says when that happened (below).
 
 That file has **no sidecar** and cannot be written back: `update` refuses it, by design. So use
 `--markdown` when a page is only going to be read, and the storage default when it might be edited.
@@ -110,8 +111,23 @@ Anything that became a placeholder is counted in the command's output:
 Degraded: 3 (adf-extension, jira)
 ```
 
-If that line is absent, nothing was lost. If it is present and you need the part that degraded,
-read the page again without `--markdown`.
+If that line is absent, the conversion lost nothing. If it is present and you need the part that
+degraded, read the page again without `--markdown`.
+
+Reference resolution reports separately, because a lookup can fail in a way the fallback rendering
+hides. A reference that was looked up and matched nothing is a settled answer — the account or the
+page is gone — and passes silently. A reference whose lookup produced *no* answer does not: the
+request failed, or it was never attempted because the API returned no web link and a same-space
+link has no space key to resolve against. Those are counted:
+
+```
+Unchecked: 2 (not looked up; names and links may be missing)
+```
+
+When that line is present, the rendering may be missing names and links that do exist. Re-reading
+without `--markdown` does not help — storage resolves nothing at all — so the useful response is to
+run the same command again; in keeping with the no-retries posture below, `cflio` will not do it
+for you.
 
 ### Multiple sites
 
