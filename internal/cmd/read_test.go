@@ -413,7 +413,8 @@ func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.md")
-	if _, err := runRead(t, testPageURL, path, "--markdown"); err != nil {
+	output, err := runRead(t, testPageURL, path, "--markdown")
+	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
 
@@ -424,36 +425,137 @@ func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
 	if want := "See Onboarding.\n"; string(written) != want {
 		t.Errorf("file = %q, want the unresolved fallback %q", written, want)
 	}
+
+	// Dropping the reference before any lookup leaves the same open question a
+	// failed request does — whether the page exists is simply unknown — so it
+	// is reported the same way rather than passing for an unresolvable link.
+	if want := "Unchecked: 1"; !strings.Contains(output, want) {
+		t.Errorf("output = %q, want it to contain %q", output, want)
+	}
+}
+
+// The report is triggered by a reference being dropped, not by the page
+// lacking a web link: references that name their own space are resolvable
+// without one.
+func TestReadMarkdownReportsNothingWhenEveryPageRefNamesItsSpace(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	body := `<p>See <ac:link><ri:page ri:space-key="OPS" ri:content-title="Runbook"/></ac:link>.</p>`
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == searchPath {
+			_, _ = w.Write([]byte(`{"results":[{"content":{"id":"777","type":"page","title":"Runbook"}}],"totalSize":1}`))
+			return
+		}
+		_, _ = w.Write([]byte(pageResponse(t, body, "")))
+	})
+
+	output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"), "--markdown")
+	if err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+	if strings.Contains(output, "Unchecked") {
+		t.Errorf("output = %q, want nothing reported when no reference was dropped", output)
+	}
 }
 
 // A reference that cannot be resolved is an ordinary outcome — the person or
 // page may be deleted, or invisible to this token — so it degrades the
-// rendering rather than failing the read.
+// rendering rather than failing the read. A lookup that failed outright is a
+// different thing: whether the reference was resolvable is unknown, and the
+// output has to say so or the fallback reads as a settled answer.
 func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
-
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	page := pageResponse(t, referencesBody, testPageWebUI)
+	failEveryLookup := func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == bulkUsersPath || r.URL.Path == searchPath {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"message":"boom"}`))
 			return
 		}
-		_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
+		_, _ = w.Write([]byte(page))
+	}
+
+	t.Run("text output", func(t *testing.T) {
+		isolateConfig(t)
+		seedProfile(t, "example", testSite)
+		startAPI(t, failEveryLookup)
+
+		path := filepath.Join(t.TempDir(), "page.md")
+		output, err := runRead(t, testPageURL, path, "--markdown")
+		if err != nil {
+			t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
+		}
+
+		written, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile() error = %v", err)
+		}
+		want := "Ping @acc-1, see Runbook and Onboarding.\n"
+		if string(written) != want {
+			t.Errorf("file = %q, want the unresolved fallback %q", written, want)
+		}
+
+		// One mention plus the two spaces' worth of page links: every
+		// reference the body makes went unanswered.
+		if want := "Unchecked: 3"; !strings.Contains(output, want) {
+			t.Errorf("output = %q, want it to contain %q", output, want)
+		}
+		// The count is its own report: nothing about the conversion degraded.
+		if strings.Contains(output, "Degraded:") {
+			t.Errorf("output = %q, want a failed lookup kept out of the degradation report", output)
+		}
 	})
 
-	path := filepath.Join(t.TempDir(), "page.md")
-	if _, err := runRead(t, testPageURL, path, "--markdown"); err != nil {
-		t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
+	t.Run("json output", func(t *testing.T) {
+		isolateConfig(t)
+		seedProfile(t, "example", testSite)
+		startAPI(t, failEveryLookup)
+
+		output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
+			"--markdown", "--format", "json")
+		if err != nil {
+			t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
+		}
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(output), &got); err != nil {
+			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+		}
+		if got["unchecked_count"] != float64(3) {
+			t.Errorf("unchecked_count = %v, want 3", got["unchecked_count"])
+		}
+	})
+}
+
+// A lookup that ran and matched nothing is a settled answer, not an incomplete
+// resolution: the account or the page is gone, and the fallback is correct.
+func TestReadMarkdownReportsNothingWhenEveryLookupSucceeds(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case bulkUsersPath:
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case searchPath:
+			_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
+		default:
+			_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
+		}
+	})
+
+	output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
+		"--markdown", "--format", "json")
+	if err != nil {
+		t.Fatalf("read error = %v", err)
 	}
 
-	written, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(output), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
 	}
-	want := "Ping @acc-1, see Runbook and Onboarding.\n"
-	if string(written) != want {
-		t.Errorf("file = %q, want the unresolved fallback %q", written, want)
+	if _, ok := got["unchecked_count"]; ok {
+		t.Errorf("output = %v, want unchecked_count omitted when every lookup answered", got)
 	}
 }
 
