@@ -1,7 +1,10 @@
 package format
 
 import (
+	"cmp"
 	"encoding/xml"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +28,74 @@ type Options struct {
 	UserNames map[string]string
 	// PageURLs maps a link target to the page's URL.
 	PageURLs map[PageRef]string
+}
+
+// Refs are the references a body makes that ToMarkdown cannot render without
+// an Options filled in from the API. Both slices are deduplicated and sorted,
+// so the requests a caller builds from them are deterministic.
+type Refs struct {
+	// AccountIDs are the ri:user targets.
+	AccountIDs []string
+	// Pages are the ri:page targets. SpaceKey is empty for a link to a page
+	// in the same space, which is how storage writes one — and that empty key
+	// is what Options.PageURLs has to be keyed by for the lookup to hit.
+	Pages []PageRef
+}
+
+// References collects what a caller has to resolve for ToMarkdown to render
+// names and URLs instead of identifiers. It walks for the same ac:link
+// targets link renders, through the same accessor; the kinds worth resolving
+// are listed in collectTarget, which link has to be kept in step with.
+//
+// Parsing the body twice — once here, once in ToMarkdown — is the price of
+// keeping the converter a pure function. Returning the references from the
+// conversion instead would cost the same parse plus a discarded render, since
+// the resolution has to be in hand before the rendering that uses it.
+func References(storage string) Refs {
+	accountIDs := make(map[string]struct{})
+	pages := make(map[PageRef]struct{})
+
+	var walk func(nodes []*node)
+	walk = func(nodes []*node) {
+		for _, n := range nodes {
+			if n.space == "ac" && n.local == "link" {
+				collectTarget(riChild(n), accountIDs, pages)
+			}
+			walk(n.children)
+		}
+	}
+	walk(parseStorage(storage).children)
+
+	return Refs{
+		AccountIDs: slices.Sorted(maps.Keys(accountIDs)),
+		Pages: slices.SortedFunc(maps.Keys(pages), func(a, b PageRef) int {
+			return cmp.Or(cmp.Compare(a.SpaceKey, b.SpaceKey), cmp.Compare(a.Title, b.Title))
+		}),
+	}
+}
+
+// collectTarget records the resource a link names, if it is one that
+// resolving would change the rendering of. A target carrying no identifier is
+// dropped: the lookup could not match, and the renderer already falls back.
+//
+// The kinds handled here are the ones link consults Options for. Teaching
+// link to resolve a further kind means adding it here too, or the resolution
+// it now expects will never be looked up.
+func collectTarget(target *node, accountIDs map[string]struct{}, pages map[PageRef]struct{}) {
+	if target == nil {
+		return
+	}
+
+	switch target.local {
+	case "user":
+		if id := target.attr["account-id"]; id != "" {
+			accountIDs[id] = struct{}{}
+		}
+	case "page":
+		if title := target.attr["content-title"]; title != "" {
+			pages[PageRef{SpaceKey: target.attr["space-key"], Title: title}] = struct{}{}
+		}
+	}
 }
 
 // Result is a conversion and what it could not represent.
@@ -606,6 +677,9 @@ func (r *renderer) anchor(n *node) string {
 // them, so an unresolved target renders as text: a URL built here from a
 // space key and a title is not a form pageref.Parse accepts, which would make
 // it a link cflio itself cannot follow.
+//
+// The target kinds resolved from Options are the ones collectTarget gathers;
+// the two are kept in step by hand.
 func (r *renderer) link(n *node) string {
 	body := r.linkBody(n)
 

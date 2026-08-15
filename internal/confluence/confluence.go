@@ -17,6 +17,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -29,6 +30,18 @@ const (
 
 	// maxSearchPageSize is v1 CQL search's own, lower ceiling.
 	maxSearchPageSize = 100
+
+	// maxBulkUsers is the number of account IDs the bulk user endpoint
+	// documents per request. It answers a longer list by silently returning
+	// the first hundred, so exceeding it loses people rather than failing.
+	maxBulkUsers = 100
+
+	// maxTitlesPerQuery bounds how many titles are OR-ed into one CQL query,
+	// keeping the generated query string to a few hundred bytes for the page
+	// titles actually seen in the wild. It is not a guarantee: fifty titles at
+	// Confluence's 255-character ceiling would still outgrow what some proxies
+	// carry, which costs the batch its resolution and nothing more.
+	maxTitlesPerQuery = 50
 )
 
 // Client talks to one Confluence Cloud site with one set of credentials.
@@ -89,6 +102,81 @@ func (c *Client) CurrentUser(ctx context.Context) (User, error) {
 		return User{}, err
 	}
 	return user, nil
+}
+
+// Users looks up the accounts named by accountIDs, in as few requests as the
+// bulk endpoint's ceiling allows. Accounts that no longer exist, or that the
+// token cannot see, are simply absent from the result.
+//
+// Like the credential check, this is v1: the v2 API models no users.
+func (c *Client) Users(ctx context.Context, accountIDs []string) ([]User, error) {
+	var all []User
+	for batch := range slices.Chunk(accountIDs, maxBulkUsers) {
+		query := url.Values{"accountId": batch}
+
+		var page struct {
+			Results []User `json:"results"`
+		}
+		if err := c.get(ctx, "/rest/api/user/bulk", query, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Results...)
+	}
+	return all, nil
+}
+
+// PageMatch is one page a title lookup resolved to. Title is what the search
+// API returned, which is HTML-escaped and may carry highlight markers, so
+// comparing it to a title read out of a page body means normalising it first
+// — format.StripHighlightMarkers does both halves.
+type PageMatch struct {
+	ID    string
+	Title string
+}
+
+// PagesByTitle resolves exact page titles within one space. Titles are unique
+// per space, so one query answers the whole batch; a title that matched
+// nothing is simply missing from the result.
+//
+// One query per space rather than one OR-ing (space, title) pairs across
+// spaces: every hit then belongs to the space that was asked for, so the
+// caller can attribute it by title alone without the response having to carry
+// the space back.
+func (c *Client) PagesByTitle(ctx context.Context, spaceKey string, titles []string) ([]PageMatch, error) {
+	var all []PageMatch
+	for batch := range slices.Chunk(titles, maxTitlesPerQuery) {
+		clauses := make([]string, 0, len(batch))
+		for _, title := range batch {
+			clauses = append(clauses, "title = "+quoteCQL(title))
+		}
+		cql := "type = page and space = " + quoteCQL(spaceKey) +
+			" and (" + strings.Join(clauses, " or ") + ")"
+
+		// One result per title: the uniqueness that makes this lookup
+		// possible is also what makes asking for more a wasted round trip.
+		results, _, err := c.Search(ctx, cql, len(batch))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, result := range results {
+			if result.Content == nil {
+				continue
+			}
+			all = append(all, PageMatch{ID: result.Content.ID, Title: result.Content.Title})
+		}
+	}
+	return all, nil
+}
+
+var cqlEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
+// quoteCQL renders s as a CQL string literal, quotes included. Titles and
+// space keys are page data, not input this package controls, so a quote or a
+// backslash in one has to be escaped rather than end the literal early and
+// leave the rest of the value to be read as query syntax.
+func quoteCQL(s string) string {
+	return `"` + cqlEscaper.Replace(s) + `"`
 }
 
 // Version mirrors the v2 version object shared by pages and comments.
@@ -299,6 +387,14 @@ func (c *Client) Search(ctx context.Context, cql string, limit int) ([]SearchRes
 		total = page.TotalSize
 		all = append(all, page.Results...)
 		if len(page.Results) == 0 {
+			break
+		}
+		// The server already said how many matches exist, so a query that
+		// matched fewer than the caller asked for needs no further page to
+		// prove it. Without this, every under-filled search — the normal case
+		// when looking a set of titles up, since a missing one is expected —
+		// costs an extra round trip that comes back empty.
+		if total > 0 && len(all) >= total {
 			break
 		}
 	}

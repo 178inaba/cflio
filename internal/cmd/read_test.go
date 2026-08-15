@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/178inaba/cflio/internal/pageref"
 	"github.com/178inaba/cflio/internal/sidecar"
 )
 
@@ -278,7 +279,14 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	body := `<h1>Release notes</h1><p>Ping <ac:link><ri:user ri:account-id="acc-123"/></ac:link>.</p>`
 
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		// The conversion is local: the request is unchanged.
+		if r.URL.Path == bulkUsersPath {
+			// The mention resolves to nothing, so the rendering below is the
+			// fallback one.
+			_, _ = w.Write([]byte(`{"results":[]}`))
+			return
+		}
+		// The conversion itself is local: the page request still asks for the
+		// storage representation, whatever the reference lookups do.
 		if got := r.URL.Query().Get("body-format"); got != "storage" {
 			t.Errorf("body-format = %q, want storage", got)
 		}
@@ -310,6 +318,161 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	}
 	if !strings.Contains(output, fmt.Sprintf("%d bytes", len(written))) {
 		t.Errorf("output = %q, want it to count the %d converted bytes", output, len(written))
+	}
+}
+
+// The paths the reference lookups hit. The client is built against a /wiki
+// base, so the test server sees them prefixed.
+const (
+	bulkUsersPath = "/wiki/rest/api/user/bulk"
+	searchPath    = "/wiki/rest/api/search"
+)
+
+// referencesBody names a person and two pages: one in another space, one in
+// this page's own space, which storage writes without a space key.
+const referencesBody = `<p>Ping <ac:link><ri:user ri:account-id="acc-1"/></ac:link>, ` +
+	`see <ac:link><ri:page ri:space-key="OPS" ri:content-title="Runbook"/></ac:link> ` +
+	`and <ac:link><ri:page ri:content-title="Onboarding"/></ac:link>.</p>`
+
+func TestReadMarkdownResolvesMentionsAndPageLinks(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	var searchedCQL []string
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case bulkUsersPath:
+			_, _ = w.Write([]byte(`{"results":[{"accountId":"acc-1","displayName":"Ada Lovelace"}]}`))
+		case searchPath:
+			cql := r.URL.Query().Get("cql")
+			searchedCQL = append(searchedCQL, cql)
+			if strings.Contains(cql, `space = "OPS"`) {
+				_, _ = w.Write([]byte(`{"results":[{"content":{"id":"777","type":"page","title":"Runbook"}}],"totalSize":1}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"results":[{"content":{"id":"888","type":"page","title":"Onboarding"}}],"totalSize":1}`))
+		default:
+			_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
+		}
+	})
+
+	path := filepath.Join(t.TempDir(), "page.md")
+	if _, err := runRead(t, testPageURL, path, "--markdown"); err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	// The same-space link is resolved against the space the page itself is
+	// in, which is DEV — the key its web link carries.
+	want := "Ping @Ada Lovelace, see [Runbook](" + testSite + "/spaces/OPS/pages/777) " +
+		"and [Onboarding](" + testSite + "/spaces/DEV/pages/888).\n"
+	if string(written) != want {
+		t.Errorf("file = %q, want the resolved Markdown %q", written, want)
+	}
+
+	// One query per space, not one per link.
+	if len(searchedCQL) != 2 {
+		t.Errorf("search requests = %d (%v), want one per space", len(searchedCQL), searchedCQL)
+	}
+
+	// A resolved link is only worth emitting if cflio can follow it, which is
+	// the whole reason the URL is looked up rather than assembled from the
+	// space key and title the body carries.
+	_, link, ok := strings.Cut(string(written), "](")
+	if !ok {
+		t.Fatalf("file = %q, want a Markdown link", written)
+	}
+	target, _, _ := strings.Cut(link, ")")
+	ref, err := pageref.Parse(target)
+	if err != nil {
+		t.Fatalf("pageref.Parse(%q) error = %v, want the emitted link to be readable", target, err)
+	}
+	if ref.PageID != "777" {
+		t.Errorf("parsed page id = %q, want the resolved page 777", ref.PageID)
+	}
+}
+
+// A link to a page in the same space names no space key, so it can only be
+// resolved against the space the page itself is in. When the API returns no
+// web link, there is no key to resolve against and the reference falls back
+// rather than being looked up in the wrong space.
+func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	body := `<p>See <ac:link><ri:page ri:content-title="Onboarding"/></ac:link>.</p>`
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == searchPath {
+			t.Error("a same-space link was searched for with no space to search in")
+		}
+		_, _ = w.Write([]byte(pageResponse(t, body, "")))
+	})
+
+	path := filepath.Join(t.TempDir(), "page.md")
+	if _, err := runRead(t, testPageURL, path, "--markdown"); err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if want := "See Onboarding.\n"; string(written) != want {
+		t.Errorf("file = %q, want the unresolved fallback %q", written, want)
+	}
+}
+
+// A reference that cannot be resolved is an ordinary outcome — the person or
+// page may be deleted, or invisible to this token — so it degrades the
+// rendering rather than failing the read.
+func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == bulkUsersPath || r.URL.Path == searchPath {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"boom"}`))
+			return
+		}
+		_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
+	})
+
+	path := filepath.Join(t.TempDir(), "page.md")
+	if _, err := runRead(t, testPageURL, path, "--markdown"); err != nil {
+		t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	want := "Ping @acc-1, see Runbook and Onboarding.\n"
+	if string(written) != want {
+		t.Errorf("file = %q, want the unresolved fallback %q", written, want)
+	}
+}
+
+// Storage mode writes the API's bytes back untouched, so there is nothing to
+// resolve and no reason to spend a request finding out.
+func TestReadSkipsResolutionWithoutMarkdown(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == bulkUsersPath || r.URL.Path == searchPath {
+			t.Errorf("storage mode looked references up at %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(pageResponse(t, referencesBody, testPageWebUI)))
+	})
+
+	path := filepath.Join(t.TempDir(), "page.xml")
+	if _, err := runRead(t, testPageURL, path); err != nil {
+		t.Fatalf("read error = %v", err)
 	}
 }
 

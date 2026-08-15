@@ -382,6 +382,199 @@ func TestSearchStopsWhenAPageComesBackEmpty(t *testing.T) {
 	}
 }
 
+// A query that matched fewer pages than were asked for is the normal case
+// when resolving a set of titles, so it must not cost a page of paging just
+// to discover there is nothing more.
+func TestSearchStopsOnceItHasEveryReportedMatch(t *testing.T) {
+	calls := 0
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = fmt.Fprint(w, `{"results":[{"content":{"id":"1","type":"page","title":"P"}}],"totalSize":1}`)
+	})
+
+	results, total, err := client.Search(t.Context(), "type = page", 5)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("requests = %d, want 1 — the total says there is nothing more to fetch", calls)
+	}
+	if len(results) != 1 || total != 1 {
+		t.Errorf("results = %d, total = %d, want the single reported match", len(results), total)
+	}
+}
+
+func TestUsersLooksEveryAccountUpInOneRequest(t *testing.T) {
+	var gotPath string
+	var gotIDs []string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotIDs = r.URL.Path, r.URL.Query()["accountId"]
+		_, _ = fmt.Fprint(w, `{"results":[{"accountId":"acc-1","displayName":"Ada Lovelace"},`+
+			`{"accountId":"acc-2","displayName":"Alan Turing"}]}`)
+	})
+
+	users, err := client.Users(t.Context(), []string{"acc-1", "acc-2"})
+	if err != nil {
+		t.Fatalf("Users() error = %v", err)
+	}
+	if gotPath != "/wiki/rest/api/user/bulk" {
+		t.Errorf("path = %q, want /wiki/rest/api/user/bulk", gotPath)
+	}
+	if want := []string{"acc-1", "acc-2"}; !slices.Equal(gotIDs, want) {
+		t.Errorf("accountId params = %v, want each id passed once as %v", gotIDs, want)
+	}
+	if len(users) != 2 || users[0].DisplayName != "Ada Lovelace" || users[1].AccountID != "acc-2" {
+		t.Errorf("users = %+v, want both accounts with their display names", users)
+	}
+}
+
+// The endpoint silently truncates past its documented ceiling, so a body
+// mentioning more people than that has to be split rather than half-resolved.
+func TestUsersChunksPastTheBulkCeiling(t *testing.T) {
+	ids := make([]string, maxBulkUsers+1)
+	for i := range ids {
+		ids[i] = "acc-" + strconv.Itoa(i)
+	}
+
+	var batches [][]string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		batch := r.URL.Query()["accountId"]
+		batches = append(batches, batch)
+
+		results := make([]string, 0, len(batch))
+		for _, id := range batch {
+			results = append(results, `{"accountId":"`+id+`","displayName":"name of `+id+`"}`)
+		}
+		_, _ = fmt.Fprint(w, `{"results":[`+strings.Join(results, ",")+`]}`)
+	})
+
+	users, err := client.Users(t.Context(), ids)
+	if err != nil {
+		t.Fatalf("Users() error = %v", err)
+	}
+	if len(batches) != 2 {
+		t.Fatalf("requests = %d, want the ids split into 2", len(batches))
+	}
+	if len(batches[0]) != maxBulkUsers || len(batches[1]) != 1 {
+		t.Errorf("batch sizes = %d and %d, want %d and 1", len(batches[0]), len(batches[1]), maxBulkUsers)
+	}
+	if len(users) != len(ids) {
+		t.Errorf("len(users) = %d, want every account across both batches (%d)", len(users), len(ids))
+	}
+}
+
+func TestUsersMakesNoRequestForNoAccounts(t *testing.T) {
+	client := newTestClient(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("Users() sent a request for an empty account list")
+	})
+
+	users, err := client.Users(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("Users() error = %v", err)
+	}
+	if len(users) != 0 {
+		t.Errorf("users = %+v, want none", users)
+	}
+}
+
+func TestPagesByTitleQueriesOneSpaceWithTheTitlesORed(t *testing.T) {
+	var gotCQL string
+	var gotLimit string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotCQL, gotLimit = r.URL.Query().Get("cql"), r.URL.Query().Get("limit")
+		_, _ = fmt.Fprint(w, `{"results":[{"content":{"id":"1","type":"page","title":"Runbook"}},`+
+			`{"content":{"id":"2","type":"page","title":"Onboarding"}}],"totalSize":2}`)
+	})
+
+	matches, err := client.PagesByTitle(t.Context(), "DEV", []string{"Runbook", "Onboarding"})
+	if err != nil {
+		t.Fatalf("PagesByTitle() error = %v", err)
+	}
+
+	want := `type = page and space = "DEV" and (title = "Runbook" or title = "Onboarding")`
+	if gotCQL != want {
+		t.Errorf("cql = %q, want %q", gotCQL, want)
+	}
+	// One title resolves to one page, so asking for exactly as many results
+	// as titles is what keeps the lookup to a single request.
+	if gotLimit != "2" {
+		t.Errorf("limit = %q, want 2 — one per title", gotLimit)
+	}
+	wantMatches := []PageMatch{{ID: "1", Title: "Runbook"}, {ID: "2", Title: "Onboarding"}}
+	if !slices.Equal(matches, wantMatches) {
+		t.Errorf("matches = %+v, want %+v", matches, wantMatches)
+	}
+}
+
+// A title is user-supplied text that reaches the query as a CQL string
+// literal, so a quote in it has to be escaped rather than close the literal
+// early and turn the rest of the title into syntax.
+func TestPagesByTitleEscapesTitlesAndSpaceKeys(t *testing.T) {
+	var gotCQL string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotCQL = r.URL.Query().Get("cql")
+		_, _ = fmt.Fprint(w, `{"results":[],"totalSize":0}`)
+	})
+
+	if _, err := client.PagesByTitle(t.Context(), `~a"b`, []string{`The "Big" Release`, `C:\temp`}); err != nil {
+		t.Fatalf("PagesByTitle() error = %v", err)
+	}
+
+	want := `type = page and space = "~a\"b" and (title = "The \"Big\" Release" or title = "C:\\temp")`
+	if gotCQL != want {
+		t.Errorf("cql = %q, want %q", gotCQL, want)
+	}
+}
+
+func TestPagesByTitleSkipsResultsCarryingNoContent(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"results":[{"title":"Runbook","url":"/x"},`+
+			`{"content":{"id":"1","type":"page","title":"Runbook"}}],"totalSize":2}`)
+	})
+
+	matches, err := client.PagesByTitle(t.Context(), "DEV", []string{"Runbook", "Onboarding"})
+	if err != nil {
+		t.Fatalf("PagesByTitle() error = %v", err)
+	}
+	if want := []PageMatch{{ID: "1", Title: "Runbook"}}; !slices.Equal(matches, want) {
+		t.Errorf("matches = %+v, want only the hit that names a page %+v", matches, want)
+	}
+}
+
+func TestPagesByTitleChunksLongTitleLists(t *testing.T) {
+	titles := make([]string, maxTitlesPerQuery+1)
+	for i := range titles {
+		titles[i] = "Page " + strconv.Itoa(i)
+	}
+
+	queries := 0
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		queries++
+		_, _ = fmt.Fprint(w, `{"results":[],"totalSize":0}`)
+	})
+
+	if _, err := client.PagesByTitle(t.Context(), "DEV", titles); err != nil {
+		t.Fatalf("PagesByTitle() error = %v", err)
+	}
+	if queries != 2 {
+		t.Errorf("requests = %d, want the titles split into 2 queries", queries)
+	}
+}
+
+func TestPagesByTitleMakesNoRequestForNoTitles(t *testing.T) {
+	client := newTestClient(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("PagesByTitle() sent a request for an empty title list")
+	})
+
+	matches, err := client.PagesByTitle(t.Context(), "DEV", nil)
+	if err != nil {
+		t.Fatalf("PagesByTitle() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("matches = %+v, want none", matches)
+	}
+}
+
 func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 	tests := []struct {
 		name         string
