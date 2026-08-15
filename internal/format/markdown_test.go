@@ -215,6 +215,37 @@ func TestToMarkdownKeepsEmoticonsAsText(t *testing.T) {
 	}
 }
 
+// Storage carries HTML entities that no XML document type declares, so the
+// decoder is configured with the HTML entity table. Both halves of that
+// setting matter: known names have to resolve, and an unknown one has to
+// leave the text alone rather than abort the parse and lose the rest.
+func TestToMarkdownDecodesHTMLEntities(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "named HTML entities are decoded",
+			in:   "<p>100&euro; total</p>",
+			want: "100€ total\n",
+		},
+		{
+			name: "unknown entities are left as written rather than dropping the text",
+			in:   "<p>100&bogus; total</p>",
+			want: "100&bogus; total\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToMarkdown(tt.in, Options{}).Markdown; got != tt.want {
+				t.Errorf("ToMarkdown(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToMarkdownKeepsGoingOnAwkwardInput(t *testing.T) {
 	tests := []struct {
 		name string

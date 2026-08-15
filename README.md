@@ -158,8 +158,9 @@ docker compose run --rm lint --fix
 
 - **Confluence Cloud only.** Data Center and Server are out of scope.
 - **Comment display is best-effort.** The comment API offers no rendered representation, so comment
-  bodies are converted from storage XHTML to plain text locally. `comments` shows root comments and
-  their direct replies; replies to replies are not fetched. Authors appear as Atlassian account IDs.
+  bodies are converted from storage XHTML to Markdown locally, by the same converter
+  `read --markdown` uses. `comments` shows root comments and their direct replies; replies to
+  replies are not fetched. Authors appear as Atlassian account IDs.
 - **Local conversion never feeds an update.** Both converted outputs — comment bodies and
   `read --markdown` — are for reading only. A body that will be written back is never converted.
   Mentions and page links in Markdown mode render as account IDs and page titles, since a page

@@ -1,20 +1,18 @@
 // Package format holds the text helpers the commands share when rendering
-// API results: storage-XHTML decoding, search highlight-marker stripping and
-// indentation.
+// API results: storage-XHTML to Markdown conversion, search highlight-marker
+// stripping and indentation.
 //
 // Nothing here is part of an edit round-trip. A page body that will be
 // written back is read from and written to a file untouched, so that path
 // stays byte-lossless; the conversions in this package produce output for
-// reading only. StripStorage exists because the comment endpoints refuse
-// body-format=view, so comment bodies arrive as storage XHTML and have to be
-// made readable locally, and ToMarkdown converts a page body for `read
-// --markdown`, whose output carries no sidecar and cannot be updated.
+// reading only. ToMarkdown serves both readers of a storage body: `read
+// --markdown`, whose output carries no sidecar and cannot be updated, and
+// comment bodies, which arrive as storage XHTML because the comment
+// endpoints refuse body-format=view.
 package format
 
 import (
-	"encoding/xml"
 	"html"
-	"io"
 	"strings"
 )
 
@@ -24,113 +22,6 @@ const (
 	highlightStart = "@@@hl@@@"
 	highlightEnd   = "@@@endhl@@@"
 )
-
-// blockElements end a line of output when they close. Storage format is
-// XHTML, so the set is the usual block-level tags plus table rows.
-var blockElements = map[string]bool{
-	"p": true, "div": true, "li": true, "br": true, "tr": true,
-	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-	"blockquote": true, "pre": true,
-}
-
-// newStorageDecoder configures a decoder for storage XHTML. Every reader of
-// a storage body goes through here so the settings cannot drift apart.
-//
-// Storage format is a fragment, not a document: it uses undeclared ac:/ri:
-// prefixes and HTML entities like &nbsp;. Non-strict mode with the HTML
-// entity table copes with both, and also closes stray tags so malformed
-// markup does not discard the rest of the body. It is what makes CDATA
-// sections survive, too: an HTML5 parser reads <![CDATA[…]]> as a bogus
-// comment and drops every code macro's body.
-//
-// xml.HTMLAutoClose is deliberately NOT set: it treats every element whose
-// local name is an HTML void element as self-closing, which swallows
-// Confluence's <ac:link>…</ac:link> — the wrapper around every mention and
-// page link — and drops everything after it.
-func newStorageDecoder(storage string) *xml.Decoder {
-	decoder := xml.NewDecoder(strings.NewReader(storage))
-	decoder.Strict = false
-	decoder.Entity = xml.HTMLEntity
-	return decoder
-}
-
-// StripStorage turns storage XHTML into readable plain text on a
-// best-effort basis: text is kept, block elements become line breaks, list
-// items get a bullet, and user mentions become their account ID.
-func StripStorage(storage string) string {
-	decoder := newStorageDecoder(storage)
-
-	var out strings.Builder
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// Non-strict decoding rarely fails; when it does, keep what
-			// was recovered rather than losing the comment entirely.
-			break
-		}
-
-		switch t := token.(type) {
-		case xml.CharData:
-			out.WriteString(string(t))
-		case xml.StartElement:
-			writeStartElement(&out, t)
-		case xml.EndElement:
-			if blockElements[strings.ToLower(t.Name.Local)] {
-				out.WriteByte('\n')
-			}
-		}
-	}
-
-	return tidyLines(out.String())
-}
-
-func writeStartElement(out *strings.Builder, el xml.StartElement) {
-	switch strings.ToLower(el.Name.Local) {
-	case "li":
-		out.WriteString("- ")
-	case "br":
-		// Self-closing in practice, so the end element never arrives.
-		out.WriteByte('\n')
-	case "td", "th":
-		out.WriteByte(' ')
-	case "user":
-		// <ri:user ri:account-id="..."/> is a mention. The account ID is
-		// all the body carries; resolving it to a name would cost a
-		// request per mention.
-		if id := attr(el, "account-id"); id != "" {
-			out.WriteString("@" + id)
-		}
-	}
-}
-
-func attr(el xml.StartElement, name string) string {
-	for _, a := range el.Attr {
-		if a.Name.Local == name {
-			return a.Value
-		}
-	}
-	return ""
-}
-
-// tidyLines squeezes each line's whitespace down to single spaces and drops
-// the blank lines that unwrapping markup leaves behind. strings.Fields splits
-// on unicode.IsSpace, which covers the non-breaking spaces the HTML entity
-// table decodes as well as ordinary ones.
-func tidyLines(text string) string {
-	lines := strings.Split(text, "\n")
-	kept := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.Join(strings.Fields(line), " ")
-		if line == "" {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	return strings.Join(kept, "\n")
-}
 
 // StripHighlightMarkers removes the markers Confluence search wraps around
 // matched terms and decodes the HTML entities that come with them. A value
