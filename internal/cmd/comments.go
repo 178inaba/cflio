@@ -138,10 +138,12 @@ func commentItemFrom(c confluence.Comment) commentItem {
 		ID:        c.ID,
 		Author:    c.Version.AuthorID,
 		CreatedAt: c.Version.CreatedAt,
-		// Comment endpoints reject body-format=view, so the storage XHTML
-		// is made readable here. This is display only; page bodies are
-		// never converted.
-		Body:      format.StripStorage(c.Body.Storage.Value),
+		// Comment endpoints reject body-format=view, so the storage XHTML is
+		// converted here, by the same converter `read --markdown` uses: a
+		// comment carries code blocks and tables as often as a page does.
+		// The trailing newline goes because the caller indents this body and
+		// adds its own, which would otherwise leave a blank line per comment.
+		Body:      strings.TrimSuffix(format.ToMarkdown(c.Body.Storage.Value, format.Options{}).Markdown, "\n"),
 		Highlight: c.Properties.InlineOriginalSelection,
 		Status:    c.ResolutionStatus,
 	}

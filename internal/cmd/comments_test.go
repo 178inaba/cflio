@@ -70,7 +70,7 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 		// The inline comment's anchor text and resolution state.
 		"the system should",
 		"[open]",
-		// Storage XHTML rendered as text, entities decoded.
+		// Storage XHTML rendered as Markdown, entities decoded.
 		`Should this be "shall"?`,
 		// Replies come from a separate endpoint; without them the answer
 		// to the question above would be missing entirely.
@@ -81,7 +81,41 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 		}
 	}
 	if strings.Contains(output, "<p>") {
-		t.Errorf("output = %q, want the storage markup stripped", output)
+		t.Errorf("output = %q, want the storage markup converted", output)
+	}
+}
+
+// TestCommentsRendersBodiesAsMarkdown pins the structure a comment body keeps
+// now that it goes through the same converter as `read --markdown`: a code
+// macro stays a code block and a table stays a table, both of which the old
+// flattening squashed to one line per block.
+func TestCommentsRendersBodiesAsMarkdown(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	footer := `{"results":[{"id":"f1","version":{"authorId":"acc-1"},"body":{"storage":{"value":"` +
+		`<ac:structured-macro ac:name=\"code\"><ac:parameter ac:name=\"language\">go</ac:parameter>` +
+		`<ac:plain-text-body><![CDATA[println(hello)]]></ac:plain-text-body></ac:structured-macro>` +
+		`<table><tbody><tr><th>Key</th><th>Value</th></tr><tr><td>a</td><td>1</td></tr></tbody></table>` +
+		`<p>ping <ac:link><ri:user ri:account-id=\"acc-9\"/></ac:link></p>` +
+		`"}}}],"_links":{}}`
+	startAPI(t, commentsAPI(t, footer, emptyComments, nil))
+
+	output, err := runCommentsCmd(t, testPageURL, 25)
+	if err != nil {
+		t.Fatalf("comments error = %v", err)
+	}
+
+	// Every line is indented under the comment header, which is what makes the
+	// body a continuation of its bullet rather than a sibling block.
+	for _, want := range []string{
+		"  ```go\n  println(hello)\n  ```",
+		"  | Key | Value |\n  | --- | --- |\n  | a | 1 |",
+		"  ping @acc-9",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output = %q, want it to contain %q", output, want)
+		}
 	}
 }
 
@@ -205,7 +239,7 @@ func TestCommentsJSONOutput(t *testing.T) {
 
 	comment := got.InlineComments.Comments[0]
 	if comment.Author != "acc-1" || comment.Body != "note" {
-		t.Errorf("comment = %+v, want the author id and stripped body", comment)
+		t.Errorf("comment = %+v, want the author id and converted body", comment)
 	}
 	if comment.Highlight != "anchor text" || comment.Status != "resolved" {
 		t.Errorf("comment = %+v, want the inline anchor text and resolution status", comment)
