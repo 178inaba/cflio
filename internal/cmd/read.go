@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"cmp"
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/178inaba/cflio/internal/confluence"
 	"github.com/178inaba/cflio/internal/format"
 	"github.com/178inaba/cflio/internal/pageref"
 	"github.com/178inaba/cflio/internal/sidecar"
@@ -107,10 +110,13 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	body := page.Body.Storage.Value
 	var converted format.Result
 	if markdown {
-		// Purely local: the request above still asked for the storage
-		// representation, which is the only one that carries the macros and
-		// the code bodies intact.
-		converted = format.ToMarkdown(body, format.Options{})
+		// The request above still asked for the storage representation, which
+		// is the only one that carries the macros and the code bodies intact.
+		// Converting it is purely local; what the converter cannot do itself
+		// is turn the identifiers a body names into names and URLs, so that
+		// much is looked up first and handed in.
+		opts := resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
+		converted = format.ToMarkdown(body, opts)
 		body = converted.Markdown
 	}
 	if err := writeBody(bodyPath, body); err != nil {
@@ -149,6 +155,84 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	}
 
 	return writeReadResult(cmd, outFormat, result)
+}
+
+// resolveReferences looks up the names and URLs the converter cannot derive
+// from the body alone: a mention carries an account ID, and a page link
+// carries a space key and a title but no address.
+//
+// spaceKey is the space the page itself is in, which is what a link to a page
+// in the same space resolves against — storage writes those without a key.
+//
+// No lookup failure is propagated. A reference to a deleted account, or to a
+// page this token cannot see, is an ordinary thing to find in a page body,
+// and the rendering already degrades to the identifier; failing the read over
+// it would deny the caller the other 99% of the page over a detail.
+func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) format.Options {
+	refs := format.References(storage)
+
+	var opts format.Options
+	if len(refs.AccountIDs) > 0 {
+		if users, err := client.Users(ctx, refs.AccountIDs); err == nil {
+			opts.UserNames = make(map[string]string, len(users))
+			for _, user := range users {
+				if user.DisplayName != "" {
+					opts.UserNames[user.AccountID] = user.DisplayName
+				}
+			}
+		}
+	}
+
+	for key, group := range pagesBySpace(refs.Pages, spaceKey) {
+		titles := make([]string, 0, len(group))
+		for _, ref := range group {
+			titles = append(titles, ref.Title)
+		}
+
+		matches, err := client.PagesByTitle(ctx, key, titles)
+		if err != nil {
+			continue
+		}
+
+		ids := make(map[string]string, len(matches))
+		for _, match := range matches {
+			// The search API hands titles back HTML-escaped and marked up for
+			// highlighting, while the title in the body arrives decoded, so
+			// the two only compare after the same normalisation `search` uses.
+			if title := format.StripHighlightMarkers(match.Title); ids[title] == "" {
+				ids[title] = match.ID
+			}
+		}
+
+		for _, ref := range group {
+			if id := ids[ref.Title]; id != "" {
+				if opts.PageURLs == nil {
+					opts.PageURLs = make(map[format.PageRef]string)
+				}
+				// Keyed by the reference exactly as the body wrote it, empty
+				// space key and all: that is what the converter looks up.
+				opts.PageURLs[ref] = pageref.SpacePageURL(siteURL, key, id)
+			}
+		}
+	}
+
+	return opts
+}
+
+// pagesBySpace groups page references by the space each one resolves in,
+// which for a reference that names no space is the page's own. References
+// that resolve in no space at all are dropped: with no key there is nothing
+// to query.
+func pagesBySpace(refs []format.PageRef, pageSpaceKey string) map[string][]format.PageRef {
+	groups := make(map[string][]format.PageRef)
+	for _, ref := range refs {
+		key := cmp.Or(ref.SpaceKey, pageSpaceKey)
+		if key == "" {
+			continue
+		}
+		groups[key] = append(groups[key], ref)
+	}
+	return groups
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:

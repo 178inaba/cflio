@@ -87,8 +87,14 @@ override) so agent edits are identifiable in the page history.
 
 Storage XHTML is the right representation for editing and the wrong one for reading: `ac:` macros,
 `ri:` references and `local-id` noise are most of the bytes. `read --markdown` converts the body to
-Markdown locally — the request still asks the API for `storage`, which is the only representation
-that carries macros and code bodies intact — and writes `<page-id>.md` by default.
+Markdown — the request still asks the API for `storage`, which is the only representation that
+carries macros and code bodies intact — and writes `<page-id>.md` by default.
+
+Mentions and page links are resolved on the way: a mention becomes the person's display name, and a
+link to another page becomes a Markdown link you can pass straight back to `cflio read`. That costs
+a couple of extra requests, batched so the count does not grow with the number of links. A reference
+that cannot be resolved — a deleted account, a page this token cannot see — falls back to the
+account ID or the bare page title rather than failing the read.
 
 That file has **no sidecar** and cannot be written back: `update` refuses it, by design. So use
 `--markdown` when a page is only going to be read, and the storage default when it might be edited.
@@ -160,11 +166,10 @@ docker compose run --rm lint --fix
 - **Comment display is best-effort.** The comment API offers no rendered representation, so comment
   bodies are converted from storage XHTML to Markdown locally, by the same converter
   `read --markdown` uses. `comments` shows root comments and their direct replies; replies to
-  replies are not fetched. Authors appear as Atlassian account IDs.
-- **Local conversion never feeds an update.** Both converted outputs — comment bodies and
+  replies are not fetched. Authors appear as Atlassian account IDs, and references inside a comment
+  body are not resolved — only `read --markdown` resolves mentions and page links.
+- **Converted output never feeds an update.** Both converted outputs — comment bodies and
   `read --markdown` — are for reading only. A body that will be written back is never converted.
-  Mentions and page links in Markdown mode render as account IDs and page titles, since a page
-  carries no resolved names or URLs and the conversion makes no requests.
 - **Short links** (`/wiki/x/…`) are not resolved — open one in a browser and pass the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - Creating, deleting and moving pages, posting comments, attachments, and ADF (the representation
