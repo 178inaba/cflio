@@ -66,6 +66,13 @@ type readResult struct {
 	// faithful one without opening the file.
 	Unsupported      []string `json:"unsupported,omitempty"`
 	UnsupportedCount int      `json:"unsupported_count,omitempty"`
+	// UncheckedCount counts the references whose lookup produced no answer:
+	// the request failed, or it was never attempted for want of a space key.
+	// A lookup that ran and matched nothing is not counted — that reference is
+	// genuinely unresolvable, and the fallback is the final answer. Both render
+	// identically, so without this count a caller cannot tell a rendering that
+	// is missing names and links that do exist from one that is complete.
+	UncheckedCount int `json:"unchecked_count,omitempty"`
 }
 
 func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, outFormat format.Format) error {
@@ -108,14 +115,18 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	}
 
 	body := page.Body.Storage.Value
-	var converted format.Result
+	var (
+		converted format.Result
+		unchecked int
+	)
 	if markdown {
 		// The request above still asked for the storage representation, which
 		// is the only one that carries the macros and the code bodies intact.
 		// Converting it is purely local; what the converter cannot do itself
 		// is turn the identifiers a body names into names and URLs, so that
 		// much is looked up first and handed in.
-		opts := resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
+		var opts format.Options
+		opts, unchecked = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
 		converted = format.ToMarkdown(body, opts)
 		body = converted.Markdown
 	}
@@ -141,6 +152,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		Bytes:            len(body),
 		Unsupported:      converted.Unsupported,
 		UnsupportedCount: converted.UnsupportedCount,
+		UncheckedCount:   unchecked,
 	}
 
 	// A converted body is not a checkout: it carries no version lock and can
@@ -168,11 +180,21 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 // page this token cannot see, is an ordinary thing to find in a page body,
 // and the rendering already degrades to the identifier; failing the read over
 // it would deny the caller the other 99% of the page over a detail.
-func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) format.Options {
+//
+// The failures are counted instead, and the count returned: it is the number
+// of distinct references whose lookup produced no answer, either because the
+// request failed or because there was nothing to query. A lookup that ran and
+// came back empty is not one of them — that reference is unresolvable, which
+// is a settled answer rather than a missing one.
+func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) (format.Options, int) {
 	refs := format.References(storage)
 
 	var opts format.Options
+	var unchecked int
 	if len(refs.AccountIDs) > 0 {
+		// A failed batch takes the whole lookup down with it: Users discards
+		// the chunks that did succeed, so none of these account IDs has an
+		// answer.
 		if users, err := client.Users(ctx, refs.AccountIDs); err == nil {
 			opts.UserNames = make(map[string]string, len(users))
 			for _, user := range users {
@@ -180,13 +202,17 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 					opts.UserNames[user.AccountID] = user.DisplayName
 				}
 			}
+		} else {
+			unchecked += len(refs.AccountIDs)
 		}
 	}
 
 	if len(refs.Pages) > 0 {
 		opts.PageURLs = make(map[format.PageRef]string, len(refs.Pages))
 	}
-	for key, group := range pagesBySpace(refs.Pages, spaceKey) {
+	groups, dropped := pagesBySpace(refs.Pages, spaceKey)
+	unchecked += dropped
+	for key, group := range groups {
 		titles := make([]string, 0, len(group))
 		for _, ref := range group {
 			titles = append(titles, ref.Title)
@@ -194,6 +220,7 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 
 		matches, err := client.PagesByTitle(ctx, key, titles)
 		if err != nil {
+			unchecked += len(group)
 			continue
 		}
 
@@ -216,23 +243,27 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 		}
 	}
 
-	return opts
+	return opts, unchecked
 }
 
 // pagesBySpace groups page references by the space each one resolves in,
 // which for a reference that names no space is the page's own. References
 // that resolve in no space at all are dropped: with no key there is nothing
-// to query.
-func pagesBySpace(refs []format.PageRef, pageSpaceKey string) map[string][]format.PageRef {
+// to query. How many were dropped is returned alongside the groups, because a
+// reference that was never looked up leaves the same question open as one
+// whose lookup failed.
+func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (map[string][]format.PageRef, int) {
 	groups := make(map[string][]format.PageRef)
+	var dropped int
 	for _, ref := range refs {
 		key := cmp.Or(ref.SpaceKey, pageSpaceKey)
 		if key == "" {
+			dropped++
 			continue
 		}
 		groups[key] = append(groups[key], ref)
 	}
-	return groups
+	return groups, dropped
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:
@@ -278,6 +309,12 @@ func writeReadResult(cmd *cobra.Command, outFormat format.Format, result readRes
 	if result.UnsupportedCount > 0 {
 		fmt.Fprintf(&out, "Degraded: %d (%s)\n",
 			result.UnsupportedCount, strings.Join(result.Unsupported, ", "))
+	}
+	// "not looked up" rather than "lookup failed": the same count covers the
+	// references that were never queried at all.
+	if result.UncheckedCount > 0 {
+		fmt.Fprintf(&out, "Unchecked: %d (not looked up; names and links may be missing)\n",
+			result.UncheckedCount)
 	}
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
