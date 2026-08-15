@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -33,24 +34,56 @@ func TestToMarkdownMatchesTheGoldenFiles(t *testing.T) {
 				t.Fatalf("ReadFile(%s) error = %v", input, err)
 			}
 
-			got := ToMarkdown(string(storage), Options{}).Markdown
-
-			golden := strings.TrimSuffix(input, ".xml") + ".md"
-			if *updateGolden {
-				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
-					t.Fatalf("WriteFile(%s) error = %v", golden, err)
-				}
-				return
-			}
-
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("ReadFile(%s) error = %v", golden, err)
-			}
-			if got != string(want) {
-				t.Errorf("ToMarkdown(%s) =\n%s\nwant\n%s", input, got, want)
-			}
+			checkGolden(t, strings.TrimSuffix(input, ".xml")+".md",
+				ToMarkdown(string(storage), Options{}).Markdown)
 		})
+	}
+}
+
+// TestToMarkdownMatchesTheResolvedGoldenFile pins the other half of the
+// conversion contract: the same fixture the unresolved golden above covers,
+// rendered with the resolution the command layer supplies. Keeping both as
+// golden files is what makes a change to either rendering visible in review.
+func TestToMarkdownMatchesTheResolvedGoldenFile(t *testing.T) {
+	const input = "testdata/references.xml"
+
+	storage, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", input, err)
+	}
+
+	opts := Options{
+		UserNames: map[string]string{"557058:1a2b-3c4d": "Ada Lovelace"},
+		PageURLs: map[PageRef]string{
+			{SpaceKey: "DEV", Title: "Deployment Runbook"}: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456",
+			// No space key: the same-space form storage writes, which the
+			// command layer resolves against the page's own space but has to
+			// key by exactly what the body carries.
+			{Title: "Other Page"}: "https://example.atlassian.net/wiki/spaces/DEV/pages/789012",
+		},
+	}
+
+	checkGolden(t, "testdata/references.resolved.md", ToMarkdown(string(storage), opts).Markdown)
+}
+
+// checkGolden compares got against the golden file, or rewrites it under
+// -update.
+func checkGolden(t *testing.T, golden, got string) {
+	t.Helper()
+
+	if *updateGolden {
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", golden, err)
+		}
+		return
+	}
+
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", golden, err)
+	}
+	if got != string(want) {
+		t.Errorf("conversion =\n%s\nwant %s to hold\n%s", got, golden, want)
 	}
 }
 
@@ -95,6 +128,101 @@ func TestToMarkdownResolvesReferencesWhenSupplied(t *testing.T) {
 				t.Errorf("ToMarkdown(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// References feeds the command layer's lookups, so what it collects has to
+// be exactly what link() would render — no reference missed, and nothing
+// collected that could only turn into a request whose answer is unusable.
+func TestReferencesCollectsWhatLinkRendering(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want Refs
+	}{
+		{
+			name: "a body with no references needs nothing resolved",
+			in:   "<p>plain</p>",
+			want: Refs{},
+		},
+		{
+			name: "mentions and page links are collected",
+			in: `<p><ac:link><ri:user ri:account-id="acc-1"/></ac:link></p>` +
+				`<p><ac:link><ri:page ri:space-key="DEV" ri:content-title="Runbook"/></ac:link></p>`,
+			want: Refs{
+				AccountIDs: []string{"acc-1"},
+				Pages:      []PageRef{{SpaceKey: "DEV", Title: "Runbook"}},
+			},
+		},
+		{
+			name: "repeated references are collected once and sorted",
+			in: `<p><ac:link><ri:user ri:account-id="acc-2"/></ac:link>` +
+				`<ac:link><ri:user ri:account-id="acc-1"/></ac:link>` +
+				`<ac:link><ri:user ri:account-id="acc-2"/></ac:link>` +
+				`<ac:link><ri:page ri:space-key="OPS" ri:content-title="B"/></ac:link>` +
+				`<ac:link><ri:page ri:space-key="DEV" ri:content-title="B"/></ac:link>` +
+				`<ac:link><ri:page ri:space-key="DEV" ri:content-title="A"/></ac:link>` +
+				`<ac:link><ri:page ri:space-key="DEV" ri:content-title="A"/></ac:link></p>`,
+			want: Refs{
+				AccountIDs: []string{"acc-1", "acc-2"},
+				Pages: []PageRef{
+					{SpaceKey: "DEV", Title: "A"},
+					{SpaceKey: "DEV", Title: "B"},
+					{SpaceKey: "OPS", Title: "B"},
+				},
+			},
+		},
+		{
+			name: "a same-space link keeps the empty space key link() will look up",
+			in:   `<p><ac:link><ri:page ri:content-title="Other Page"/></ac:link></p>`,
+			want: Refs{Pages: []PageRef{{Title: "Other Page"}}},
+		},
+		{
+			name: "references nested inside other elements are still found",
+			in: `<table><tr><td><ac:link><ri:user ri:account-id="acc-1"/></ac:link></td></tr></table>` +
+				`<ac:structured-macro ac:name="expand"><ac:rich-text-body>` +
+				`<ac:link><ri:page ri:space-key="DEV" ri:content-title="Nested"/></ac:link>` +
+				`</ac:rich-text-body></ac:structured-macro>`,
+			want: Refs{
+				AccountIDs: []string{"acc-1"},
+				Pages:      []PageRef{{SpaceKey: "DEV", Title: "Nested"}},
+			},
+		},
+		{
+			name: "attachments are not collected, since cflio cannot resolve them to anything actionable",
+			in:   `<p><ac:link><ri:attachment ri:filename="spec.pdf"/></ac:link></p>`,
+			want: Refs{},
+		},
+		{
+			name: "an anchor-only link names no resource to resolve",
+			in:   `<p><ac:link ac:anchor="Section"><ac:plain-text-link-body><![CDATA[jump]]></ac:plain-text-link-body></ac:link></p>`,
+			want: Refs{},
+		},
+		{
+			name: "a target with no identifier is dropped rather than looked up",
+			in: `<p><ac:link><ri:user ri:account-id=""/></ac:link>` +
+				`<ac:link><ri:page ri:space-key="DEV" ri:content-title=""/></ac:link></p>`,
+			want: Refs{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := References(tt.in); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("References(%q) = %+v, want %+v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// The reference an image points at is not a link target: ac:image reaches
+// riChild too, and collecting from it would spend a lookup on something
+// link() never renders.
+func TestReferencesIgnoresImageTargets(t *testing.T) {
+	in := `<p><ac:image><ri:page ri:space-key="DEV" ri:content-title="Runbook"/></ac:image></p>`
+
+	if got := References(in); !reflect.DeepEqual(got, Refs{}) {
+		t.Errorf("References(%q) = %+v, want nothing collected", in, got)
 	}
 }
 
