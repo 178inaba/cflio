@@ -95,6 +95,26 @@ func (n *node) child(space, local string) *node {
 	return nil
 }
 
+// newStorageDecoder configures a decoder for storage XHTML.
+//
+// Storage format is a fragment, not a document: it uses undeclared ac:/ri:
+// prefixes and HTML entities like &nbsp;. Non-strict mode with the HTML
+// entity table copes with both, and also closes stray tags so malformed
+// markup does not discard the rest of the body. It is what makes CDATA
+// sections survive, too: an HTML5 parser reads <![CDATA[…]]> as a bogus
+// comment and drops every code macro's body.
+//
+// xml.HTMLAutoClose is deliberately NOT set: it treats every element whose
+// local name is an HTML void element as self-closing, which swallows
+// Confluence's <ac:link>…</ac:link> — the wrapper around every mention and
+// page link — and drops everything after it.
+func newStorageDecoder(storage string) *xml.Decoder {
+	decoder := xml.NewDecoder(strings.NewReader(storage))
+	decoder.Strict = false
+	decoder.Entity = xml.HTMLEntity
+	return decoder
+}
+
 // parseStorage builds the element tree. Rendering Markdown needs look-ahead
 // that a token stream cannot give: a table's header separator depends on its
 // first row, and a list item's indentation on what nests under it.
