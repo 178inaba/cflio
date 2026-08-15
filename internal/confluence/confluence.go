@@ -166,12 +166,14 @@ func (c *Client) PagesByTitle(ctx context.Context, spaceKey string, titles []str
 	return all, nil
 }
 
+var cqlEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
 // quoteCQL renders s as a CQL string literal, quotes included. Titles and
 // space keys are page data, not input this package controls, so a quote or a
 // backslash in one has to be escaped rather than end the literal early and
 // leave the rest of the value to be read as query syntax.
 func quoteCQL(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+	return `"` + cqlEscaper.Replace(s) + `"`
 }
 
 // Version mirrors the v2 version object shared by pages and comments.
@@ -382,6 +384,14 @@ func (c *Client) Search(ctx context.Context, cql string, limit int) ([]SearchRes
 		total = page.TotalSize
 		all = append(all, page.Results...)
 		if len(page.Results) == 0 {
+			break
+		}
+		// The server already said how many matches exist, so a query that
+		// matched fewer than the caller asked for needs no further page to
+		// prove it. Without this, every under-filled search — the normal case
+		// when looking a set of titles up, since a missing one is expected —
+		// costs an extra round trip that comes back empty.
+		if total > 0 && len(all) >= total {
 			break
 		}
 	}

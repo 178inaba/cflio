@@ -382,6 +382,28 @@ func TestSearchStopsWhenAPageComesBackEmpty(t *testing.T) {
 	}
 }
 
+// A query that matched fewer pages than were asked for is the normal case
+// when resolving a set of titles, so it must not cost a page of paging just
+// to discover there is nothing more.
+func TestSearchStopsOnceItHasEveryReportedMatch(t *testing.T) {
+	calls := 0
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = fmt.Fprint(w, `{"results":[{"content":{"id":"1","type":"page","title":"P"}}],"totalSize":1}`)
+	})
+
+	results, total, err := client.Search(t.Context(), "type = page", 5)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("requests = %d, want 1 — the total says there is nothing more to fetch", calls)
+	}
+	if len(results) != 1 || total != 1 {
+		t.Errorf("results = %d, total = %d, want the single reported match", len(results), total)
+	}
+}
+
 func TestUsersLooksEveryAccountUpInOneRequest(t *testing.T) {
 	var gotPath string
 	var gotIDs []string
