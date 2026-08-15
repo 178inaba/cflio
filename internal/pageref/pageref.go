@@ -93,19 +93,19 @@ func PageURL(site, webui, pageID string) string {
 // form, which needs none: a URL built from an empty key is a 404, so the key
 // never reaches spacePageURL unless it is real.
 func ChildPageURL(site, parentWebUI, childID string) string {
-	spaceKey := spaceKeyOf(parentWebUI)
+	spaceKey := SpaceKeyOf(parentWebUI)
 	if spaceKey == "" {
 		return PageURL(site, "", childID)
 	}
-	return spacePageURL(site, spaceKey, childID)
+	return SpacePageURL(site, spaceKey, childID)
 }
 
-// spaceKeyOf returns the space key embedded in the relative web link the API
+// SpaceKeyOf returns the space key embedded in the relative web link the API
 // returns for a page, or "" when the link is empty or not in that shape.
 // Every key the API has been observed to emit — including the ~accountid
-// form of a personal space — is made of characters that spacePageURL's path
+// form of a personal space — is made of characters that SpacePageURL's path
 // escaping leaves alone, so the captured segment is returned undecoded.
-func spaceKeyOf(webui string) string {
+func SpaceKeyOf(webui string) string {
 	match := webUIPattern.FindStringSubmatch(webui)
 	if match == nil {
 		return ""
@@ -113,8 +113,10 @@ func spaceKeyOf(webui string) string {
 	return match[1]
 }
 
-// spacePageURL builds a page's URL from its space key.
-func spacePageURL(site, spaceKey, pageID string) string {
+// SpacePageURL builds a page's URL from its space key. The result is in the
+// form Parse accepts, so a link built with it can be fed straight back to
+// `cflio read`.
+func SpacePageURL(site, spaceKey, pageID string) string {
 	return strings.TrimSuffix(site, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
 }
 
