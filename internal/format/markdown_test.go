@@ -134,7 +134,7 @@ func TestToMarkdownResolvesReferencesWhenSupplied(t *testing.T) {
 // References feeds the command layer's lookups, so what it collects has to
 // be exactly what link() would render — no reference missed, and nothing
 // collected that could only turn into a request whose answer is unusable.
-func TestReferencesCollectsWhatLinkRendering(t *testing.T) {
+func TestReferencesCollectsWhatLinkRenders(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string

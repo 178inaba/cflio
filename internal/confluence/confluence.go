@@ -37,7 +37,10 @@ const (
 	maxBulkUsers = 100
 
 	// maxTitlesPerQuery bounds how many titles are OR-ed into one CQL query,
-	// keeping the generated query string well inside what a proxy will carry.
+	// keeping the generated query string to a few hundred bytes for the page
+	// titles actually seen in the wild. It is not a guarantee: fifty titles at
+	// Confluence's 255-character ceiling would still outgrow what some proxies
+	// carry, which costs the batch its resolution and nothing more.
 	maxTitlesPerQuery = 50
 )
 
