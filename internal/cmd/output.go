@@ -5,18 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/178inaba/cflio/internal/format"
 	"github.com/spf13/cobra"
 )
 
 // maxLimit bounds --limit so a typo cannot turn one command into thousands
 // of paged requests against the invocation's deadline.
 const maxLimit = 1000
-
-// The two --format values.
-const (
-	formatMarkdown = "md"
-	formatJSON     = "json"
-)
 
 func validateLimit(limit int) error {
 	if limit < 1 || limit > maxLimit {
@@ -25,31 +20,19 @@ func validateLimit(limit int) error {
 	return nil
 }
 
-// addFormatFlag registers --format on a single command, along with the check
-// that rejects an unknown value. It is registered per command rather than on
-// the root so it never appears on `auth` and `profile`, which would silently
-// ignore it; pairing the two here means a command cannot take the flag
-// without also validating it.
+// addFormatFlag registers --format on a single command. It is registered per
+// command rather than on the root so it never appears on `auth` and
+// `profile`, which would silently ignore it. No check comes with it: a
+// format.Format rejects an unknown value as cobra parses the flags, which is
+// early enough that `update --format bogus` with no -f still names the bad
+// format rather than the missing file.
 //
-// The check hangs off PreRunE rather than starting RunE because cobra
-// validates required flags in between: `update --format bogus` with no -f
-// has to name the bad format, not the missing file.
-func addFormatFlag(cmd *cobra.Command, outFormat *string) {
-	cmd.Flags().StringVar(outFormat, "format", formatMarkdown, `output format: "md" or "json"`)
-
-	// The check owns PreRunE outright. Overwriting one that a command had
-	// already set would silently drop whichever of the two lost, and the
-	// loss would not show up until someone passed a bad --format, so fail
-	// while the tree is being built instead.
-	if cmd.PreRunE != nil {
-		panic(fmt.Sprintf("addFormatFlag: %s already sets PreRunE", cmd.Name()))
-	}
-	cmd.PreRunE = func(*cobra.Command, []string) error {
-		if *outFormat != formatMarkdown && *outFormat != formatJSON {
-			return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, *outFormat)
-		}
-		return nil
-	}
+// The default is assigned before registering because pflag takes a Var flag's
+// default from the value itself, and that is what puts the (default "md") in
+// the help line.
+func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
+	*outFormat = format.Markdown
+	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
 // writeJSON renders payload as the --format json output. Every command's
@@ -72,8 +55,11 @@ type markdownItem interface {
 
 // writeList renders items per --format. name labels the JSON array and the
 // "no results" line, e.g. "results" or "child pages".
-func writeList[T markdownItem](cmd *cobra.Command, outFormat, name string, items []T, notice string) error {
-	if outFormat == formatJSON {
+func writeList[T markdownItem](cmd *cobra.Command, outFormat format.Format, name string, items []T, notice string) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if outFormat == format.JSON {
 		return writeJSON(cmd, listPayload(name, items, notice))
 	}
 

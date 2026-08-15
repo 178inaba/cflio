@@ -14,7 +14,7 @@ const defaultSearchLimit = 20
 func newSearchCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -49,7 +49,7 @@ type searchItem struct {
 	URL   string `json:"url"`
 }
 
-func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat format.Format) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}

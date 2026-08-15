@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/178inaba/cflio/internal/format"
 	"github.com/178inaba/cflio/internal/pageref"
 	"github.com/spf13/cobra"
 )
@@ -12,7 +13,7 @@ const defaultChildrenLimit = 100
 func newChildrenCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -46,7 +47,7 @@ func (c childItem) markdown() string {
 	return fmt.Sprintf("- **%s** (ID %s, %s)\n  %s", c.Title, c.ID, c.Status, c.URL)
 }
 
-func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat format.Format) error {
 	if err := validateLimit(limit); err != nil {
 		return err
 	}

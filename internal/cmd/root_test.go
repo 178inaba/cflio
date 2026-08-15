@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/178inaba/cflio/internal/format"
 	"github.com/spf13/cobra"
 )
 
@@ -63,17 +65,41 @@ func TestFormatFlagRegistration(t *testing.T) {
 	}
 }
 
+// TestFormatFlagHelpLine pins the two halves of the `--format string` help
+// line, which agents read as part of the documented contract. Both are taken
+// from the value the flag was registered with, so a registration that ran
+// before the default was assigned would change the line without failing
+// anything else.
+func TestFormatFlagHelpLine(t *testing.T) {
+	root := newRootCmd(&globalFlags{})
+	for _, cmd := range root.Commands() {
+		flag := cmd.Flags().Lookup("format")
+		if flag == nil {
+			continue
+		}
+		if flag.Value.Type() != "string" {
+			t.Errorf("%s: --format placeholder = %q, want %q", cmd.Name(), flag.Value.Type(), "string")
+		}
+		if want := string(format.Markdown); flag.DefValue != want {
+			t.Errorf("%s: --format default = %q, want %q", cmd.Name(), flag.DefValue, want)
+		}
+	}
+}
+
 func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{name: "before the command runs", args: []string{"read", "--format", "bogus", "123456"}},
+		{name: "read", args: []string{"read", "--format", "bogus", "123456"}},
+		{name: "search", args: []string{"search", "--format", "bogus", "text ~ x"}},
+		{name: "children", args: []string{"children", "--format", "bogus", "123456"}},
+		{name: "comments", args: []string{"comments", "--format", "bogus", "123456"}},
 		{
-			// The check hangs off PreRunE, which cobra runs before it
-			// validates required flags. Moving it into RunE would report
-			// the missing -f here instead.
-			name: "before cobra reports a missing required flag",
+			// -f is left off on purpose: cobra parses the flags before it
+			// validates the required ones, so the bad format is what gets
+			// reported. Supplying -f here would drop that guarantee.
+			name: "update, before cobra reports a missing required flag",
 			args: []string{"update", "--format", "bogus"},
 		},
 	}
@@ -88,6 +114,52 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 			}
 			if want := `invalid --format "bogus"`; !strings.Contains(err.Error(), want) {
 				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
+// TestWritersRejectAFormatThatBypassedSet covers the guard every writer keeps:
+// a Format converted straight from a string never went through Set, so
+// without it an unknown value would quietly render as Markdown.
+func TestWritersRejectAFormatThatBypassedSet(t *testing.T) {
+	const bogus = format.Format("xml")
+
+	tests := []struct {
+		name  string
+		write func(*cobra.Command) error
+	}{
+		{
+			name:  "writeList",
+			write: func(cmd *cobra.Command) error { return writeList(cmd, bogus, "results", []searchItem{}, "") },
+		},
+		{
+			name:  "writeComments",
+			write: func(cmd *cobra.Command) error { return writeComments(cmd, bogus, nil) },
+		},
+		{
+			name:  "writeReadResult",
+			write: func(cmd *cobra.Command) error { return writeReadResult(cmd, bogus, readResult{}) },
+		},
+		{
+			name:  "writeUpdateResult",
+			write: func(cmd *cobra.Command) error { return writeUpdateResult(cmd, bogus, updateResult{}) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			// Discarded rather than captured: nothing should be written, and
+			// a buffer would only make a failure print the whole rendering.
+			cmd.SetOut(io.Discard)
+
+			err := tt.write(cmd)
+			if err == nil {
+				t.Fatalf("%s(%q) error = nil, want an error", tt.name, string(bogus))
+			}
+			if want := string(bogus); !strings.Contains(err.Error(), want) {
+				t.Errorf("%s error = %q, want it to name %q", tt.name, err, want)
 			}
 		})
 	}

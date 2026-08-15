@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/178inaba/cflio/internal/confluence"
+	"github.com/178inaba/cflio/internal/format"
 	"github.com/178inaba/cflio/internal/pageref"
 	"github.com/178inaba/cflio/internal/sidecar"
 	"github.com/spf13/cobra"
@@ -23,7 +24,7 @@ func newUpdateCmd(g *globalFlags) *cobra.Command {
 	var (
 		file      string
 		message   string
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -64,7 +65,7 @@ type updateResult struct {
 	Message string `json:"message"`
 }
 
-func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, outFormat string) error {
+func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message string, outFormat format.Format) error {
 	meta, err := sidecar.Load(file)
 	if err != nil {
 		return err
@@ -135,8 +136,11 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, outFormat 
 	})
 }
 
-func writeUpdateResult(cmd *cobra.Command, outFormat string, result updateResult) error {
-	if outFormat == formatJSON {
+func writeUpdateResult(cmd *cobra.Command, outFormat format.Format, result updateResult) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if outFormat == format.JSON {
 		return writeJSON(cmd, result)
 	}
 
