@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,7 +28,27 @@ type globalFlags struct {
 	timeout time.Duration
 }
 
-func newRootCmd(g *globalFlags) *cobra.Command {
+// runResult carries what the command tree records outside cobra's return
+// value. It is per-tree rather than package state so tests can build
+// independent trees in one process.
+type runResult struct {
+	// unknownCommand reports that the help function rejected a mistyped
+	// subcommand of a group command. cobra resolves that path to
+	// flag.ErrHelp, which ExecuteC turns into a nil error, so nothing else
+	// would tell Execute the run failed.
+	unknownCommand bool
+}
+
+// errUnknownCommand is what Execute returns for the case above. The message
+// has already been written by the help function, so this only has to be
+// non-nil.
+var errUnknownCommand = errors.New("unknown command")
+
+// newRootCmd builds the command tree. globalFlags travels in — pflag fills
+// it in as it parses — and runResult travels back out, filled in as the tree
+// runs.
+func newRootCmd(g *globalFlags) (*cobra.Command, *runResult) {
+	res := &runResult{}
 	cmd := &cobra.Command{
 		Use:   "cflio",
 		Short: "Confluence CLI for AI coding agents",
@@ -54,7 +75,73 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 		newAuthCmd(g),
 		newProfileCmd(),
 	)
-	return cmd
+
+	// cobra only reports a mistyped subcommand for the root: under a group
+	// command, execute returns flag.ErrHelp on the !Runnable() check before
+	// ValidateArgs ever runs, and ExecuteC answers that by printing help and
+	// returning nil. Overriding the help function is the one hook on that
+	// path, and since HelpFunc walks to the parent, registering it here
+	// covers every group — including the completion command cobra adds to
+	// the tree inside ExecuteC, which no field set in a constructor of ours
+	// could reach.
+	//
+	// The default rendering has to be captured before SetHelpFunc: after it,
+	// Help() resolves to the override, so the fall-through branch would
+	// recurse.
+	defaultHelp := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if help, _ := c.Flags().GetBool("help"); !help && !c.Runnable() && len(c.Flags().Args()) > 0 {
+			reportUnknownCommand(c, c.Flags().Args()[0])
+			res.unknownCommand = true
+			return
+		}
+		defaultHelp(c, args)
+	})
+
+	return cmd, res
+}
+
+// reportUnknownCommand writes, for a group command, the message cobra writes
+// itself when the root command is given an unknown subcommand.
+//
+// The rendering is assembled the way legacyArgs assembles it and printed the
+// way Execute prints it, so a typo under a group reads exactly like a typo at
+// the top level. It stops there rather than following gh's nestedSuggestFunc
+// into a usage listing: the root sets SilenceUsage precisely because usage on
+// every failure is noise for an agent consumer.
+//
+// PrintErrf rather than a bare Fprintf: it writes to ErrOrStderr — which the
+// tests redirect, unlike os.Stderr — and returns nothing, which is the only
+// sane contract for a help function that cannot propagate a write error.
+func reportUnknownCommand(cmd *cobra.Command, arg string) {
+	var suggestions strings.Builder
+	if candidates := unknownCommandCandidates(cmd, arg); len(candidates) > 0 {
+		suggestions.WriteString("\n\nDid you mean this?\n")
+		for _, candidate := range candidates {
+			fmt.Fprintf(&suggestions, "\t%v\n", candidate)
+		}
+	}
+	cmd.PrintErrf("Error: unknown command %q for %q%s\n", arg, cmd.CommandPath(), suggestions.String())
+}
+
+// unknownCommandCandidates reproduces the candidate list cobra builds in its
+// unexported findSuggestions — minus the DisableSuggestions escape hatch,
+// which nothing here sets — plus the one case cobra cannot cover: `help` is
+// not a subcommand of a group command, and SuggestionsFor only ever looks at
+// registered subcommands, so nothing would be offered for the argument whose
+// intent is least ambiguous.
+func unknownCommandCandidates(cmd *cobra.Command, arg string) []string {
+	if arg == "help" {
+		return []string{"--help"}
+	}
+	// cobra applies this default in findSuggestions, which is unexported;
+	// the exported SuggestionsFor does not. Without it every Levenshtein
+	// candidate is dropped and only prefix matches survive, so `loign`
+	// would stop suggesting `login`.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	return cmd.SuggestionsFor(arg)
 }
 
 // Execute runs the root command. The returned error has already been printed;
@@ -64,8 +151,12 @@ func Execute() error {
 	defer stop()
 
 	g := &globalFlags{}
-	err := newRootCmd(g).ExecuteContext(ctx)
+	root, res := newRootCmd(g)
+	err := root.ExecuteContext(ctx)
 	if err == nil {
+		if res.unknownCommand {
+			return errUnknownCommand
+		}
 		return nil
 	}
 
