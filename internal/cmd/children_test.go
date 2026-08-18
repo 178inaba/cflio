@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
+func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "children", arg, limit, extra...)
 }
@@ -50,13 +50,13 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 100)
+	run, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
 
-	if strings.Contains(output, "A Whiteboard") {
-		t.Errorf("output = %q, want non-page children filtered out", output)
+	if strings.Contains(run.stdout, "A Whiteboard") {
+		t.Errorf("output = %q, want non-page children filtered out", run.stdout)
 	}
 	// Pinning the URL exactly is what catches the empty space key. Feeding
 	// both URL forms back through pageref.Parse is TestChildPageURL's job.
@@ -65,8 +65,8 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 		"Child Two", "ID 13", "archived",
 		testSite + "/spaces/DEV/pages/11",
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 	}
 
@@ -86,19 +86,19 @@ func TestChildrenReportsTruncationWithoutACount(t *testing.T) {
 	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 1)
+	run, err := runChildrenCmd(t, testPageURL, 1)
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
-	if !strings.Contains(output, "--limit") {
-		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
+	if !strings.Contains(run.stdout, "--limit") {
+		t.Errorf("output = %q, want a truncation notice pointing at --limit", run.stdout)
 	}
 	// v2 pages by cursor and reports no total, so no count is claimed.
-	if strings.Contains(output, "1 more") {
-		t.Errorf("output = %q, want no invented remaining count", output)
+	if strings.Contains(run.stdout, "1 more") {
+		t.Errorf("output = %q, want no invented remaining count", run.stdout)
 	}
-	if strings.Contains(output, "Two") {
-		t.Errorf("output = %q, want only the first child at --limit 1", output)
+	if strings.Contains(run.stdout, "Two") {
+		t.Errorf("output = %q, want only the first child at --limit 1", run.stdout)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestChildrenJSONOutput(t *testing.T) {
 	],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 100, "--format", "json")
+	run, err := runChildrenCmd(t, testPageURL, 100, "--format", "json")
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
@@ -146,8 +146,8 @@ func TestChildrenJSONOutput(t *testing.T) {
 			URL    string `json:"url"`
 		} `json:"child_pages"`
 	}
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	if len(got.ChildPages) != 1 || got.ChildPages[0].ID != "11" {
 		t.Fatalf("child_pages = %+v, want the single child", got.ChildPages)
@@ -164,12 +164,12 @@ func TestChildrenWithNoChildren(t *testing.T) {
 	lookups, handler := childrenAPI(t, `{"results":[],"_links":{}}`, testPageWebUI)
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 100)
+	run, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
-	if !strings.Contains(output, "No child pages.") {
-		t.Errorf("output = %q, want it to say there are none", output)
+	if !strings.Contains(run.stdout, "No child pages.") {
+		t.Errorf("output = %q, want it to say there are none", run.stdout)
 	}
 	// With no children there is no URL to build, so the space key nobody
 	// needs is not worth a request.
@@ -190,12 +190,12 @@ func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 	],"_links":{}}`, "")
 	startAPI(t, handler)
 
-	output, err := runChildrenCmd(t, testPageURL, 100)
+	run, err := runChildrenCmd(t, testPageURL, 100)
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
-	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(output, want) {
-		t.Errorf("output = %q, want it to contain the page-id form %q", output, want)
+	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(run.stdout, want) {
+		t.Errorf("output = %q, want it to contain the page-id form %q", run.stdout, want)
 	}
 }
 

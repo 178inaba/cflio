@@ -12,18 +12,18 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
-	out, err := runCflio(t, "profile", "list")
+	run, err := runCflio(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(run.stdout), "\n")
 	if len(lines) != 2 {
-		t.Fatalf("output = %q, want one line per profile", out)
+		t.Fatalf("output = %q, want one line per profile", run.stdout)
 	}
 	// Sorted, so the listing is stable between runs.
 	if !strings.HasPrefix(lines[0], "example\t") || !strings.HasPrefix(lines[1], "other\t") {
-		t.Errorf("output = %q, want the profiles sorted by name", out)
+		t.Errorf("output = %q, want the profiles sorted by name", run.stdout)
 	}
 	if !strings.Contains(lines[0], testSite) || !strings.Contains(lines[0], "a@example.com") {
 		t.Errorf("line = %q, want it to carry the site and the account email", lines[0])
@@ -39,12 +39,12 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 func TestProfileListWithoutProfilesPointsAtAuthLogin(t *testing.T) {
 	isolateConfig(t)
 
-	out, err := runCflio(t, "profile", "list")
+	run, err := runCflio(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
-	if !strings.Contains(out, "cflio auth login") {
-		t.Errorf("output = %q, want it to point at `cflio auth login`", out)
+	if !strings.Contains(run.stdout, "cflio auth login") {
+		t.Errorf("output = %q, want it to point at `cflio auth login`", run.stdout)
 	}
 }
 
@@ -52,12 +52,12 @@ func TestProfileListNeverPrintsTokens(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	out, err := runCflio(t, "profile", "list")
+	run, err := runCflio(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
-	if strings.Contains(out, "tok") {
-		t.Errorf("output = %q, want the stored token kept out of the listing", out)
+	if strings.Contains(run.stdout, "tok") {
+		t.Errorf("output = %q, want the stored token kept out of the listing", run.stdout)
 	}
 }
 
