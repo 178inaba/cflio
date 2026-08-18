@@ -325,6 +325,26 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	}
 }
 
+// TestHelpFlagWinsOverAnUnknownSubcommand pins the half of the guard the
+// cases above cannot reach: they all leave the flag off, so the leftover
+// argument check decides them either way. Asking for help is a request for
+// help even when the arguments carry a typo alongside it.
+func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
+	run, err := runCflio(t, "auth", "bogus", "--help")
+	if err != nil {
+		t.Fatalf("cflio auth bogus --help error = %v, want nil", err)
+	}
+	if run.unknownCommand {
+		t.Error("cflio auth bogus --help recorded a failure, want the help request answered")
+	}
+	if run.stderr != "" {
+		t.Errorf("cflio auth bogus --help stderr = %q, want nothing", run.stderr)
+	}
+	if !strings.Contains(run.stdout, "Usage:") {
+		t.Errorf("cflio auth bogus --help stdout = %q, want the help text", run.stdout)
+	}
+}
+
 // TestRootRejectsAnUnknownCommand pins the path cobra does handle: at the
 // root, Find fails before the help function is ever reached, so the error
 // comes back for Execute to print rather than being recorded.
