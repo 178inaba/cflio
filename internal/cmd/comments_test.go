@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (string, error) {
+func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "comments", arg, limit, extra...)
 }
@@ -57,7 +57,7 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 	}
 	startAPI(t, commentsAPI(t, footer, inline, replies))
 
-	output, err := runCommentsCmd(t, testPageURL, 25)
+	run, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
@@ -77,12 +77,12 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 		// to the question above would be missing entirely.
 		"Good catch, fixed",
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 	}
-	if strings.Contains(output, "<p>") {
-		t.Errorf("output = %q, want the storage markup converted", output)
+	if strings.Contains(run.stdout, "<p>") {
+		t.Errorf("output = %q, want the storage markup converted", run.stdout)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestCommentsRendersBodiesAsMarkdown(t *testing.T) {
 		strconv.Quote(body) + `}}}],"_links":{}}`
 	startAPI(t, commentsAPI(t, footer, emptyComments, nil))
 
-	output, err := runCommentsCmd(t, testPageURL, 25)
+	run, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
@@ -117,8 +117,8 @@ func TestCommentsRendersBodiesAsMarkdown(t *testing.T) {
 		"  | Key | Value |\n  | --- | --- |\n  | a | 1 |",
 		"  ping @acc-9",
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 	}
 }
@@ -135,12 +135,12 @@ func TestCommentsIndentsRepliesUnderTheirParent(t *testing.T) {
 	}
 	startAPI(t, commentsAPI(t, footer, emptyComments, replies))
 
-	output, err := runCommentsCmd(t, testPageURL, 25)
+	run, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
-	if !strings.Contains(output, "\n  - acc-2") {
-		t.Errorf("output = %q, want the reply indented under its parent", output)
+	if !strings.Contains(run.stdout, "\n  - acc-2") {
+		t.Errorf("output = %q, want the reply indented under its parent", run.stdout)
 	}
 }
 
@@ -179,12 +179,12 @@ func TestCommentsWithNone(t *testing.T) {
 
 	startAPI(t, commentsAPI(t, emptyComments, emptyComments, nil))
 
-	output, err := runCommentsCmd(t, testPageURL, 25)
+	run, err := runCommentsCmd(t, testPageURL, 25)
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
-	if strings.Count(output, "None.") != 2 {
-		t.Errorf("output = %q, want both sections to report none", output)
+	if strings.Count(run.stdout, "None.") != 2 {
+		t.Errorf("output = %q, want both sections to report none", run.stdout)
 	}
 }
 
@@ -196,12 +196,12 @@ func TestCommentsReportsTruncation(t *testing.T) {
 		`{"id":"f2","version":{"authorId":"acc-1"},"body":{"storage":{"value":"<p>b</p>"}}}],"_links":{}}`
 	startAPI(t, commentsAPI(t, footer, emptyComments, nil))
 
-	output, err := runCommentsCmd(t, testPageURL, 1)
+	run, err := runCommentsCmd(t, testPageURL, 1)
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
-	if !strings.Contains(output, "--limit") {
-		t.Errorf("output = %q, want a truncation notice pointing at --limit", output)
+	if !strings.Contains(run.stdout, "--limit") {
+		t.Errorf("output = %q, want a truncation notice pointing at --limit", run.stdout)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestCommentsJSONOutput(t *testing.T) {
 	}
 	startAPI(t, commentsAPI(t, emptyComments, inline, replies))
 
-	output, err := runCommentsCmd(t, testPageURL, 25, "--format", "json")
+	run, err := runCommentsCmd(t, testPageURL, 25, "--format", "json")
 	if err != nil {
 		t.Fatalf("comments error = %v", err)
 	}
@@ -231,8 +231,8 @@ func TestCommentsJSONOutput(t *testing.T) {
 			Comments []commentItem `json:"comments"`
 		} `json:"inline_comments"`
 	}
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	if len(got.FooterComments.Comments) != 0 {
 		t.Errorf("footer comments = %+v, want none", got.FooterComments.Comments)

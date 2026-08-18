@@ -12,7 +12,7 @@ import (
 )
 
 // runLogin drives auth login with the given prompt answers.
-func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (string, error) {
+func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cflioRun, error) {
 	t.Helper()
 
 	startAPI(t, handler)
@@ -27,7 +27,7 @@ func TestAuthLoginRegistersAProfile(t *testing.T) {
 	isolateConfig(t)
 
 	var gotPath, gotAuth string
-	output, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
+	run, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
 		func(w http.ResponseWriter, r *http.Request) {
 			gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
 			okCurrentUser(w, r)
@@ -54,8 +54,8 @@ func TestAuthLoginRegistersAProfile(t *testing.T) {
 	if file.DefaultProfile != "example" {
 		t.Errorf("default profile = %q, want the first registered profile", file.DefaultProfile)
 	}
-	if !strings.Contains(output, "Ada Lovelace") {
-		t.Errorf("output = %q, want it to confirm who the credentials belong to", output)
+	if !strings.Contains(run.stdout, "Ada Lovelace") {
+		t.Errorf("output = %q, want it to confirm who the credentials belong to", run.stdout)
 	}
 }
 
@@ -109,7 +109,7 @@ func TestAuthLoginRejectsInvalidSiteURLs(t *testing.T) {
 func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	isolateConfig(t)
 
-	output, err := runLogin(t, "https://example.atlassian.net\na@example.com\nbad-token\n\n",
+	run, err := runLogin(t, "https://example.atlassian.net\na@example.com\nbad-token\n\n",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"message":"Basic auth with password is not allowed"}`))
@@ -120,8 +120,8 @@ func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	if !strings.Contains(err.Error(), "401") {
 		t.Errorf("error = %q, want it to surface the status", err)
 	}
-	if strings.Contains(output, "Registered") {
-		t.Errorf("output = %q, want no success message", output)
+	if strings.Contains(run.stdout, "Registered") {
+		t.Errorf("output = %q, want no success message", run.stdout)
 	}
 	assertNoConfigWritten(t)
 }

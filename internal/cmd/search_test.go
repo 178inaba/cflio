@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (string, error) {
+func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "search", cql, limit, extra...)
 }
@@ -27,7 +27,7 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 			`"url":"/spaces/DEV/pages/1/Release+Notes"}],"totalSize":1}`))
 	})
 
-	output, err := runSearchCmd(t, cql, 20)
+	run, err := runSearchCmd(t, cql, 20)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
@@ -35,8 +35,8 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 		t.Errorf("cql = %q, want it passed through unchanged as %q", gotCQL, cql)
 	}
 	for _, want := range []string{"Release Notes", "page", "ID 1", testSite + "/spaces/DEV/pages/1/Release+Notes"} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 	}
 }
@@ -50,15 +50,15 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 			`"totalSize":5}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 1)
+	run, err := runSearchCmd(t, "type = page", 1)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
-	if !strings.Contains(output, "4 more results") {
-		t.Errorf("output = %q, want a notice saying 4 results remain (5 total - 1 shown)", output)
+	if !strings.Contains(run.stdout, "4 more results") {
+		t.Errorf("output = %q, want a notice saying 4 results remain (5 total - 1 shown)", run.stdout)
 	}
-	if noticeIdx, itemIdx := strings.Index(output, "more results"), strings.Index(output, "**A**"); noticeIdx < itemIdx {
-		t.Errorf("output = %q, want the notice after the results", output)
+	if noticeIdx, itemIdx := strings.Index(run.stdout, "more results"), strings.Index(run.stdout, "**A**"); noticeIdx < itemIdx {
+		t.Errorf("output = %q, want the notice after the results", run.stdout)
 	}
 }
 
@@ -78,12 +78,12 @@ func TestSearchOmitsTheNoticeWhenTheServerRanOutEarly(t *testing.T) {
 		_, _ = w.Write([]byte(`{"results":[],"totalSize":50}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 20)
+	run, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
-	if strings.Contains(output, "more results") {
-		t.Errorf("output = %q, want no notice when fewer than --limit results came back", output)
+	if strings.Contains(run.stdout, "more results") {
+		t.Errorf("output = %q, want no notice when fewer than --limit results came back", run.stdout)
 	}
 }
 
@@ -96,12 +96,12 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 			`"totalSize":1}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 20)
+	run, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
-	if strings.Contains(output, "more results") {
-		t.Errorf("output = %q, want no truncation notice", output)
+	if strings.Contains(run.stdout, "more results") {
+		t.Errorf("output = %q, want no truncation notice", run.stdout)
 	}
 }
 
@@ -116,20 +116,20 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 		],"totalSize":2}`))
 	})
 
-	output, err := runSearchCmd(t, "release", 20)
+	run, err := runSearchCmd(t, "release", 20)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
-	if strings.Contains(output, "@@@hl@@@") || strings.Contains(output, "@@@endhl@@@") {
-		t.Errorf("output = %q, want the highlight markers stripped", output)
+	if strings.Contains(run.stdout, "@@@hl@@@") || strings.Contains(run.stdout, "@@@endhl@@@") {
+		t.Errorf("output = %q, want the highlight markers stripped", run.stdout)
 	}
-	if !strings.Contains(output, "The Release Notes") {
-		t.Errorf("output = %q, want the un-marked page title", output)
+	if !strings.Contains(run.stdout, "The Release Notes") {
+		t.Errorf("output = %q, want the un-marked page title", run.stdout)
 	}
 	// A space result carries no content object, so it falls back to the
 	// top-level title and entityType, with no ID to show.
-	if !strings.Contains(output, "**Dev Space** (space)") {
-		t.Errorf("output = %q, want the space rendered from entityType with no ID", output)
+	if !strings.Contains(run.stdout, "**Dev Space** (space)") {
+		t.Errorf("output = %q, want the space rendered from entityType with no ID", run.stdout)
 	}
 }
 
@@ -142,15 +142,15 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 			`"url":"https://elsewhere.example/p/1"}],"totalSize":1}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 20)
+	run, err := runSearchCmd(t, "type = page", 20)
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
-	if !strings.Contains(output, "https://elsewhere.example/p/1") {
-		t.Errorf("output = %q, want an already-absolute url left as-is", output)
+	if !strings.Contains(run.stdout, "https://elsewhere.example/p/1") {
+		t.Errorf("output = %q, want an already-absolute url left as-is", run.stdout)
 	}
-	if strings.Contains(output, testSite+"/https") {
-		t.Errorf("output = %q, want no double-prefixed url", output)
+	if strings.Contains(run.stdout, testSite+"/https") {
+		t.Errorf("output = %q, want no double-prefixed url", run.stdout)
 	}
 }
 
@@ -163,7 +163,7 @@ func TestSearchJSONOutput(t *testing.T) {
 			`"totalSize":3}`))
 	})
 
-	output, err := runSearchCmd(t, "type = page", 1, "--format", "json")
+	run, err := runSearchCmd(t, "type = page", 1, "--format", "json")
 	if err != nil {
 		t.Fatalf("search error = %v", err)
 	}
@@ -177,8 +177,8 @@ func TestSearchJSONOutput(t *testing.T) {
 		} `json:"results"`
 		Notice string `json:"notice"`
 	}
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	if len(got.Results) != 1 || got.Results[0].ID != "1" || got.Results[0].Type != "page" {
 		t.Errorf("results = %+v, want the single page hit", got.Results)
@@ -207,12 +207,12 @@ func TestSearchEmptyResults(t *testing.T) {
 				_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
 			})
 
-			output, err := runSearchCmd(t, "type = page", 20, "--format", tt.format)
+			run, err := runSearchCmd(t, "type = page", 20, "--format", tt.format)
 			if err != nil {
 				t.Fatalf("search error = %v", err)
 			}
-			if !strings.Contains(output, tt.want) {
-				t.Errorf("output = %q, want it to contain %q", output, tt.want)
+			if !strings.Contains(run.stdout, tt.want) {
+				t.Errorf("output = %q, want it to contain %q", run.stdout, tt.want)
 			}
 		})
 	}

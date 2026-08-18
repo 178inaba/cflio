@@ -33,7 +33,7 @@ func pageResponse(t *testing.T, body, webui string) string {
 
 // runRead runs `read`, leaving --output off when outPath is empty so the
 // default naming is exercised.
-func runRead(t *testing.T, arg, outPath string, extra ...string) (string, error) {
+func runRead(t *testing.T, arg, outPath string, extra ...string) (cflioRun, error) {
 	t.Helper()
 
 	args := []string{"read"}
@@ -60,7 +60,7 @@ func TestReadWritesTheBodyByteForByte(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
-	output, err := runRead(t, testPageURL, path)
+	run, err := runRead(t, testPageURL, path)
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
@@ -72,12 +72,12 @@ func TestReadWritesTheBodyByteForByte(t *testing.T) {
 	if string(written) != body {
 		t.Errorf("file = %q, want it byte-identical to the API's body %q", written, body)
 	}
-	if strings.Contains(output, "&amp;") || strings.Contains(output, "structured-macro") {
-		t.Errorf("output = %q, want the body kept off stdout", output)
+	if strings.Contains(run.stdout, "&amp;") || strings.Contains(run.stdout, "structured-macro") {
+		t.Errorf("output = %q, want the body kept off stdout", run.stdout)
 	}
 	for _, want := range []string{"Some Page", "7", path, sidecar.Path(path)} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to mention %q", output, want)
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to mention %q", run.stdout, want)
 		}
 	}
 }
@@ -186,20 +186,20 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.xml")
-	output, err := runRead(t, testPageURL, path, "--format", "json")
+	run, err := runRead(t, testPageURL, path, "--format", "json")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	if got["title"] != "Some Page" || got["page_id"] != "123456" {
 		t.Errorf("output = %v, want the page metadata", got)
 	}
-	if strings.Contains(output, "secret body") {
-		t.Errorf("output = %q, want the body kept off stdout", output)
+	if strings.Contains(run.stdout, "secret body") {
+		t.Errorf("output = %q, want the body kept off stdout", run.stdout)
 	}
 }
 
@@ -294,7 +294,7 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.md")
-	output, err := runRead(t, testPageURL, path, "--markdown")
+	run, err := runRead(t, testPageURL, path, "--markdown")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
@@ -313,11 +313,11 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 	if _, err := os.Stat(sidecar.Path(path)); !os.IsNotExist(err) {
 		t.Errorf("Stat(%s) = %v, want no sidecar in Markdown mode", sidecar.Path(path), err)
 	}
-	if strings.Contains(output, "Sidecar:") {
-		t.Errorf("output = %q, want no sidecar line", output)
+	if strings.Contains(run.stdout, "Sidecar:") {
+		t.Errorf("output = %q, want no sidecar line", run.stdout)
 	}
-	if !strings.Contains(output, fmt.Sprintf("%d bytes", len(written))) {
-		t.Errorf("output = %q, want it to count the %d converted bytes", output, len(written))
+	if !strings.Contains(run.stdout, fmt.Sprintf("%d bytes", len(written))) {
+		t.Errorf("output = %q, want it to count the %d converted bytes", run.stdout, len(written))
 	}
 }
 
@@ -413,7 +413,7 @@ func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "page.md")
-	output, err := runRead(t, testPageURL, path, "--markdown")
+	run, err := runRead(t, testPageURL, path, "--markdown")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
@@ -429,8 +429,8 @@ func TestReadMarkdownLeavesSameSpaceLinksAloneWithoutASpaceKey(t *testing.T) {
 	// Dropping the reference before any lookup leaves the same open question a
 	// failed request does — whether the page exists is simply unknown — so it
 	// is reported the same way rather than passing for an unresolvable link.
-	if want := "Unchecked: 1"; !strings.Contains(output, want) {
-		t.Errorf("output = %q, want it to contain %q", output, want)
+	if want := "Unchecked: 1"; !strings.Contains(run.stdout, want) {
+		t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 	}
 }
 
@@ -450,12 +450,12 @@ func TestReadMarkdownReportsNothingWhenEveryPageRefNamesItsSpace(t *testing.T) {
 		_, _ = w.Write([]byte(pageResponse(t, body, "")))
 	})
 
-	output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"), "--markdown")
+	run, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"), "--markdown")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
-	if strings.Contains(output, "Unchecked") {
-		t.Errorf("output = %q, want nothing reported when no reference was dropped", output)
+	if strings.Contains(run.stdout, "Unchecked") {
+		t.Errorf("output = %q, want nothing reported when no reference was dropped", run.stdout)
 	}
 }
 
@@ -481,7 +481,7 @@ func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
 		startAPI(t, failEveryLookup)
 
 		path := filepath.Join(t.TempDir(), "page.md")
-		output, err := runRead(t, testPageURL, path, "--markdown")
+		run, err := runRead(t, testPageURL, path, "--markdown")
 		if err != nil {
 			t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
 		}
@@ -497,12 +497,12 @@ func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
 
 		// One mention plus the two spaces' worth of page links: every
 		// reference the body makes went unanswered.
-		if want := "Unchecked: 3"; !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if want := "Unchecked: 3"; !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 		// The count is its own report: nothing about the conversion degraded.
-		if strings.Contains(output, "Degraded:") {
-			t.Errorf("output = %q, want a failed lookup kept out of the degradation report", output)
+		if strings.Contains(run.stdout, "Degraded:") {
+			t.Errorf("output = %q, want a failed lookup kept out of the degradation report", run.stdout)
 		}
 	})
 
@@ -511,15 +511,15 @@ func TestReadMarkdownFallsBackWhenResolutionFails(t *testing.T) {
 		seedProfile(t, "example", testSite)
 		startAPI(t, failEveryLookup)
 
-		output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
+		run, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
 			"--markdown", "--format", "json")
 		if err != nil {
 			t.Fatalf("read error = %v, want a failed lookup not to fail the read", err)
 		}
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(output), &got); err != nil {
-			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+		if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 		}
 		if got["unchecked_count"] != float64(3) {
 			t.Errorf("unchecked_count = %v, want 3", got["unchecked_count"])
@@ -544,15 +544,15 @@ func TestReadMarkdownReportsNothingWhenEveryLookupSucceeds(t *testing.T) {
 		}
 	})
 
-	output, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
+	run, err := runRead(t, testPageURL, filepath.Join(t.TempDir(), "page.md"),
 		"--markdown", "--format", "json")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	if _, ok := got["unchecked_count"]; ok {
 		t.Errorf("output = %v, want unchecked_count omitted when every lookup answered", got)
@@ -647,14 +647,14 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
-		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"), "--markdown")
+		run, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"), "--markdown")
 		if err != nil {
 			t.Fatalf("read error = %v", err)
 		}
 		// The reader decides whether to re-read in storage mode from this
 		// line, before opening the file.
-		if want := "Degraded: 3 (adf-extension, jira)"; !strings.Contains(output, want) {
-			t.Errorf("output = %q, want it to contain %q", output, want)
+		if want := "Degraded: 3 (adf-extension, jira)"; !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
 	})
 
@@ -666,15 +666,15 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
-		output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
+		run, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
 			"--markdown", "--format", "json")
 		if err != nil {
 			t.Fatalf("read error = %v", err)
 		}
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(output), &got); err != nil {
-			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+		if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+			t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 		}
 		if got["unsupported_count"] != float64(3) {
 			t.Errorf("unsupported_count = %v, want 3", got["unsupported_count"])
@@ -696,15 +696,15 @@ func TestReadMarkdownReportsNothingWhenTheConversionIsClean(t *testing.T) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>plain</p>", testPageWebUI)))
 	})
 
-	output, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
+	run, err := runRead(t, "123456", filepath.Join(t.TempDir(), "page.md"),
 		"--markdown", "--format", "json")
 	if err != nil {
 		t.Fatalf("read error = %v", err)
 	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(output), &got); err != nil {
-		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, output)
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
 	}
 	for _, key := range []string{"unsupported", "unsupported_count"} {
 		if _, ok := got[key]; ok {

@@ -79,7 +79,7 @@ func (s *updateStub) handler(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func runUpdate(t *testing.T, path string, extra ...string) (string, error) {
+func runUpdate(t *testing.T, path string, extra ...string) (cflioRun, error) {
 	t.Helper()
 
 	args := []string{"update", "-f", path}
@@ -97,7 +97,7 @@ func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	output, err := runUpdate(t, path)
+	run, err := runUpdate(t, path)
 	if err != nil {
 		t.Fatalf("update error = %v", err)
 	}
@@ -121,8 +121,8 @@ func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 	if put.Title != "Some Page" || put.Status != "current" || put.ID != "123456" {
 		t.Errorf("PUT = %+v, want the sidecar's id, title and status", put)
 	}
-	if strings.Contains(output, body) {
-		t.Errorf("output = %q, want the body kept off stdout", output)
+	if strings.Contains(run.stdout, body) {
+		t.Errorf("output = %q, want the body kept off stdout", run.stdout)
 	}
 }
 

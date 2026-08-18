@@ -63,22 +63,31 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
+// cflioRun is what one invocation of the command tree produced. The two
+// streams are kept apart so a test can assert which one a message reached,
+// and unknownCommand exposes the failure the tree records out of band —
+// cobra returns nil on that path, and no exit code exists at this level.
+type cflioRun struct {
+	stdout, stderr string
+	unknownCommand bool
+}
+
 // runCflio builds a fresh command tree and runs args through it, returning
-// the captured output. Every case gets its own tree, so no flag value
-// survives into the next test.
-func runCflio(t *testing.T, args ...string) (string, error) {
+// what it wrote. Every case gets its own tree, so no flag value survives
+// into the next test.
+func runCflio(t *testing.T, args ...string) (cflioRun, error) {
 	t.Helper()
 	return runCflioWithStdin(t, "", args...)
 }
 
 // runCflioWithStdin is runCflio for the commands that prompt.
-func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
+func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, error) {
 	t.Helper()
 
-	root := newRootCmd(&globalFlags{})
-	out := &bytes.Buffer{}
+	root, res := newRootCmd(&globalFlags{})
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
-	root.SetErr(out)
+	root.SetErr(errOut)
 	root.SetIn(strings.NewReader(stdin))
 	// Never nil: cobra falls back to os.Args[1:] for a nil argument list,
 	// which under `go test` means the -test.* flags. A caller that passes
@@ -90,14 +99,18 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (string, erro
 	root.SetArgs(args)
 
 	err := root.ExecuteContext(t.Context())
-	return out.String(), err
+	return cflioRun{
+		stdout:         out.String(),
+		stderr:         errOut.String(),
+		unknownCommand: res.unknownCommand,
+	}, err
 }
 
 // runLimitCmd runs one of the listing commands with an explicit --limit.
 //
 // --limit=N rather than --limit N: the range check is tested with negative
 // values, which would otherwise be read as flags rather than as the value.
-func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (string, error) {
+func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
 
 	args := append([]string{name, fmt.Sprintf("--limit=%d", limit)}, extra...)
