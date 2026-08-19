@@ -138,12 +138,20 @@ profile; pass `--profile <name>` to choose another, or `cflio profile use <name>
 default. An explicit `--profile` that disagrees with the URL's site is an error rather than a
 silent choice.
 
-### Timeouts
+### Timeouts and exit codes
 
 Every invocation runs under a deadline — 90 seconds by default, `--timeout` to change it (a Go
 duration such as `30m`, or `0` for no deadline). On the deadline the command fails with a clear
 error that names the flag. The default is chosen so the CLI finishes or fails on its own before a
 typical agent harness force-kills it (Claude Code's Bash tool sends SIGKILL after 120 s).
+
+A run that ends normally reports which happened in its exit status, so a caller does not have to
+read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
+every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
+retrying — with a larger `--timeout`; every other one needs the `Error:` line read instead. A
+deadline that expires while `read --markdown` is resolving references is the exception: it is
+absorbed like any other lookup failure, so the reference is counted in `Unchecked: N` above and
+the run still exits `0`.
 
 Ctrl-C and `SIGTERM` are not reported as failures: cflio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over

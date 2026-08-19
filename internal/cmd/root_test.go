@@ -165,32 +165,42 @@ func TestWritersRejectAFormatThatBypassedSet(t *testing.T) {
 	}
 }
 
-func TestDescribeContextError(t *testing.T) {
+// TestDescribeFailure pins the exit code alongside the message, since the two
+// come out of the same call. The codes are written as literals rather than as
+// timeoutExitCode: they are the contract a caller reads, so a test taking them
+// from the constant would agree with any value the constant happened to hold.
+func TestDescribeFailure(t *testing.T) {
 	tests := []struct {
 		name        string
 		err         error
+		wantCode    int
 		wantContain string
 	}{
 		{
 			name:        "deadline points at --timeout",
 			err:         fmt.Errorf("get page: %w", context.DeadlineExceeded),
+			wantCode:    124,
 			wantContain: "--timeout",
 		},
 		{
 			name:        "other errors pass through unchanged",
 			err:         errors.New("page not found"),
+			wantCode:    1,
 			wantContain: "page not found",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := describeContextError(tt.err, defaultTimeout)
+			gotCode, got := describeFailure(tt.err, defaultTimeout)
+			if gotCode != tt.wantCode {
+				t.Errorf("describeFailure() code = %d, want %d", gotCode, tt.wantCode)
+			}
 			if !strings.Contains(got.Error(), tt.wantContain) {
-				t.Errorf("describeContextError() = %q, want it to contain %q", got, tt.wantContain)
+				t.Errorf("describeFailure() = %q, want it to contain %q", got, tt.wantContain)
 			}
 			if !errors.Is(got, tt.err) {
-				t.Errorf("describeContextError() dropped the wrapped error %v", tt.err)
+				t.Errorf("describeFailure() dropped the wrapped error %v", tt.err)
 			}
 		})
 	}
