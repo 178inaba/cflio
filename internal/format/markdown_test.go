@@ -532,3 +532,62 @@ func deflateBase64(t *testing.T, s string) string {
 	}
 	return base64.StdEncoding.EncodeToString(deflated.Bytes())
 }
+
+// A data value renders identically whether or not it carries = padding: a
+// real page can carry an unpadded value (#37), and only the 4n length class
+// happens to look the same padded or not, which is why the #35 fixture
+// didn't catch this.
+func TestToMarkdownRendersAPlantUMLMacroRegardlessOfBase64Padding(t *testing.T) {
+	const compressed = `<ac:parameter ac:name="compressed">true</ac:parameter>`
+
+	tests := []struct {
+		name    string
+		wantMod int
+		padded  bool
+	}{
+		{name: "unpadded, encoded length 4n+2", wantMod: 2, padded: false},
+		{name: "unpadded, encoded length 4n+3", wantMod: 3, padded: false},
+		{name: "padded, encoded length 4n+2", wantMod: 2, padded: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := growPlantUMLPayload(t, tt.wantMod)
+			if !tt.padded {
+				payload = strings.TrimRight(payload, "=")
+			}
+
+			storage := `<ac:structured-macro ac:name="plantumlcloud">` + compressed + dataParameter(payload) + `</ac:structured-macro>`
+
+			result := ToMarkdown(storage, Options{})
+
+			if result.UnsupportedCount != 0 || result.Unsupported != nil {
+				t.Errorf("Unsupported = %v (%d), want nothing reported for a diagram whose source decoded",
+					result.Unsupported, result.UnsupportedCount)
+			}
+			if want := "```plantuml\n"; !strings.HasPrefix(result.Markdown, want) {
+				t.Errorf("ToMarkdown() = %q, want a fenced block starting with %q", result.Markdown, want)
+			}
+		})
+	}
+}
+
+// growPlantUMLPayload grows a %-encoded plantuml source until its deflated,
+// base64-encoded payload has wantMod (mod 4) as the length of its unpadded
+// form, then returns that (still padded) payload. Deflate output length
+// isn't predictable from input length, so this can't be a fixed hand-picked
+// string (see #37) — it must probe for the class it lands on.
+func growPlantUMLPayload(t *testing.T, wantMod int) string {
+	t.Helper()
+
+	source := "%40startuml%0A%40enduml"
+	for range 1000 {
+		payload := deflateBase64(t, source)
+		if unpadded := strings.TrimRight(payload, "="); len(unpadded)%4 == wantMod {
+			return payload
+		}
+		source += "x"
+	}
+	t.Fatalf("could not grow a payload whose unpadded base64 length is %d (mod 4)", wantMod)
+	return ""
+}
