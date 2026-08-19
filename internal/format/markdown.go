@@ -618,7 +618,7 @@ func plantUMLSource(n *node) (string, bool) {
 
 	// Standard base64, not PlantUML's own URL-safe alphabet: the payload
 	// carries + and /.
-	deflated, err := base64.StdEncoding.DecodeString(data)
+	deflated, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(data, "="))
 	if err != nil {
 		return "", false
 	}
