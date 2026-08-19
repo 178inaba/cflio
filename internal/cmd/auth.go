@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/178inaba/cflio/internal/config"
 	"github.com/spf13/cobra"
@@ -207,6 +209,107 @@ func prompt(out io.Writer, in *bufio.Reader, message string) (string, error) {
 	return line, nil
 }
 
+// interruptSignals lists the signals the terminal guard catches. It is a
+// function so tests can assert the registered set without a second copy of
+// the list to keep in step.
+func interruptSignals() []os.Signal {
+	return []os.Signal{os.Interrupt, syscall.SIGTERM}
+}
+
+// terminalGuard puts the terminal back and then re-raises, so an interrupt
+// during the masked token read ends the process by the signal the user sent
+// rather than through an error report.
+//
+// Nothing else in cflio needs the signal caught: dying immediately is
+// already the wanted behaviour everywhere else, and the modified terminal
+// is the only thing that would outlive the process badly.
+//
+// reset, restore and reraise are fields rather than direct calls because
+// none of them can run under test — restore needs a real terminal, and
+// reraise ends the process. newTerminalGuard fills them with the real ones.
+type terminalGuard struct {
+	out     io.Writer
+	fd      int
+	state   *term.State
+	reset   func(...os.Signal)
+	restore func(int, *term.State) error
+	reraise func(syscall.Signal) // does not return
+}
+
+func newTerminalGuard(out io.Writer, fd int, state *term.State) *terminalGuard {
+	return &terminalGuard{
+		out:     out,
+		fd:      fd,
+		state:   state,
+		reset:   signal.Reset,
+		restore: term.Restore,
+		reraise: reraise,
+	}
+}
+
+// arm starts catching the interrupt signals and returns the call that stops
+// it again. The guard handles at most one signal: the process is meant to
+// die of it, so there is no second one to serve.
+//
+// Disarming is best-effort against a signal that has already been taken,
+// and losing that race is harmless — the user pressed Ctrl-C, and the
+// process dying is the wanted outcome either way.
+func (g *terminalGuard) arm() (disarm func()) {
+	// Buffered, as signal.Notify requires: the runtime drops a signal
+	// rather than blocking on the send.
+	received := make(chan os.Signal, 1)
+	signal.Notify(received, interruptSignals()...)
+
+	disarmed := make(chan struct{})
+	go func() {
+		select {
+		case <-disarmed:
+		case sig := <-received:
+			g.handle(sig)
+		}
+	}()
+
+	return func() {
+		signal.Stop(received)
+		close(disarmed)
+	}
+}
+
+// handle runs the clean-up the guard exists for. The order is load-bearing:
+// resetting the handlers first is what lets a second signal end the process
+// at once instead of queueing behind the restore, which the Command Line
+// Interface Guidelines ask for. The cost is that a second signal landing in
+// the microseconds before the restore leaves echo off; `stty sane` recovers
+// it, and re-arming to close that window would reinstate the very problem
+// the reset is here to avoid.
+//
+// Every signal interruptSignals returns is reset, not just the one that
+// arrived: signal.Reset is variadic and resets only what it is given, so a
+// SIGTERM following a SIGINT would otherwise land in a channel nobody reads.
+func (g *terminalGuard) handle(sig os.Signal) {
+	g.reset(interruptSignals()...)
+
+	// Both errors are dropped rather than reported: an interrupted run
+	// prints no failure report, and there is no branch left to take with
+	// the process about to die of the signal.
+	_ = g.restore(g.fd, g.state)
+	// Nothing echoes the interrupt with ECHO cleared, so this newline is
+	// what ends the prompt's line.
+	_, _ = fmt.Fprintln(g.out)
+
+	// A signal that is not a syscall.Signal carries no number to build a
+	// status from. interruptSignals yields only ones that are, so this
+	// cannot happen in practice. The check sits after the restore, so even
+	// the impossible path leaves the terminal usable.
+	s, ok := sig.(syscall.Signal)
+	if !ok {
+		os.Exit(1)
+	}
+	// The guard runs on its own goroutine rather than on the path that
+	// returns from Execute, so this ends the process instead of a code.
+	g.reraise(s)
+}
+
 // promptSecret reads a value that must not be left in the terminal's
 // scrollback. On a real terminal it echoes nothing; anywhere else — a pipe,
 // or a test's scripted stdin — it falls back to a plain line read, since
@@ -220,7 +323,30 @@ func promptSecret(out io.Writer, in *bufio.Reader, raw io.Reader, message string
 	if _, err := fmt.Fprint(out, message); err != nil {
 		return "", err
 	}
-	secret, err := term.ReadPassword(int(f.Fd()))
+
+	// ReadPassword clears ECHO and restores the terminal from its own
+	// deferred call, which only runs once its read returns — never, when a
+	// signal ends the process mid-read. Capturing the state here is what
+	// lets the guard put echo back instead of leaving the user's shell
+	// silent.
+	fd := int(f.Fd())
+	state, err := term.GetState(fd)
+	if err != nil {
+		return "", err
+	}
+
+	// term.GetState only reads, so arming after it still leaves the guarded
+	// window a strict superset of the modified one: a signal arriving
+	// before ReadPassword clears ECHO restores a state that was never
+	// changed, which is a no-op. There is no window in which the terminal
+	// is modified and unguarded.
+	//
+	// Deferred rather than called after the read, so the error path out of
+	// ReadPassword disarms too.
+	disarm := newTerminalGuard(out, fd, state).arm()
+	defer disarm()
+
+	secret, err := term.ReadPassword(fd)
 	// The user's Enter is swallowed along with the echo, so the following
 	// output would otherwise continue on the prompt's line.
 	if _, printErr := fmt.Fprintln(out); printErr != nil && err == nil {
