@@ -150,8 +150,8 @@ read stderr to classify a failure: `0` for success, `124` when the deadline expi
 every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
 retrying — with a larger `--timeout`; every other one needs the `Error:` line read instead. A
 deadline that expires while `read --markdown` is resolving references is the exception: it is
-absorbed like any other lookup failure, so the run is counted in `Unchecked: N` above and still
-exits `0`.
+absorbed like any other lookup failure, so the reference is counted in `Unchecked: N` above and
+the run still exits `0`.
 
 Ctrl-C and `SIGTERM` are not reported as failures: cflio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over
