@@ -618,6 +618,10 @@ func plantUMLSource(n *node) (string, bool) {
 
 	// Standard base64, not PlantUML's own URL-safe alphabet: the payload
 	// carries + and /.
+	//
+	// Padding is unreliable: a real page can carry a data value with no =
+	// padding (#37). Neither Encoding alone accepts both shapes, so any
+	// padding is trimmed first and the rest is decoded raw.
 	deflated, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(data, "="))
 	if err != nil {
 		return "", false
