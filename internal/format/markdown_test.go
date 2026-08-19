@@ -1,6 +1,9 @@
 package format
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/base64"
 	"flag"
 	"os"
 	"path/filepath"
@@ -427,4 +430,105 @@ func TestToMarkdownKeepsGoingOnAwkwardInput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A plantumlcloud macro keeps its diagram source in an encoded parameter
+// rather than in a body, so rendering that source is what makes the macro
+// fully representable — and the conversion has to say so by reporting nothing.
+func TestToMarkdownDoesNotDegradeAPlantUMLMacroItRenders(t *testing.T) {
+	const input = "testdata/plantumlcloud_macro.xml"
+
+	storage, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", input, err)
+	}
+
+	result := ToMarkdown(string(storage), Options{})
+
+	if result.UnsupportedCount != 0 || result.Unsupported != nil {
+		t.Errorf("Unsupported = %v (%d), want nothing reported for a diagram whose source survived",
+			result.Unsupported, result.UnsupportedCount)
+	}
+}
+
+// Only the encoding observed on a real page is decoded; anything else falls
+// back to the placeholder rather than to a guess at a format nobody has seen.
+func TestToMarkdownDegradesAPlantUMLMacroItCannotDecode(t *testing.T) {
+	const compressed = `<ac:parameter ac:name="compressed">true</ac:parameter>`
+
+	// A payload that decodes cleanly, so the two parameter cases below isolate
+	// the guard they are about instead of failing further down the pipeline.
+	valid := dataParameter(deflateBase64(t, "%40startuml%0A%40enduml"))
+
+	tests := []struct {
+		name       string
+		parameters string
+	}{
+		{
+			name:       "no data parameter",
+			parameters: compressed,
+		},
+		{
+			name:       "no compressed parameter",
+			parameters: valid,
+		},
+		{
+			name:       "compressed is not true",
+			parameters: `<ac:parameter ac:name="compressed">false</ac:parameter>` + valid,
+		},
+		{
+			name:       "the data parameter is not base64",
+			parameters: compressed + dataParameter("not base64!"),
+		},
+		{
+			name:       "the base64 payload is not deflate",
+			parameters: compressed + dataParameter(base64.StdEncoding.EncodeToString([]byte("not deflate"))),
+		},
+		{
+			name:       "the inflated payload is not percent-encoded",
+			parameters: compressed + dataParameter(deflateBase64(t, "%zz")),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := `<ac:structured-macro ac:name="plantumlcloud">` + tt.parameters + `</ac:structured-macro>`
+
+			result := ToMarkdown(storage, Options{})
+
+			if want := "[unsupported macro: plantumlcloud]\n"; result.Markdown != want {
+				t.Errorf("ToMarkdown() = %q, want the placeholder %q", result.Markdown, want)
+			}
+			if result.UnsupportedCount != 1 {
+				t.Errorf("UnsupportedCount = %d, want the macro counted as degraded (1)",
+					result.UnsupportedCount)
+			}
+		})
+	}
+}
+
+// dataParameter wraps a payload the way storage carries a plantumlcloud
+// macro's diagram source.
+func dataParameter(payload string) string {
+	return `<ac:parameter ac:name="data">` + payload + `</ac:parameter>`
+}
+
+// deflateBase64 encodes s the way a plantumlcloud macro's data parameter is
+// encoded, minus the percent-encoding the real payload carries. That lets a
+// test hand the decoder input whose only invalid stage is the last one.
+func deflateBase64(t *testing.T, s string) string {
+	t.Helper()
+
+	var deflated bytes.Buffer
+	w, err := flate.NewWriter(&deflated, flate.DefaultCompression)
+	if err != nil {
+		t.Fatalf("flate.NewWriter() error = %v", err)
+	}
+	if _, err := w.Write([]byte(s)); err != nil {
+		t.Fatalf("Write(%q) error = %v", s, err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(deflated.Bytes())
 }

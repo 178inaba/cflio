@@ -1,9 +1,14 @@
 package format
 
 import (
+	"bytes"
 	"cmp"
+	"compress/flate"
+	"encoding/base64"
 	"encoding/xml"
+	"io"
 	"maps"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -536,6 +541,15 @@ func (r *renderer) macro(n *node) []block {
 	switch name {
 	case "code":
 		return []block{{text: fence(macroParameter(n, "language"), rawText(n.child("ac", "plain-text-body")))}}
+	case "plantumlcloud":
+		// Falling through to the placeholder when the source will not decode
+		// is the whole fallback: the degrade path below is what counts a
+		// macro, so a fence never reaches it and needs no bookkeeping of its
+		// own. The other parameters — filename, toolbar, revision — are render
+		// configuration rather than content, like the code macro's wrap.
+		if source, ok := plantUMLSource(n); ok {
+			return []block{{text: fence("plantuml", source)}}
+		}
 	case "info", "note", "warning", "tip", "panel":
 		return r.panel(n, name)
 	}
@@ -585,6 +599,46 @@ func (n *node) childNodes() []*node {
 		return nil
 	}
 	return n.children
+}
+
+// plantUMLSource decodes the diagram source a plantumlcloud macro carries in
+// its data parameter, reporting false for anything it cannot get all the way
+// through. The encoding is the app's own and undocumented, so only the shape
+// observed on a real page is decoded: a compressed value other than "true"
+// has never been seen and its payload format is unknown, which makes guessing
+// at it a way to emit a diagram nobody wrote.
+func plantUMLSource(n *node) (string, bool) {
+	if macroParameter(n, "compressed") != "true" {
+		return "", false
+	}
+	data := macroParameter(n, "data")
+	if data == "" {
+		return "", false
+	}
+
+	// Standard base64, not PlantUML's own URL-safe alphabet: the payload
+	// carries + and /.
+	deflated, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return "", false
+	}
+
+	// Raw deflate, with neither a zlib nor a gzip header. Not closing the
+	// reader loses nothing: it wraps a buffer, and ReadAll already surfaces a
+	// truncated or corrupt stream as an error.
+	escaped, err := io.ReadAll(flate.NewReader(bytes.NewReader(deflated)))
+	if err != nil {
+		return "", false
+	}
+
+	// PathUnescape rather than QueryUnescape, because a + in the inflated
+	// source is a plus sign and not a space. Non-ASCII is percent-encoded too,
+	// so what comes out is UTF-8 text.
+	source, err := url.PathUnescape(string(escaped))
+	if err != nil {
+		return "", false
+	}
+	return source, true
 }
 
 func macroParameter(n *node, name string) string {

@@ -1,0 +1,30 @@
+```plantuml
+@startuml
+actor User
+participant "Web Browser" as Browser
+participant "Web Server" as Server
+database Database
+
+User -> Browser : 検索クエリ入力
+activate Browser
+
+Browser -> Server : HTTP GET /search?q=keyword
+activate Server
+
+Server -> Database : SELECT * FROM items WHERE name LIKE '%keyword%'
+activate Database
+Database --> Server : 検索結果
+deactivate Database
+
+alt 結果あり
+    Server --> Browser : 200 OK (結果リスト)
+    Browser --> User : 検索結果を表示
+else 結果なし
+    Server --> Browser : 200 OK (空リスト)
+    Browser --> User : "結果が見つかりません"を表示
+end
+
+deactivate Server
+deactivate Browser
+@enduml
+```
