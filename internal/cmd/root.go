@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -146,13 +144,18 @@ func unknownCommandCandidates(cmd *cobra.Command, arg string) []string {
 
 // Execute runs the root command. The returned error has already been printed;
 // main only needs it to pick an exit code.
+//
+// Nothing here catches a signal: an interrupt ends the process through the
+// Go default, so no error unwinds the stack and this never runs for one. The
+// one place that does catch is the masked token read, where the terminal has
+// to be put back first (see terminalGuard in auth.go).
+//
+// The command context is left unset: cobra defaults a nil one to
+// context.Background(), which is all commandContext needs to derive from.
 func Execute() error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	g := &globalFlags{}
 	root, res := newRootCmd(g)
-	err := root.ExecuteContext(ctx)
+	err := root.Execute()
 	if err == nil {
 		if res.unknownCommand {
 			return errUnknownCommand
@@ -160,7 +163,7 @@ func Execute() error {
 		return nil
 	}
 
-	err = describeContextError(ctx, err, g.timeout)
+	err = describeContextError(err, g.timeout)
 	fmt.Fprintln(os.Stderr, "Error:", err)
 	return err
 }
@@ -168,16 +171,11 @@ func Execute() error {
 // describeContextError replaces a bare context error with one that says what
 // to do about it.
 //
-// The interrupt case is detected from the signal context rather than from
-// the returned error: signal.NotifyContext cancels with a cause, which the
-// transport surfaces instead of context.Canceled, so errors.Is would miss
-// it. The deadline case is the other way round — it comes from a context
-// derived per command, so only the error carries it, and net/http wraps it
-// in a *url.Error that errors.Is sees through.
-func describeContextError(signalCtx context.Context, err error, timeout time.Duration) error {
+// Only the deadline gets rewritten, and it is detected from the error: it
+// comes from a context derived per command, so the error is what carries it,
+// and net/http wraps it in a *url.Error that errors.Is sees through.
+func describeContextError(err error, timeout time.Duration) error {
 	switch {
-	case signalCtx.Err() != nil:
-		return fmt.Errorf("interrupted: %w", err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("timed out after %s: raise the deadline with --timeout (0 disables it): %w",
 			timeout, err)
