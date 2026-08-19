@@ -14,6 +14,12 @@ import (
 
 const defaultTimeout = 90 * time.Second
 
+// timeoutExitCode is what a run ends with when its --timeout deadline expired.
+// 124 is the code GNU timeout reports for the same thing, so an agent can tell
+// "raise --timeout and run it again" from every other failure without reading
+// stderr. Sibling repos use it for the same purpose.
+const timeoutExitCode = 124
+
 // globalFlags holds the root's persistent flags. Every subcommand that reads
 // one takes this pointer, so the flag names stay type-checked instead of
 // being looked up by string at each site.
@@ -36,11 +42,6 @@ type runResult struct {
 	// would tell Execute the run failed.
 	unknownCommand bool
 }
-
-// errUnknownCommand is what Execute returns for the case above. The message
-// has already been written by the help function, so this only has to be
-// non-nil.
-var errUnknownCommand = errors.New("unknown command")
 
 // newRootCmd builds the command tree. globalFlags travels in — pflag fills
 // it in as it parses — and runResult travels back out, filled in as the tree
@@ -142,44 +143,61 @@ func unknownCommandCandidates(cmd *cobra.Command, arg string) []string {
 	return cmd.SuggestionsFor(arg)
 }
 
-// Execute runs the root command. The returned error has already been printed;
-// main only needs it to pick an exit code.
+// Execute runs the root command and returns the process exit code: 0 when it
+// succeeded, timeoutExitCode when the --timeout deadline expired, and 1 for
+// every other failure. The error itself is printed here rather than returned,
+// since main has nothing left to do with it.
+//
+// The code comes back from a function that returns normally because os.Exit
+// skips deferred functions, so main can do nothing but pass it straight on.
 //
 // Nothing here catches a signal: an interrupt ends the process through the
-// Go default, so no error unwinds the stack and this never runs for one. The
-// one place that does catch is the masked token read, where the terminal has
-// to be put back first (see terminalGuard in auth.go).
+// Go default, so no error unwinds the stack and this never runs for one — an
+// interrupted run has no exit code at all, only a termination status. The one
+// place that does catch is the masked token read, where the terminal has to be
+// put back first (see terminalGuard in auth.go).
 //
 // The command context is left unset: cobra defaults a nil one to
 // context.Background(), which is all commandContext needs to derive from.
-func Execute() error {
+func Execute() int {
 	g := &globalFlags{}
 	root, res := newRootCmd(g)
 	err := root.Execute()
 	if err == nil {
+		// The help function has already written the message for a mistyped
+		// subcommand (see runResult.unknownCommand), so this only has to
+		// make the run fail.
 		if res.unknownCommand {
-			return errUnknownCommand
+			return 1
 		}
-		return nil
+		return 0
 	}
 
-	err = describeContextError(err, g.timeout)
+	code, err := describeFailure(err, g.timeout)
 	fmt.Fprintln(os.Stderr, "Error:", err)
-	return err
+	return code
 }
 
-// describeContextError replaces a bare context error with one that says what
-// to do about it.
+// describeFailure maps a failure to the exit code it ends the process with and
+// the error to print for it, replacing a bare context error with one that says
+// what to do about it. Success never reaches here — Execute answers that
+// itself — so every path returns a non-zero code.
+//
+// Deciding both in one place is the point: errors.Is(err, DeadlineExceeded) is
+// the only thing separating timeoutExitCode from 1, and splitting the message
+// and the code across two functions would let a third failure class be added
+// to one and missed in the other, with nothing failing loudly when they
+// disagree.
 //
 // Only the deadline gets rewritten, and it is detected from the error: it
 // comes from a context derived per command, so the error is what carries it,
 // and net/http wraps it in a *url.Error that errors.Is sees through.
-func describeContextError(err error, timeout time.Duration) error {
+func describeFailure(err error, timeout time.Duration) (int, error) {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("timed out after %s: raise the deadline with --timeout (0 disables it): %w",
-			timeout, err)
+		return timeoutExitCode, fmt.Errorf(
+			"timed out after %s: raise the deadline with --timeout (0 disables it): %w", timeout, err)
 	}
-	return err
+	return 1, err
 }
 
 // commandContext returns a context bound to --timeout. It must be called at
