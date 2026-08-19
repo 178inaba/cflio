@@ -3,12 +3,19 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/178inaba/cflio/internal/config"
+	"golang.org/x/term"
 )
 
 // runLogin drives auth login with the given prompt answers.
@@ -287,5 +294,181 @@ func assertNoConfigWritten(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("config file %s exists, want nothing written on failure", path)
+	}
+}
+
+// guardTestFd stands in for the terminal's descriptor. The guard only hands
+// it to the restore it is given, which these tests replace, so it never has
+// to name anything open.
+const guardTestFd = 42
+
+// guardEffectTimeout bounds how long a test waits for the guard to act on a
+// signal it was sent. The guard's own work is a handful of calls, so this
+// only has to outlast a loaded machine's scheduling.
+const guardEffectTimeout = 10 * time.Second
+
+func selfProcess(t *testing.T) *os.Process {
+	t.Helper()
+
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() error = %v", err)
+	}
+	return self
+}
+
+// guardRecorder records what the guard did, in order. The guard acts on its
+// own goroutine, so every field is read behind the mutex — except reraised,
+// which is the channel a test waits on, and whose receive also orders the
+// writes that came before it.
+type guardRecorder struct {
+	mu           sync.Mutex
+	events       []string
+	resetSignals []os.Signal
+	restoreFd    int
+	restoreState *term.State
+
+	reraised chan syscall.Signal
+}
+
+func (r *guardRecorder) record(event string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+func (r *guardRecorder) snapshot() (events []string, resetSignals []os.Signal, restoreFd int, restoreState *term.State) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.events), slices.Clone(r.resetSignals), r.restoreFd, r.restoreState
+}
+
+// newRecordingGuard builds a guard whose three process-level effects are
+// recorded instead of performed. Stubbing them is what makes the ordering
+// observable at all: term.Restore needs a real terminal, and the real
+// re-raise ends the process.
+func newRecordingGuard(out io.Writer, state *term.State) (*terminalGuard, *guardRecorder) {
+	rec := &guardRecorder{reraised: make(chan syscall.Signal, 1)}
+
+	g := newTerminalGuard(out, guardTestFd, state)
+	g.reset = func(signals ...os.Signal) {
+		rec.mu.Lock()
+		rec.resetSignals = signals
+		rec.mu.Unlock()
+		rec.record("reset")
+	}
+	g.restore = func(fd int, state *term.State) error {
+		rec.mu.Lock()
+		rec.restoreFd, rec.restoreState = fd, state
+		rec.mu.Unlock()
+		rec.record("restore")
+		return nil
+	}
+	g.reraise = func(sig syscall.Signal) {
+		rec.record("reraise")
+		rec.reraised <- sig
+	}
+	return g, rec
+}
+
+// TestTerminalGuardReRaisesAfterRestoring covers the guard's whole reason to
+// exist: a signal arriving while the masked read has the terminal modified
+// has to put the terminal back before the process dies of that signal.
+// Re-raising first would leave the user's shell with echo off.
+func TestTerminalGuardReRaisesAfterRestoring(t *testing.T) {
+	// Pinning the list rather than only iterating it: iterating alone would
+	// still pass if the guard stopped registering SIGTERM.
+	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if got := interruptSignals(); !slices.Equal(got, signals) {
+		t.Fatalf("interruptSignals() = %v, want %v", got, signals)
+	}
+
+	self := selfProcess(t)
+
+	for _, sig := range signals {
+		t.Run(sig.String(), func(t *testing.T) {
+			var out bytes.Buffer
+			state := &term.State{}
+			g, rec := newRecordingGuard(&out, state)
+
+			disarm := g.arm()
+			t.Cleanup(disarm)
+
+			if err := self.Signal(sig); err != nil {
+				t.Fatalf("sending %v to the test process: %v", sig, err)
+			}
+
+			var reraised syscall.Signal
+			select {
+			case reraised = <-rec.reraised:
+			case <-time.After(guardEffectTimeout):
+				t.Fatal("the guard did not re-raise the signal")
+			}
+
+			if reraised != sig {
+				t.Errorf("re-raised %v, want %v", reraised, sig)
+			}
+			events, resetSignals, restoreFd, restoreState := rec.snapshot()
+			if want := []string{"reset", "restore", "reraise"}; !slices.Equal(events, want) {
+				t.Errorf("guard did %v, want %v", events, want)
+			}
+			// Resetting only the signal that arrived would leave the other
+			// one delivered to a channel nobody reads any more.
+			if !slices.Equal(resetSignals, interruptSignals()) {
+				t.Errorf("reset %v, want %v", resetSignals, interruptSignals())
+			}
+			if restoreFd != guardTestFd || restoreState != state {
+				t.Errorf("restored (%d, %p), want (%d, %p)",
+					restoreFd, restoreState, guardTestFd, state)
+			}
+			// Nothing echoes the interrupt with ECHO cleared, so the guard
+			// owes the prompt its closing newline — and nothing else.
+			if got := out.String(); got != "\n" {
+				t.Errorf("guard wrote %q, want a single newline", got)
+			}
+		})
+	}
+}
+
+// TestTerminalGuardDisarmStopsDelivery covers the other end of the guard's
+// life: once the masked read is over the terminal is unmodified again, and a
+// signal has to reach the process default rather than the guard.
+func TestTerminalGuardDisarmStopsDelivery(t *testing.T) {
+	self := selfProcess(t)
+
+	var out bytes.Buffer
+	g, rec := newRecordingGuard(&out, &term.State{})
+	disarm := g.arm()
+
+	// Taking delivery over before disarming: with no handler left, the
+	// signal below would terminate the test binary rather than prove
+	// anything.
+	delivered := make(chan os.Signal, 1)
+	signal.Notify(delivered, os.Interrupt)
+	t.Cleanup(func() { signal.Stop(delivered) })
+
+	disarm()
+
+	if err := self.Signal(os.Interrupt); err != nil {
+		t.Fatalf("sending %v to the test process: %v", os.Interrupt, err)
+	}
+	select {
+	case <-delivered:
+	case <-time.After(guardEffectTimeout):
+		t.Fatal("the signal was never delivered")
+	}
+
+	// A goroutine that has returned leaves nothing to observe directly, so
+	// the proof is that none of the guard's effects run.
+	select {
+	case sig := <-rec.reraised:
+		t.Errorf("the guard re-raised %v after being disarmed", sig)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if events, _, _, _ := rec.snapshot(); len(events) > 0 {
+		t.Errorf("guard did %v after being disarmed, want nothing", events)
+	}
+	if out.Len() > 0 {
+		t.Errorf("guard wrote %q after being disarmed, want nothing", out.String())
 	}
 }

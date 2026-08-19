@@ -22,10 +22,14 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # No separate build step: go test compiles every matched package,
-      # including ones without test files (the root main.go), so a compile
-      # failure there fails this step too.
+      # No separate build step for this platform: go test compiles every
+      # matched package, including ones without test files (the root
+      # main.go), so a compile failure there fails this step too.
       - run: go test -race ./...
+      # That reasoning stops at the build-tagged re-raise, whose Windows half
+      # no linux run ever compiles. `go install` is cflio's only distribution
+      # channel, so a break here would stop Windows users installing it.
+      - run: GOOS=windows go build ./...
 
   lint:
     name: Lint
