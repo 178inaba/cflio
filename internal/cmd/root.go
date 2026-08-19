@@ -175,13 +175,11 @@ func Execute() error {
 // comes from a context derived per command, so the error is what carries it,
 // and net/http wraps it in a *url.Error that errors.Is sees through.
 func describeContextError(err error, timeout time.Duration) error {
-	switch {
-	case errors.Is(err, context.DeadlineExceeded):
+	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("timed out after %s: raise the deadline with --timeout (0 disables it): %w",
 			timeout, err)
-	default:
-		return err
 	}
+	return err
 }
 
 // commandContext returns a context bound to --timeout. It must be called at
