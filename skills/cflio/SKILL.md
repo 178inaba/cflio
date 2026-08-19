@@ -31,7 +31,7 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - **Structured output**: add `--format json` when you want to parse a result rather than read it.
 - **Multiple sites**: a page URL selects the right profile automatically. For `search`, which has no URL, pass `--profile <name>` if the user has more than one site registered — check with `cflio profile list`.
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `cflio auth login` (they will need an Atlassian API token; see the repo README).
-- **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` cflio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — distinct from the `1` every real failure exits with after printing `Error: …`. An interrupted `read` writes no body file at all, so do not treat a missing file as a failed request.
+- **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` cflio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — distinct from the `1` every real failure exits with after printing `Error: …`. An interrupted `read` leaves no body file unless the signal lands during the write itself, so do not treat a missing file as a failed request.
 - **Not supported**: creating, deleting or moving pages, posting comments, and attachments. Draft replies for the user to post themselves.
 
 Run `cflio --help` or `cflio <command> --help` for the full flag reference; it is the source of truth for exact flags and defaults, so this document does not duplicate it.
