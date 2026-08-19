@@ -552,13 +552,9 @@ func TestToMarkdownRendersAPlantUMLMacroRegardlessOfBase64Padding(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := growPlantUMLSource(t, tt.wantMod)
-			payload := deflateBase64(t, source)
+			payload := growPlantUMLPayload(t, tt.wantMod)
 			if !tt.padded {
 				payload = strings.TrimRight(payload, "=")
-			}
-			if got := len(strings.TrimRight(payload, "=")) % 4; got != tt.wantMod {
-				t.Fatalf("payload length class = %d, want %d", got, tt.wantMod)
 			}
 
 			storage := `<ac:structured-macro ac:name="plantumlcloud">` + compressed + dataParameter(payload) + `</ac:structured-macro>`
@@ -576,21 +572,22 @@ func TestToMarkdownRendersAPlantUMLMacroRegardlessOfBase64Padding(t *testing.T) 
 	}
 }
 
-// growPlantUMLSource grows a %-encoded plantuml source until its deflated,
-// base64-unpadded length is wantMod (mod 4). Deflate output length isn't
-// predictable from input length, so this can't be a fixed hand-picked string
-// (see #37) — it must probe and assert the class it lands on.
-func growPlantUMLSource(t *testing.T, wantMod int) string {
+// growPlantUMLPayload grows a %-encoded plantuml source until its deflated,
+// base64-encoded payload has wantMod (mod 4) as the length of its unpadded
+// form, then returns that (still padded) payload. Deflate output length
+// isn't predictable from input length, so this can't be a fixed hand-picked
+// string (see #37) — it must probe for the class it lands on.
+func growPlantUMLPayload(t *testing.T, wantMod int) string {
 	t.Helper()
 
 	source := "%40startuml%0A%40enduml"
 	for range 1000 {
 		payload := deflateBase64(t, source)
 		if unpadded := strings.TrimRight(payload, "="); len(unpadded)%4 == wantMod {
-			return source
+			return payload
 		}
 		source += "x"
 	}
-	t.Fatalf("could not grow a source whose unpadded base64 length is %d (mod 4)", wantMod)
+	t.Fatalf("could not grow a payload whose unpadded base64 length is %d (mod 4)", wantMod)
 	return ""
 }
