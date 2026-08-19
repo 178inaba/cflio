@@ -145,12 +145,12 @@ duration such as `30m`, or `0` for no deadline). On the deadline the command fai
 error that names the flag. The default is chosen so the CLI finishes or fails on its own before a
 typical agent harness force-kills it (Claude Code's Bash tool sends SIGKILL after 120 s).
 
-A run that ends normally says which of those happened in its exit status, so a caller does not have
-to read stderr to find out: `0` for success, `124` when the deadline expired — the code GNU
-`timeout` uses, and the one case where raising `--timeout` and running the command again is the
-answer — and `1` for every other failure, which the `Error:` line describes. One deadline is not
-counted: `read --markdown` resolves references after fetching the body and reports failures there
-as `Unchecked: N` rather than failing the read, so a deadline that expires during that phase still
+A run that ends normally reports which happened in its exit status, so a caller does not have to
+read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
+every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
+retrying — with a larger `--timeout`; every other one needs the `Error:` line read instead. A
+deadline that expires while `read --markdown` is resolving references is the exception: it is
+absorbed like any other lookup failure, so the run is counted in `Unchecked: N` above and still
 exits `0`.
 
 Ctrl-C and `SIGTERM` are not reported as failures: cflio prints nothing and terminates by the

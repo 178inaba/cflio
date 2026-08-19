@@ -144,9 +144,10 @@ func unknownCommandCandidates(cmd *cobra.Command, arg string) []string {
 }
 
 // Execute runs the root command and returns the process exit code: 0 when it
-// succeeded, timeoutExitCode when the --timeout deadline expired, and 1 for
-// every other failure. The error itself is printed here rather than returned,
-// since main has nothing left to do with it.
+// succeeded, 124 when the --timeout deadline expired, and 1 for every other
+// failure. Those numbers are the contract a caller reads, so they are spelled
+// out here rather than named. The error itself is printed rather than
+// returned, since main has nothing left to do with it.
 //
 // The code comes back from a function that returns normally because os.Exit
 // skips deferred functions, so main can do nothing but pass it straight on.
@@ -183,11 +184,13 @@ func Execute() int {
 // what to do about it. Success never reaches here — Execute answers that
 // itself — so every path returns a non-zero code.
 //
-// Deciding both in one place is the point: errors.Is(err, DeadlineExceeded) is
-// the only thing separating timeoutExitCode from 1, and splitting the message
-// and the code across two functions would let a third failure class be added
-// to one and missed in the other, with nothing failing loudly when they
-// disagree.
+// Deciding both here is the point: errors.Is(err, DeadlineExceeded) is the
+// only thing separating timeoutExitCode from 1, and splitting the message and
+// the code across two functions would let a third failure class be added to
+// one and missed in the other, with nothing failing loudly when they disagree.
+// That covers every failure that carries an error, which is all of them but
+// one: a mistyped subcommand under a group command is reported by the help
+// function and never reaches here (see Execute).
 //
 // Only the deadline gets rewritten, and it is detected from the error: it
 // comes from a context derived per command, so the error is what carries it,
