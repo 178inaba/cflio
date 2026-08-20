@@ -808,9 +808,9 @@ func (r *renderer) linkBody(n *node) string {
 	return strings.TrimSpace(r.inlineChildren(n.child("ac", "link-body")))
 }
 
-// image renders <ac:image>. An attachment carries no URL that would resolve
-// offline, and cflio does not support attachments, so the filename is the
-// useful thing to keep.
+// image renders <ac:image>. An attachment has no URL the converter could put
+// here — it is fetched, not linked — so the filename is what is kept, and it is
+// also what `cflio attachments download --pattern` selects the file by.
 func (r *renderer) image(n *node) string {
 	if source := riChild(n); source != nil {
 		switch source.local {
