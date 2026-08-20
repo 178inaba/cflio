@@ -191,7 +191,7 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 		return errors.New(msg)
 	}
 
-	destinations, err := planDestinations(matched, outDir)
+	planned, err := planDownloads(matched, outDir)
 	if err != nil {
 		return err
 	}
@@ -199,13 +199,13 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 		return fmt.Errorf("create %s: %w", outDir, err)
 	}
 
-	items := make([]downloadedItem, 0, len(matched))
-	for i, a := range matched {
-		n, err := downloadToFile(ctx, client, a.DownloadLink, destinations[i])
+	items := make([]downloadedItem, 0, len(planned))
+	for _, p := range planned {
+		n, err := downloadToFile(ctx, client, p.attachment.DownloadLink, p.dest)
 		if err != nil {
 			return err
 		}
-		items = append(items, downloadedItem{Filename: a.Title, Path: destinations[i], Bytes: n})
+		items = append(items, downloadedItem{Filename: p.attachment.Title, Path: p.dest, Bytes: n})
 	}
 
 	notice := ""
@@ -255,7 +255,14 @@ func matchAttachments(attachments []confluence.Attachment, pattern string) ([]co
 	return matched, nil
 }
 
-// planDestinations resolves where each matched attachment will be written, and
+// plannedDownload is one matched attachment together with the file it will be
+// written to, so the transfer loop never has to pair the two by index.
+type plannedDownload struct {
+	attachment confluence.Attachment
+	dest       string
+}
+
+// planDownloads resolves where each matched attachment will be written, and
 // refuses the whole run if any of those files already exists.
 //
 // Checking every destination up front is what keeps the refusal from being
@@ -268,8 +275,8 @@ func matchAttachments(attachments []confluence.Attachment, pattern string) ([]co
 // outDir: a title carrying a path would otherwise land somewhere the caller
 // never named. Base is the local filesystem's idea of a separator, which is
 // the right one — this is a path being built, not a pattern being matched.
-func planDestinations(matched []confluence.Attachment, outDir string) ([]string, error) {
-	destinations := make([]string, 0, len(matched))
+func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDownload, error) {
+	planned := make([]plannedDownload, 0, len(matched))
 	var collisions []string
 
 	for _, a := range matched {
@@ -284,14 +291,14 @@ func planDestinations(matched []confluence.Attachment, outDir string) ([]string,
 		} else if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("check %s: %w", dest, err)
 		}
-		destinations = append(destinations, dest)
+		planned = append(planned, plannedDownload{attachment: a, dest: dest})
 	}
 
 	if len(collisions) > 0 {
 		return nil, fmt.Errorf("refusing to overwrite %s; delete them or pass a different -o "+
 			"(nothing was downloaded)", strings.Join(collisions, ", "))
 	}
-	return destinations, nil
+	return planned, nil
 }
 
 // downloadToFile streams one attachment to dest and reports how many bytes it
