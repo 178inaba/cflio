@@ -42,6 +42,11 @@ const (
 	// Confluence's 255-character ceiling would still outgrow what some proxies
 	// carry, which costs the batch its resolution and nothing more.
 	maxTitlesPerQuery = 50
+
+	// maxErrorBody bounds how much of a failed response is read to build the
+	// error from it. See responseError for why it is this far above the width
+	// the message is finally truncated to.
+	maxErrorBody = 64 << 10
 )
 
 // Client talks to one Confluence Cloud site with one set of credentials.
@@ -345,6 +350,101 @@ func (c *Client) CommentReplies(ctx context.Context, kind CommentKind, commentID
 	return paginate[Comment](ctx, c, path, query, limit, nil)
 }
 
+// Attachment is one file attached to a page. Title is the filename, which is
+// what `attachments download` matches its glob against. DownloadLink is
+// relative to the site base URL, in the form
+// /rest/api/content/{pageID}/child/attachment/{attachmentID}/download.
+//
+// The API's own attachment id is deliberately not modelled: DownloadLink
+// already carries it, and it is nothing a caller could use — downloads select
+// by filename, and Confluence keeps same-named attachments as versions of one
+// attachment rather than as separate ones, so no two listing entries share a
+// name for an id to tell apart.
+type Attachment struct {
+	Title        string `json:"title"`
+	MediaType    string `json:"mediaType"`
+	FileSize     int64  `json:"fileSize"`
+	DownloadLink string `json:"downloadLink"`
+}
+
+// PageAttachments lists the files attached to a page.
+func (c *Client) PageAttachments(ctx context.Context, pageID string, limit int) ([]Attachment, bool, error) {
+	path := "/api/v2/pages/" + url.PathEscape(pageID) + "/attachments"
+	return paginate[Attachment](ctx, c, path, nil, limit, nil)
+}
+
+// DownloadAttachment streams the bytes behind downloadLink to w and returns
+// how many it wrote. The body is copied through untouched: an attachment is
+// the only response cflio takes that is not JSON, and re-encoding it would
+// leave an image that no longer opens.
+//
+// It cannot go through do, which asks for JSON and decodes the response as
+// JSON. Nothing else about the request differs, so the auth and the error
+// handling are the same.
+//
+// The download redirects once, to Atlassian's media service on another host.
+// Go's http.Client follows it and drops the Authorization header on the way,
+// because the target is neither the initial host nor a subdomain of it (see
+// shouldCopyHeaderOnRedirect in net/http). That is what the media service
+// needs: the redirect target is a signed URL, and it rejects a request that
+// carries the site's credentials as well.
+func (c *Client) DownloadAttachment(ctx context.Context, downloadLink string, w io.Writer) (int64, error) {
+	endpoint, err := c.attachmentURL(downloadLink)
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("build request for %s: %w", downloadLink, err)
+	}
+	// No Accept header: the response is the file itself, and asking for
+	// application/json is a claim the media service is entitled to act on.
+	req.SetBasicAuth(c.email, c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("%s %s: %w", req.Method, downloadLink, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, responseError(req.Method, downloadLink, resp)
+	}
+
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return n, fmt.Errorf("download %s: %w", downloadLink, err)
+	}
+	return n, nil
+}
+
+// attachmentURL turns the relative download link an attachment carries into an
+// absolute URL.
+//
+// The link is relative to the listing's `_links.base`, which is the site base
+// URL this client was built for — the same string. So the two are
+// concatenated: url.URL.ResolveReference would read the leading slash as
+// site-root-relative and drop the /wiki path the base ends with, addressing a
+// host that serves nothing there.
+//
+// A link that is neither absolute nor rooted at / is an error rather than a
+// guess: every shape the API has been observed to return is one of those two,
+// and a third would mean the assumption above no longer holds.
+func (c *Client) attachmentURL(downloadLink string) (string, error) {
+	u, err := url.Parse(downloadLink)
+	if err != nil {
+		return "", fmt.Errorf("parse download link %q: %w", downloadLink, err)
+	}
+	if u.IsAbs() {
+		return u.String(), nil
+	}
+	if !strings.HasPrefix(downloadLink, "/") {
+		return "", fmt.Errorf("download link %q is neither absolute nor rooted at /", downloadLink)
+	}
+	return c.site.String() + downloadLink, nil
+}
+
 // SearchResult is one CQL hit. Content is absent for results that are not
 // content (spaces, users), so callers fall back to the top-level fields.
 type SearchResult struct {
@@ -513,6 +613,23 @@ func encodeJSON(payload any) (io.Reader, error) {
 	return strings.NewReader(buf.String()), nil
 }
 
+// responseError turns a non-2xx response into an *APIError.
+//
+// The body is read through a LimitReader because it is not always the small
+// JSON envelope the API documents: a gateway answers with an HTML page, and the
+// download path can be handed anything at all. maxErrorBody sits far above
+// maxRawBodyInError, which is where the message actually gets cut — the limit
+// here only stops an unbounded read, and cutting near the display width would
+// split a multi-byte rune where truncate's rune-boundary rewind can no longer
+// see it.
+func responseError(method, path string, resp *http.Response) error {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	if err != nil {
+		return fmt.Errorf("read response from %s %s: %w", method, path, err)
+	}
+	return newAPIError(method, path, resp.StatusCode, body)
+}
+
 func (c *Client) do(req *http.Request, path string, out any) error {
 	req.SetBasicAuth(c.email, c.token)
 	req.Header.Set("Accept", "application/json")
@@ -524,12 +641,7 @@ func (c *Client) do(req *http.Request, path string, out any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Error envelopes are small, so buffering one to parse it is fine.
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("read response from %s %s: %w", req.Method, path, err)
-		}
-		return newAPIError(req.Method, path, resp.StatusCode, body)
+		return responseError(req.Method, path, resp)
 	}
 
 	if out == nil {

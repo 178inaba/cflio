@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -306,6 +307,248 @@ func TestCommentRepliesUsesTheChildrenEndpoint(t *testing.T) {
 	}
 	if len(replies) != 1 || replies[0].ParentCommentID != "c1" {
 		t.Errorf("replies = %+v, want one reply pointing at c1", replies)
+	}
+}
+
+func TestPageAttachmentsListsTitleMediaTypeSizeAndDownloadLink(t *testing.T) {
+	var gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = fmt.Fprint(w, `{"results":[
+			{"id":"att1","title":"screenshot.png","mediaType":"image/png","fileSize":46982,
+			 "downloadLink":"/rest/api/content/10/child/attachment/att1/download"},
+			{"id":"att2","title":"spec.pdf","mediaType":"application/pdf","fileSize":3841203,
+			 "downloadLink":"/rest/api/content/10/child/attachment/att2/download"}
+		],"_links":{}}`)
+	})
+
+	attachments, hasMore, err := client.PageAttachments(t.Context(), "10", 100)
+	if err != nil {
+		t.Fatalf("PageAttachments() error = %v", err)
+	}
+	if gotPath != "/wiki/api/v2/pages/10/attachments" {
+		t.Errorf("path = %q, want /wiki/api/v2/pages/10/attachments", gotPath)
+	}
+	if hasMore {
+		t.Error("hasMore = true, want false when the server had no next page")
+	}
+
+	want := []Attachment{
+		{
+			Title: "screenshot.png", MediaType: "image/png", FileSize: 46982,
+			DownloadLink: "/rest/api/content/10/child/attachment/att1/download",
+		},
+		{
+			Title: "spec.pdf", MediaType: "application/pdf", FileSize: 3841203,
+			DownloadLink: "/rest/api/content/10/child/attachment/att2/download",
+		},
+	}
+	if !slices.Equal(attachments, want) {
+		t.Errorf("attachments = %+v, want %+v", attachments, want)
+	}
+}
+
+func TestPageAttachmentsReportsMoreBeyondTheLimit(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"results":[
+			{"title":"a.png"},{"title":"b.png"},{"title":"c.png"}
+		],"_links":{}}`)
+	})
+
+	attachments, hasMore, err := client.PageAttachments(t.Context(), "10", 2)
+	if err != nil {
+		t.Fatalf("PageAttachments() error = %v", err)
+	}
+	if len(attachments) != 2 {
+		t.Errorf("len(attachments) = %d, want 2 (the limit)", len(attachments))
+	}
+	if !hasMore {
+		t.Error("hasMore = false, want true when the server had another attachment")
+	}
+}
+
+// pngBytes is a real PNG signature plus a byte that is not valid UTF-8 on its
+// own, so a transfer that decoded or re-encoded the body would corrupt it
+// visibly rather than passing the assertion by luck.
+var pngBytes = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x42}
+
+func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
+	var gotPath, gotAccept string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAccept = r.URL.Path, r.Header.Get("Accept")
+		_, _ = w.Write(pngBytes)
+	})
+
+	var buf bytes.Buffer
+	n, err := client.DownloadAttachment(
+		t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf)
+	if err != nil {
+		t.Fatalf("DownloadAttachment() error = %v", err)
+	}
+
+	if gotPath != "/wiki/rest/api/content/10/child/attachment/att1/download" {
+		t.Errorf("path = %q, want the download link joined onto the site base", gotPath)
+	}
+	// The response is the file, not an error envelope, so asking for JSON
+	// would be a lie the media service is entitled to act on.
+	if gotAccept == "application/json" {
+		t.Errorf("Accept = %q, want the download not to ask for JSON", gotAccept)
+	}
+	if !bytes.Equal(buf.Bytes(), pngBytes) {
+		t.Errorf("body = %v, want the served bytes verbatim %v", buf.Bytes(), pngBytes)
+	}
+	if n != int64(len(pngBytes)) {
+		t.Errorf("n = %d, want %d", n, len(pngBytes))
+	}
+}
+
+func TestDownloadAttachmentSurfacesANonSuccessStatus(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"title":"Not Found","detail":"No attachment"}]}`)
+	})
+
+	var buf bytes.Buffer
+	_, err := client.DownloadAttachment(t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf)
+	if err == nil {
+		t.Fatal("DownloadAttachment() error = nil, want an error")
+	}
+
+	apiErr, ok := errors.AsType[*APIError](err)
+	if !ok {
+		t.Fatalf("DownloadAttachment() error = %v, want an *APIError", err)
+	}
+	if apiErr.Status != http.StatusNotFound {
+		t.Errorf("Status = %d, want %d", apiErr.Status, http.StatusNotFound)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("body = %q, want nothing written for a failed download", buf.Bytes())
+	}
+}
+
+// recordingTransport answers every request from responses, keyed by host, and
+// records the request that reached each one.
+//
+// A RoundTripper rather than two httptest servers: this test is about what
+// http.Client does with the Authorization header when a redirect crosses to
+// another host, and httptest servers all listen on 127.0.0.1 — Go compares
+// hostnames with the port stripped, so two of them count as the same host and
+// the header would be copied either way.
+type recordingTransport struct {
+	responses map[string]*http.Response
+	seen      []*http.Request
+}
+
+func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.seen = append(t.seen, req)
+	resp, ok := t.responses[req.URL.Host]
+	if !ok {
+		return nil, fmt.Errorf("no canned response for host %q", req.URL.Host)
+	}
+	resp.Request = req
+	return resp, nil
+}
+
+func TestDownloadAttachmentDropsTheAuthHeaderOnTheRedirectToTheMediaHost(t *testing.T) {
+	const (
+		apiHost   = "example.atlassian.net"
+		mediaHost = "media-cdn.example.com"
+	)
+
+	transport := &recordingTransport{responses: map[string]*http.Response{
+		apiHost: {
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": {"https://" + mediaHost + "/signed/blob?token=abc"}},
+			Body:       io.NopCloser(strings.NewReader("")),
+		},
+		mediaHost: {
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(bytes.NewReader(pngBytes)),
+		},
+	}}
+
+	client, err := New("https://"+apiHost+"/wiki", "a@example.com", "api-token",
+		WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := client.DownloadAttachment(
+		t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf); err != nil {
+		t.Fatalf("DownloadAttachment() error = %v", err)
+	}
+
+	if len(transport.seen) != 2 {
+		t.Fatalf("requests = %d, want 2 (the API host and the redirect target)", len(transport.seen))
+	}
+	if transport.seen[0].URL.Host != apiHost || transport.seen[0].Header.Get("Authorization") == "" {
+		t.Errorf("first request = %s (auth %q), want the API host with credentials",
+			transport.seen[0].URL, transport.seen[0].Header.Get("Authorization"))
+	}
+	// The redirect target is a signed URL. Forwarding the site's credentials
+	// to a host that did not ask for them is what the media service rejects.
+	if got := transport.seen[1].Header.Get("Authorization"); got != "" {
+		t.Errorf("Authorization on the redirect = %q, want it dropped across hosts", got)
+	}
+	if !bytes.Equal(buf.Bytes(), pngBytes) {
+		t.Errorf("body = %v, want the redirect target's bytes %v", buf.Bytes(), pngBytes)
+	}
+}
+
+func TestAttachmentURL(t *testing.T) {
+	client, err := New("https://example.atlassian.net/wiki", "a@example.com", "t")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		link    string
+		want    string
+		wantErr bool
+	}{
+		{
+			// Concatenated, not resolved: ResolveReference would read the
+			// leading slash as site-root-relative and drop /wiki.
+			name: "keeps the wiki prefix",
+			link: "/rest/api/content/10/child/attachment/att1/download",
+			want: "https://example.atlassian.net/wiki/rest/api/content/10/child/attachment/att1/download",
+		},
+		{
+			name: "keeps the query the API put on the link",
+			link: "/rest/api/content/10/child/attachment/att1/download?version=1&api=v2",
+			want: "https://example.atlassian.net/wiki/rest/api/content/10/child/attachment/att1/download?version=1&api=v2",
+		},
+		{
+			name: "passes an absolute link through",
+			link: "https://media-cdn.example.com/signed/blob",
+			want: "https://media-cdn.example.com/signed/blob",
+		},
+		{name: "rejects a link that is neither absolute nor rooted", link: "rest/api/x", wantErr: true},
+		{name: "rejects an empty link", link: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := client.attachmentURL(tt.link)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("attachmentURL(%q) error = nil, want an error", tt.link)
+				}
+				if !strings.Contains(err.Error(), tt.link) {
+					t.Errorf("error = %q, want it to name the link %q", err, tt.link)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("attachmentURL(%q) error = %v", tt.link, err)
+			}
+			if got != tt.want {
+				t.Errorf("attachmentURL(%q) = %q, want %q", tt.link, got, tt.want)
+			}
+		})
 	}
 }
 
