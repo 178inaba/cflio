@@ -13,6 +13,7 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - The user asks you to change something on a page → `cflio read <url> -o <file>` (no `--markdown`), edit the downloaded file, then `cflio update -f <file>`.
 - The user asks you to find something in Confluence → `cflio search '<CQL>'`.
 - You need to see how a page fits in the tree, or what people said on it → `cflio children <page>` and `cflio comments <page>`.
+- The page shows an image or holds a file the task needs → `cflio attachments list <page>`, then `cflio attachments download <page> --pattern '<glob>' -o <dir>` and read the downloaded file.
 
 ## Operating contract
 
@@ -33,6 +34,7 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `cflio auth login` (they will need an Atlassian API token; see the repo README).
 - **Exit codes say what to do next.** `0` is success. `124` means the `--timeout` deadline expired — raise `--timeout` and run the command again. `1` is every other failure; read the `Error: …` line on stderr and report it to the user rather than retrying.
 - **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` cflio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — neither of those is one of the codes above, since the process never exits normally. An interrupted `read` leaves no body file unless the signal lands during the write itself, so do not treat a missing file as a failed request.
-- **Not supported**: creating, deleting or moving pages, posting comments, and attachments. Draft replies for the user to post themselves.
+- **An image on a page is only readable as a file.** `read --markdown` renders `<ac:image>` as the filename alone, so seeing what a page shows means downloading the attachment and reading it. `--pattern` is required and case-sensitive; scope it to what the task needs rather than reaching for `--pattern '*'`, since every file you pull you then have to read. A pattern matching nothing is an error, not an empty success, and an existing file is refused rather than replaced — pick a different `-o` instead of deleting the user's files.
+- **Not supported**: creating, deleting or moving pages, posting comments, and uploading attachments. Draft replies for the user to post themselves.
 
 Run `cflio --help` or `cflio <command> --help` for the full flag reference; it is the source of truth for exact flags and defaults, so this document does not duplicate it.

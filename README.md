@@ -62,6 +62,10 @@ cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+No
 cflio search 'type = page and space = "DEV" and text ~ "release notes"'
 cflio children 123456
 cflio comments https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
+
+# See what the page shows: list its attachments, then pull the ones you want
+cflio attachments list 123456
+cflio attachments download 123456 --pattern '*.png' -o ./assets
 ```
 
 Commands that address a page accept both the URL as copied from the browser and a bare page ID.
@@ -128,6 +132,34 @@ When that line is present, the rendering may be missing names and links that do 
 without `--markdown` does not help — storage resolves nothing at all — so the useful response is to
 run the same command again; in keeping with the no-retries posture below, `cflio` will not do it
 for you.
+
+### Reading a page's images and files
+
+A page's images and files are attachments, and no representation of the body carries their contents:
+`read --markdown` renders an image as its filename and nothing more. To actually see one, download
+it and read the file.
+
+`attachments list` shows every attachment's filename, media type and size, so you can tell a 10 KB
+screenshot from a 4 MB PDF before fetching either. `attachments download` then writes the ones whose
+filename matches a glob:
+
+```sh
+cflio attachments download 123456 --pattern '*.png' -o ./assets
+```
+
+The bytes are the response body written through unchanged, so a downloaded image opens as the image
+it is.
+
+`--pattern` is **required** — there is no bare "download everything" form, so pulling that 4 MB PDF
+while reaching for one screenshot has to be asked for on purpose (`--pattern '*'` does it). It is
+case-sensitive, and matching nothing is an error rather than a silent success.
+
+An existing file is never replaced. If any matching attachment would overwrite one, the command
+fails before downloading anything and names the file, so a run can never leave some files replaced
+and others not — delete them, or point `-o` somewhere else. `-o` defaults to the working directory
+and is created if it does not exist.
+
+Uploading attachments is not supported.
 
 ### Multiple sites
 
@@ -208,6 +240,9 @@ docker compose run --rm lint --fix
   `read --markdown` — are for reading only. A body that will be written back is never converted.
 - **Short links** (`/wiki/x/…`) are not resolved — open one in a browser and pass the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
-- Creating, deleting and moving pages, posting comments, attachments, and ADF (the representation
-  behind live docs) are not supported. See
+- **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
+  A downloaded file is also not wired back into `read --markdown`, which still renders an image as
+  its filename.
+- Creating, deleting and moving pages, posting comments, uploading attachments, and ADF (the
+  representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/cflio/issues/1) for the full list.

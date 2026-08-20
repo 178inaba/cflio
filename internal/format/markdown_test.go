@@ -192,7 +192,7 @@ func TestReferencesCollectsWhatLinkRenders(t *testing.T) {
 			},
 		},
 		{
-			name: "attachments are not collected, since cflio cannot resolve them to anything actionable",
+			name: "attachments are not collected: References answers mentions and page links only",
 			in:   `<p><ac:link><ri:attachment ri:filename="spec.pdf"/></ac:link></p>`,
 			want: Refs{},
 		},
