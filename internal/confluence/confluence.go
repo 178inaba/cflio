@@ -400,7 +400,16 @@ func (c *Client) DownloadAttachment(ctx context.Context, downloadLink string, w 
 	}
 	// No Accept header: the response is the file itself, and asking for
 	// application/json is a claim the media service is entitled to act on.
-	req.SetBasicAuth(c.email, c.token)
+	//
+	// The credentials go to the site and nowhere else. attachmentURL passes an
+	// absolute link through, and one pointing at another host is a signed URL
+	// like the redirect target — it needs no auth header, and sending the
+	// site's to a host that never asked for it both leaks it and is what the
+	// media service rejects. Same reasoning as the redirect below, applied
+	// where http.Client cannot: it only strips headers it did not set.
+	if req.URL.Host == c.site.Host {
+		req.SetBasicAuth(c.email, c.token)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -497,6 +497,59 @@ func TestDownloadAttachmentDropsTheAuthHeaderOnTheRedirectToTheMediaHost(t *test
 	}
 }
 
+func TestDownloadAttachmentSendsCredentialsOnlyToTheSite(t *testing.T) {
+	const apiHost = "example.atlassian.net"
+
+	tests := []struct {
+		name     string
+		link     string
+		wantAuth bool
+	}{
+		{
+			name:     "a relative link addresses the site",
+			link:     "/rest/api/content/10/child/attachment/att1/download",
+			wantAuth: true,
+		},
+		{
+			// A signed URL like the redirect target: it needs no auth header,
+			// and the media host rejects a request that carries the site's.
+			// http.Client only strips what it did not set, so a first request
+			// straight to another host is on this method to get right.
+			name:     "an absolute link to another host does not",
+			link:     "https://media-cdn.example.com/signed/blob?token=abc",
+			wantAuth: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &recordingTransport{responses: map[string]*http.Response{
+				apiHost:                 {StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(pngBytes))},
+				"media-cdn.example.com": {StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(pngBytes))},
+			}}
+
+			client, err := New("https://"+apiHost+"/wiki", "a@example.com", "api-token",
+				WithHTTPClient(&http.Client{Transport: transport}))
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			var buf bytes.Buffer
+			if _, err := client.DownloadAttachment(t.Context(), tt.link, &buf); err != nil {
+				t.Fatalf("DownloadAttachment() error = %v", err)
+			}
+
+			if len(transport.seen) != 1 {
+				t.Fatalf("requests = %d, want 1", len(transport.seen))
+			}
+			if gotAuth := transport.seen[0].Header.Get("Authorization") != ""; gotAuth != tt.wantAuth {
+				t.Errorf("Authorization sent = %v, want %v (host %s)",
+					gotAuth, tt.wantAuth, transport.seen[0].URL.Host)
+			}
+		})
+	}
+}
+
 func TestAttachmentURL(t *testing.T) {
 	client, err := New("https://example.atlassian.net/wiki", "a@example.com", "t")
 	if err != nil {

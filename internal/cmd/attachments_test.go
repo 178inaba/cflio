@@ -405,14 +405,26 @@ func TestAttachmentsDownloadRejectsAFilenameThatEscapesTheOutputDirectory(t *tes
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 	// The title is server data. A path in it would put the write outside -o.
-	_, handler := attachmentsAPI(t, attachment{title: "../escaped", mediaType: "text/plain", size: 1})
+	downloads, handler := attachmentsAPI(t, attachment{title: "../escaped", mediaType: "text/plain", size: 1})
 	startAPI(t, handler)
 
 	dir := filepath.Join(t.TempDir(), "assets")
-	if _, err := runDownload(t, dir, "*escaped*"); err == nil {
+	// The pattern has to actually match, or the run ends at "no attachment
+	// matches" and never reaches the guard this test is about. path.Match's *
+	// does not cross a slash, so "*escaped*" would not match "../escaped" —
+	// which is also why a title like this is unreachable via a plain "*".
+	_, err := runDownload(t, dir, "*/escaped")
+	if err == nil {
 		t.Fatal("attachments download error = nil, want a filename outside -o refused")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "..", "escaped")); !os.IsNotExist(err) {
-		t.Errorf("Stat(../escaped) error = %v, want nothing written outside -o", err)
+	if !strings.Contains(err.Error(), "not a plain filename") {
+		t.Fatalf("error = %q, want the path guard to reject it (not a no-match)", err)
+	}
+
+	if _, statErr := os.Stat(filepath.Join(dir, "..", "escaped")); !os.IsNotExist(statErr) {
+		t.Errorf("Stat(../escaped) error = %v, want nothing written outside -o", statErr)
+	}
+	if *downloads != 0 {
+		t.Errorf("downloads = %d, want the guard to refuse before any transfer", *downloads)
 	}
 }

@@ -154,8 +154,11 @@ func (d downloadedItem) markdown() string {
 }
 
 func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, pattern, outDir string, outFormat format.Format) error {
-	// Validated before the request rather than left to writeList, so a typo in
-	// --format is reported without a download having already happened.
+	// Hoisted ahead of the transfers rather than left to writeList. A --format
+	// typo never reaches here — Format.Set rejects one as cobra parses the
+	// flags — so this is the guard the writers keep against a Format built by
+	// conversion instead, and this is the one command that would otherwise
+	// have written files to disk before reaching it.
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
@@ -304,7 +307,7 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 // downloadToFile streams one attachment to dest and reports how many bytes it
 // wrote.
 //
-// O_EXCL rather than a plain create: planDestinations has already ruled out a
+// O_EXCL rather than a plain create: planDownloads has already ruled out a
 // collision, and this is what keeps a file that appeared in between from being
 // clobbered anyway. A transfer that fails part-way takes its file with it, so
 // no truncated file is left at a name that looks complete.
