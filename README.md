@@ -170,12 +170,19 @@ first, and no profile is written or changed.
 ## Agent Skill
 
 This repo ships an [Agent Skill](./skills/cflio/SKILL.md) that tells an AI agent when and how to
-reach for `cflio`. Install it by either:
+reach for `cflio`. In Claude Code, install it as a plugin:
 
-- copying `skills/cflio/` into your agent's skills directory (e.g. `~/.claude/skills/cflio/` for
-  Claude Code), or
-- using a skill installer that consumes GitHub repos directly, e.g.
-  [`npx skills`](https://www.npmjs.com/package/skills).
+```sh
+claude plugin marketplace add 178inaba/cflio
+claude plugin install cflio@cflio
+```
+
+For other agents, use a skill installer that consumes GitHub repos directly, e.g.
+[`npx skills`](https://www.npmjs.com/package/skills):
+
+```sh
+npx skills add 178inaba/cflio
+```
 
 ## Development
 
