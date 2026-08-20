@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "cflio",
+  "description": "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model.",
+  "author": {
+    "name": "Masahiro Furudate",
+    "url": "https://github.com/178inaba"
+  },
+  "repository": "https://github.com/178inaba/cflio",
+  "license": "MIT",
+  "keywords": ["confluence", "atlassian", "cli", "agent-skills"]
+}
