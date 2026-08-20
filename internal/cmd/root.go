@@ -71,6 +71,7 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 		newSearchCmd(g),
 		newChildrenCmd(g),
 		newCommentsCmd(g),
+		newAttachmentsCmd(g),
 		newAuthCmd(g),
 		newProfileCmd(),
 	)

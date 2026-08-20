@@ -40,25 +40,48 @@ func TestCommandContextTimeout(t *testing.T) {
 	}
 }
 
+// walkCommands calls fn for every command in the tree below the root, keyed by
+// its path with the root's own name dropped ("attachments list").
+//
+// The whole tree rather than root.Commands(): a group command carries no
+// --format of its own, so a walk one level deep would pin `attachments` as a
+// command without the flag and never look at the two subcommands that have it.
+// The prefix is taken from Root() rather than from the argument, which is the
+// current parent once the recursion is under way.
+func walkCommands(parent *cobra.Command, fn func(name string, cmd *cobra.Command)) {
+	prefix := parent.Root().Name() + " "
+	for _, cmd := range parent.Commands() {
+		fn(strings.TrimPrefix(cmd.CommandPath(), prefix), cmd)
+		walkCommands(cmd, fn)
+	}
+}
+
 // TestFormatFlagRegistration pins down which commands take --format: it is
 // registered per command so `auth` and `profile`, which have no output to
-// format, reject it rather than silently ignoring it.
+// format, reject it rather than silently ignoring it. Group commands are not
+// runnable and so take none either; their subcommands are listed on their own.
 func TestFormatFlagRegistration(t *testing.T) {
 	want := map[string]bool{
-		"read":     true,
-		"update":   true,
-		"search":   true,
-		"children": true,
-		"comments": true,
-		"auth":     false,
-		"profile":  false,
+		"read":                 true,
+		"update":               true,
+		"search":               true,
+		"children":             true,
+		"comments":             true,
+		"attachments":          false,
+		"attachments list":     true,
+		"attachments download": true,
+		"auth":                 false,
+		"auth login":           false,
+		"profile":              false,
+		"profile list":         false,
+		"profile use":          false,
 	}
 
 	root, _ := newRootCmd(&globalFlags{})
 	got := make(map[string]bool, len(want))
-	for _, cmd := range root.Commands() {
-		got[cmd.Name()] = cmd.Flags().Lookup("format") != nil
-	}
+	walkCommands(root, func(name string, cmd *cobra.Command) {
+		got[name] = cmd.Flags().Lookup("format") != nil
+	})
 
 	if !maps.Equal(got, want) {
 		t.Errorf("commands with --format = %v, want %v", got, want)
@@ -72,18 +95,18 @@ func TestFormatFlagRegistration(t *testing.T) {
 // anything else.
 func TestFormatFlagHelpLine(t *testing.T) {
 	root, _ := newRootCmd(&globalFlags{})
-	for _, cmd := range root.Commands() {
+	walkCommands(root, func(name string, cmd *cobra.Command) {
 		flag := cmd.Flags().Lookup("format")
 		if flag == nil {
-			continue
+			return
 		}
 		if flag.Value.Type() != "string" {
-			t.Errorf("%s: --format placeholder = %q, want %q", cmd.Name(), flag.Value.Type(), "string")
+			t.Errorf("%s: --format placeholder = %q, want %q", name, flag.Value.Type(), "string")
 		}
 		if want := string(format.Markdown); flag.DefValue != want {
-			t.Errorf("%s: --format default = %q, want %q", cmd.Name(), flag.DefValue, want)
+			t.Errorf("%s: --format default = %q, want %q", name, flag.DefValue, want)
 		}
-	}
+	})
 }
 
 func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
@@ -95,6 +118,16 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		{name: "search", args: []string{"search", "--format", "bogus", "text ~ x"}},
 		{name: "children", args: []string{"children", "--format", "bogus", "123456"}},
 		{name: "comments", args: []string{"comments", "--format", "bogus", "123456"}},
+		{
+			name: "attachments list",
+			args: []string{"attachments", "list", "--format", "bogus", "123456"},
+		},
+		{
+			// --pattern is left off on purpose, for the same reason -f is
+			// left off `update` below.
+			name: "attachments download, before cobra reports a missing required flag",
+			args: []string{"attachments", "download", "--format", "bogus", "123456"},
+		},
 		{
 			// -f is left off on purpose: cobra parses the flags before it
 			// validates the required ones, so the bad format is what gets
@@ -230,6 +263,11 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantStderr: "Error: unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n\n",
 		},
 		{
+			name:       "attachments",
+			args:       []string{"attachments", "bogus"},
+			wantStderr: "Error: unknown command \"bogus\" for \"cflio attachments\"\n",
+		},
+		{
 			name:       "profile",
 			args:       []string{"profile", "bogus"},
 			wantStderr: "Error: unknown command \"bogus\" for \"cflio profile\"\n",
@@ -281,7 +319,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 // above must leave alone: a group command with nothing after it is a request
 // for help, not a typo.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
-	for _, name := range []string{"", "auth", "profile", "completion"} {
+	for _, name := range []string{"", "attachments", "auth", "profile", "completion"} {
 		t.Run("cflio "+name, func(t *testing.T) {
 			var args []string
 			if name != "" {
