@@ -74,9 +74,19 @@ func (s *updateStub) handler(t *testing.T) http.HandlerFunc {
 		}
 		s.puts = append(s.puts, req)
 
-		_, _ = fmt.Fprintf(w, `{"id":"123456","status":"current","title":"Some Page","version":{"number":%d}}`,
-			req.Version.Number)
+		// The title and the web link are echoed from the request, as the
+		// server does: a rename lands in both, and the sidecar is refreshed
+		// from them.
+		_, _ = fmt.Fprintf(w,
+			`{"id":"123456","status":"current","title":%q,"version":{"number":%d},"_links":{"webui":%q}}`,
+			req.Title, req.Version.Number, webUIFor(req.Title))
 	}
+}
+
+// webUIFor builds the relative web link the API returns for the test page
+// under the given title, whose slug follows the title.
+func webUIFor(title string) string {
+	return "/spaces/DEV/pages/123456/" + strings.ReplaceAll(title, " ", "+")
 }
 
 func runUpdate(t *testing.T, path string, extra ...string) (cflioRun, error) {
@@ -362,5 +372,193 @@ func TestUpdateFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to contain %q", err, want)
 		}
+	}
+}
+
+func TestUpdateRenamesThePage(t *testing.T) {
+	const newTitle = "Release notes Q3"
+
+	tests := []struct {
+		name         string
+		args         []string
+		wantContains string
+	}{
+		{
+			name:         "default summary",
+			wantContains: newTitle,
+		},
+		{
+			name:         "json",
+			args:         []string{"--format", "json"},
+			wantContains: `"title": "` + newTitle + `"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+
+			// The body is left untouched: a rename needs no edit.
+			body := "<p>hi</p>"
+			path := seedReadPage(t, body, currentMeta())
+
+			stub := &updateStub{serverVersion: 7}
+			startAPI(t, stub.handler(t))
+
+			run, err := runUpdate(t, path, append([]string{"--title", newTitle}, tt.args...)...)
+			if err != nil {
+				t.Fatalf("update error = %v", err)
+			}
+
+			if len(stub.puts) != 1 {
+				t.Fatalf("PUT requests = %d, want 1", len(stub.puts))
+			}
+			put := stub.puts[0]
+			if put.Title != newTitle {
+				t.Errorf("PUT title = %q, want the --title value %q", put.Title, newTitle)
+			}
+			if put.Body.Value != body {
+				t.Errorf("PUT body = %q, want the file's bytes unchanged (%q)", put.Body.Value, body)
+			}
+			if put.Version.Number != 8 {
+				t.Errorf("version = %d, want the sidecar's 7 plus one", put.Version.Number)
+			}
+
+			meta, err := sidecar.Load(path)
+			if err != nil {
+				t.Fatalf("sidecar.Load() error = %v", err)
+			}
+			if meta.Title != newTitle {
+				t.Errorf("sidecar title = %q, want the server's %q", meta.Title, newTitle)
+			}
+			if want := testSite + webUIFor(newTitle); meta.PageURL != want {
+				t.Errorf("sidecar page_url = %q, want the renamed page's %q", meta.PageURL, want)
+			}
+			if meta.Version != 8 {
+				t.Errorf("sidecar version = %d, want the server's 8", meta.Version)
+			}
+
+			if !strings.Contains(run.stdout, tt.wantContains) {
+				t.Errorf("output = %q, want it to report the new title (%q)", run.stdout, tt.wantContains)
+			}
+		})
+	}
+}
+
+// A page read while the API returned no web link gets one recorded as soon as
+// the update response carries it, whether or not the update renamed anything.
+func TestUpdateRefreshesTheSidecarWithoutRenaming(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	meta := currentMeta()
+	meta.PageURL = testSite + "/pages/viewpage.action?pageId=123456"
+	path := seedReadPage(t, "<p>hi</p>", meta)
+
+	stub := &updateStub{serverVersion: 7}
+	startAPI(t, stub.handler(t))
+
+	if _, err := runUpdate(t, path); err != nil {
+		t.Fatalf("update error = %v", err)
+	}
+	if got := stub.puts[0].Title; got != "Some Page" {
+		t.Errorf("PUT title = %q, want the sidecar's title with no --title", got)
+	}
+
+	updated, err := sidecar.Load(path)
+	if err != nil {
+		t.Fatalf("sidecar.Load() error = %v", err)
+	}
+	if updated.Title != "Some Page" {
+		t.Errorf("sidecar title = %q, want it left at the server's %q", updated.Title, "Some Page")
+	}
+	if want := testSite + webUIFor("Some Page"); updated.PageURL != want {
+		t.Errorf("sidecar page_url = %q, want the response's link %q", updated.PageURL, want)
+	}
+}
+
+func TestUpdateRejectsAnEmptyTitle(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	path := seedReadPage(t, "<p>hi</p>", currentMeta())
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the API was called for an empty --title")
+	})
+
+	_, err := runUpdate(t, path, "--title=")
+	if err == nil {
+		t.Fatal("update error = nil, want an error naming the flag")
+	}
+	if !strings.Contains(err.Error(), "--title") {
+		t.Errorf("error = %q, want it to name --title", err)
+	}
+}
+
+func TestUpdateWithATitleStillRefusesAVersionConflict(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	path := seedReadPage(t, "<p>hi</p>", currentMeta())
+
+	stub := &updateStub{serverVersion: 9}
+	startAPI(t, stub.handler(t))
+
+	_, err := runUpdate(t, path, "--title", "Renamed")
+	if err == nil {
+		t.Fatal("update error = nil, want a version-conflict error")
+	}
+	if len(stub.puts) != 0 {
+		t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
+	}
+	for _, want := range []string{"7", "9", "cflio read"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err, want)
+		}
+	}
+
+	meta, err := sidecar.Load(path)
+	if err != nil {
+		t.Fatalf("sidecar.Load() error = %v", err)
+	}
+	if meta.Title != "Some Page" || meta.Version != 7 {
+		t.Errorf("sidecar = %+v, want the title and version untouched", meta)
+	}
+}
+
+// The server rejects a title another page in the space already holds; cflio
+// runs no pre-check of its own, so the message has to come through as it is.
+func TestUpdateSurfacesADuplicateTitle(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	path := seedReadPage(t, "<p>hi</p>", currentMeta())
+
+	stub := &updateStub{serverVersion: 7}
+	inner := stub.handler(t)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			inner(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"errors":[{"status":400,"code":"BAD_REQUEST",`+
+			`"title":"A page with this title already exists: A page already exists with the same TITLE in this space",`+
+			`"detail":null}]}`)
+	})
+
+	_, err := runUpdate(t, path, "--title", "Taken")
+	if err == nil {
+		t.Fatal("update error = nil, want the server's rejection")
+	}
+	if !strings.Contains(err.Error(), "A page with this title already exists") {
+		t.Errorf("error = %q, want the server's message", err)
+	}
+
+	meta, err := sidecar.Load(path)
+	if err != nil {
+		t.Fatalf("sidecar.Load() error = %v", err)
+	}
+	if meta.Title != "Some Page" || meta.Version != 7 || meta.PageURL != testPageURL {
+		t.Errorf("sidecar = %+v, want it untouched by the failed update", meta)
 	}
 }
