@@ -44,14 +44,6 @@ rename on an untouched file resends the same bytes and only the title
 changes.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// An empty --title is rejected rather than ignored: the API
-			// requires a title, and a blank one is far more likely to be a
-			// shell mistake than an intent. Whether the flag was given at
-			// all is what tells that apart from the flag being absent.
-			if cmd.Flags().Changed("title") && title == "" {
-				return errors.New("--title cannot be empty: pass the new title, " +
-					"or leave the flag off to keep the page's current one")
-			}
 			return runUpdatePage(cmd, g, file, message, title, outFormat)
 		},
 	}
@@ -82,6 +74,15 @@ type updateResult struct {
 }
 
 func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, title string, outFormat format.Format) error {
+	// An empty --title is rejected rather than ignored: the API requires a
+	// title, and a blank one is far more likely to be a shell mistake than an
+	// intent. Whether the flag was given at all is what tells that apart from
+	// the flag being absent, which means the page's current title.
+	if cmd.Flags().Changed("title") && title == "" {
+		return errors.New("--title cannot be empty: pass the new title, " +
+			"or leave the flag off to keep the page's current one")
+	}
+
 	meta, err := sidecar.Load(file)
 	if err != nil {
 		return err

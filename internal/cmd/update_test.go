@@ -170,34 +170,49 @@ func TestUpdateWithAnEmptyMessageFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
+// The lock covers a rename too: every rename goes through the same update, so
+// one made on the server bumps the version this refuses on.
 func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
-	path := seedReadPage(t, "<p>edited</p>", currentMeta())
-
-	stub := &updateStub{serverVersion: 9}
-	startAPI(t, stub.handler(t))
-
-	_, err := runUpdate(t, path)
-	if err == nil {
-		t.Fatal("update error = nil, want a version-conflict error")
-	}
-	if len(stub.puts) != 0 {
-		t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
-	}
-	for _, want := range []string{"7", "9", "cflio read"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q, want it to contain %q", err, want)
-		}
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "body only"},
+		{name: "with a rename", args: []string{"--title", "Renamed"}},
 	}
 
-	// The sidecar must survive so the caller can re-read over it.
-	meta, err := sidecar.Load(path)
-	if err != nil {
-		t.Fatalf("sidecar.Load() error = %v", err)
-	}
-	if meta.Version != 7 {
-		t.Errorf("sidecar version = %d, want it untouched at 7", meta.Version)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+			path := seedReadPage(t, "<p>edited</p>", currentMeta())
+
+			stub := &updateStub{serverVersion: 9}
+			startAPI(t, stub.handler(t))
+
+			_, err := runUpdate(t, path, tt.args...)
+			if err == nil {
+				t.Fatal("update error = nil, want a version-conflict error")
+			}
+			if len(stub.puts) != 0 {
+				t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
+			}
+			for _, want := range []string{"7", "9", "cflio read"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to contain %q", err, want)
+				}
+			}
+
+			// The sidecar must survive so the caller can re-read over it,
+			// with the title the page still has.
+			meta, err := sidecar.Load(path)
+			if err != nil {
+				t.Fatalf("sidecar.Load() error = %v", err)
+			}
+			if meta.Version != 7 || meta.Title != "Some Page" {
+				t.Errorf("sidecar = %+v, want the version and title untouched", meta)
+			}
+		})
 	}
 }
 
@@ -493,36 +508,6 @@ func TestUpdateRejectsAnEmptyTitle(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--title") {
 		t.Errorf("error = %q, want it to name --title", err)
-	}
-}
-
-func TestUpdateWithATitleStillRefusesAVersionConflict(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
-	path := seedReadPage(t, "<p>hi</p>", currentMeta())
-
-	stub := &updateStub{serverVersion: 9}
-	startAPI(t, stub.handler(t))
-
-	_, err := runUpdate(t, path, "--title", "Renamed")
-	if err == nil {
-		t.Fatal("update error = nil, want a version-conflict error")
-	}
-	if len(stub.puts) != 0 {
-		t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
-	}
-	for _, want := range []string{"7", "9", "cflio read"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q, want it to contain %q", err, want)
-		}
-	}
-
-	meta, err := sidecar.Load(path)
-	if err != nil {
-		t.Fatalf("sidecar.Load() error = %v", err)
-	}
-	if meta.Title != "Some Page" || meta.Version != 7 {
-		t.Errorf("sidecar = %+v, want the title and version untouched", meta)
 	}
 }
 
