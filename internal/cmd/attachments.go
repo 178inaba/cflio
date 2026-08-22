@@ -317,8 +317,10 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 //
 // O_EXCL rather than a plain create: planDownloads has already ruled out a
 // collision, and this is what keeps a file that appeared in between from being
-// clobbered anyway. A transfer that fails part-way takes its file with it, so
-// no truncated file is left at a name that looks complete.
+// clobbered anyway. fetchAttachment does no check of its own and reads the
+// collision off this create instead, so the fs.ErrExist it wraps is part of
+// the contract. A transfer that fails part-way takes its file with it, so no
+// truncated file is left at a name that looks complete.
 func downloadToFile(ctx context.Context, client *confluence.Client, downloadLink, dest string) (int64, error) {
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {

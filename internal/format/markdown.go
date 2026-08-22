@@ -863,17 +863,20 @@ func (r *renderer) image(n *node) string {
 
 // imageAttachment narrows an <ac:image>'s source, as riChild returned it, to
 // the attachment a download could resolve — nil for an image sourced from a
-// URL, or for an attachment carrying a nested <ri:page>.
+// URL, or for an attachment carrying a nested content identifier.
 //
-// The nested page is why this is an accessor and not an inline check: it names
-// a file on a different page, and a filename is all the rest of the pipeline
-// carries, so a caller that listed this page's attachments would match the
-// name against the wrong page's file. References and image both go through
-// here so neither can start disagreeing about which images have a file. It
-// takes the source rather than the image for the reason collectTarget does:
-// the caller has already resolved it.
+// The nested identifier is why this is an accessor and not an inline check: it
+// names a file on a different page (<ri:page>) or blog post (<ri:blog-post>),
+// and a filename is all the rest of the pipeline carries, so a caller that
+// listed this page's attachments would match the name against the wrong
+// content's file. Any ri: child is excluded rather than those two by name, so
+// an identifier kind storage adds later cannot slip through as this page's
+// file. References and image both go through here so neither can start
+// disagreeing about which images have a file. It takes the source rather than
+// the image for the reason collectTarget does: the caller has already
+// resolved it.
 func imageAttachment(source *node) *node {
-	if source == nil || source.local != "attachment" || source.child("ri", "page") != nil {
+	if source == nil || source.local != "attachment" || riChild(source) != nil {
 		return nil
 	}
 	return source

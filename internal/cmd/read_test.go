@@ -944,3 +944,38 @@ func TestReadMarkdownKeepsAFileAlreadyAtTheDestination(t *testing.T) {
 		t.Errorf("file = %q, want it to link the kept file", written)
 	}
 }
+
+// The listing is what says which filenames the page holds, so when it cannot
+// be had no reference has an answer — and nothing has been decided about the
+// directory yet, so it is not created either.
+func TestReadMarkdownCountsEveryImageUncheckedWhenTheListingFails(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/attachments"):
+			w.WriteHeader(http.StatusInternalServerError)
+		case strings.HasSuffix(r.URL.Path, "/download"):
+			t.Errorf("unexpected download of %s after the listing failed", r.URL.Path)
+		default:
+			_, _ = w.Write([]byte(pageResponse(t, imageBody, testPageWebUI)))
+		}
+	})
+
+	t.Chdir(t.TempDir())
+	run, err := runRead(t, testPageURL, "page.md", "--markdown", "--attachments", "./assets", "--format", "json")
+	if err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	var result readResult
+	if err := json.Unmarshal([]byte(run.stdout), &result); err != nil {
+		t.Fatalf("Unmarshal(%q) error = %v", run.stdout, err)
+	}
+	if result.UncheckedCount != 1 {
+		t.Errorf("unchecked_count = %d, want the one referenced attachment counted", result.UncheckedCount)
+	}
+	if _, err := os.Lstat("assets"); !os.IsNotExist(err) {
+		t.Errorf("Lstat(assets) error = %v, want the directory left uncreated", err)
+	}
+}

@@ -185,6 +185,12 @@ func TestToMarkdownLinksTheAttachmentsItWasGivenPathsFor(t *testing.T) {
 				`<ri:page ri:content-title="Other Page"/></ri:attachment></ac:image></p>`,
 			want: "main.png\n",
 		},
+		{
+			name: "an attachment naming a blog post stays filename text too",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:blog-post ri:content-title="Post" ri:posting-day="2026/01/01"/></ri:attachment></ac:image></p>`,
+			want: "main.png\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -285,6 +291,12 @@ func TestReferencesCollectsWhatLinkRenders(t *testing.T) {
 			name: "an attachment naming another page is not collected",
 			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
 				`<ri:page ri:content-title="Other Page"/></ri:attachment></ac:image></p>`,
+			want: Refs{},
+		},
+		{
+			name: "an attachment naming a blog post is not collected either",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:blog-post ri:content-title="Post" ri:posting-day="2026/01/01"/></ri:attachment></ac:image></p>`,
 			want: Refs{},
 		},
 		{

@@ -266,8 +266,8 @@ docker compose run --rm lint --fix
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
   `read --markdown --attachments` links the images it downloads, but an image whose attachment
-  lives on another page still renders as its filename: the file would have to be fetched from a
-  page other than the one being read.
+  lives on another page or blog post still renders as its filename: the file would have to be
+  fetched from content other than the page being read.
 - Creating, deleting and moving pages, posting comments, uploading attachments, and ADF (the
   representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/cflio/issues/1) for the full list.
