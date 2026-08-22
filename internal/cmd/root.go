@@ -98,22 +98,99 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 		defaultHelp(c, args)
 	})
 
+	// The help command has to be replaced rather than overridden, for the
+	// same reason: its message comes from a Run of cobra's own, which the
+	// help function above never sees (see newHelpCmd). AddCommand is left to
+	// InitDefaultHelpCmd, which ExecuteC calls — adding it here would put
+	// `help` in the tree a constructor hands back, where nothing else cobra
+	// installs appears.
+	cmd.SetHelpCommand(newHelpCmd(cmd))
+
 	return cmd, res
 }
 
-// reportUnknownCommand writes, for a group command, the message cobra writes
-// itself when the root command is given an unknown subcommand.
+// newHelpCmd replaces the help command cobra installs itself. cobra's runs
+// through Run, which cannot fail, so a topic that does not resolve exits 0 —
+// and `cflio help auth bogus` reports nothing at all, because Find resolves
+// `auth` and the leftover `bogus` goes to the blank identifier. RunE lets the
+// same failure come back as an error, which the root's SilenceErrors hands to
+// Execute to print and end the run non-zero for.
 //
-// The rendering is assembled the way legacyArgs assembles it and printed the
-// way Execute prints it, so a typo under a group reads exactly like a typo at
-// the top level. It stops there rather than following gh's nestedSuggestFunc
-// into a usage listing: the root sets SilenceUsage precisely because usage on
-// every failure is noise for an agent consumer.
+// Everything else is cobra's own, kept as it is so `cflio help <TAB>` still
+// completes subcommand names. GroupID is the one field dropped: cflio has no
+// command groups, so cobra's would be empty here anyway. The substitution is
+// in ValidArgsFunction, where cobra keeps `help` in the candidate list by
+// comparing against the unexported helpCommand field that IsAvailableCommand
+// excludes; a closure over helpCmd does the same from outside the package,
+// which is why the function is assigned after the literal rather than in it.
+func newHelpCmd(root *cobra.Command) *cobra.Command {
+	helpCmd := &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		Long: `Help provides help for any command in the application.
+Simply type ` + root.DisplayName() + ` help [path to command] for full details.`,
+		RunE: func(c *cobra.Command, args []string) error {
+			// Find's error is discarded because a leftover argument already
+			// subsumes it: the error only ever comes from legacyArgs, which
+			// reports nothing unless an argument was left unresolved. Under
+			// a group command Find returns no error at all — the quirk this
+			// command exists to answer — so the leftovers are what both
+			// forms have in common.
+			target, rest, _ := c.Root().Find(args)
+			if len(rest) > 0 {
+				return unknownCommandError(target, rest[0])
+			}
+
+			// Flow the context down to be used in help text. cobra assigns
+			// it only when the target has none; assigning it unconditionally
+			// is the same thing here, since the two targets that already
+			// carry one — this command, for `cflio help help`, and the root,
+			// for `cflio help` — both carry this very context.
+			target.SetContext(c.Context())
+			target.InitDefaultHelpFlag()    // make possible 'help' flag to be shown
+			target.InitDefaultVersionFlag() // make possible 'version' flag to be shown
+			return target.Help()
+		},
+	}
+
+	helpCmd.ValidArgsFunction = func(
+		c *cobra.Command, args []string, toComplete string,
+	) ([]cobra.Completion, cobra.ShellCompDirective) {
+		var completions []cobra.Completion
+		cmd, _, e := c.Root().Find(args)
+		if e != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		if cmd == nil {
+			// Root help command.
+			cmd = c.Root()
+		}
+		for _, subCmd := range cmd.Commands() {
+			if subCmd.IsAvailableCommand() || subCmd == helpCmd {
+				if strings.HasPrefix(subCmd.Name(), toComplete) {
+					completions = append(completions, cobra.CompletionWithDesc(subCmd.Name(), subCmd.Short))
+				}
+			}
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	return helpCmd
+}
+
+// unknownCommandError builds the error cobra builds itself when the root
+// command is given an unknown subcommand, for the two paths that have to
+// report that failure on their own: a mistyped subcommand of a group
+// command, which cobra reports as a request for help, and a help topic that
+// does not resolve, whose two forms cobra reaches by different routes.
 //
-// PrintErrf rather than a bare Fprintf: it writes to ErrOrStderr — which the
-// tests redirect, unlike os.Stderr — and returns nothing, which is the only
-// sane contract for a help function that cannot propagate a write error.
-func reportUnknownCommand(cmd *cobra.Command, arg string) {
+// The rendering is assembled the way legacyArgs assembles it, so a typo
+// reads the same wherever it was caught — which is also why the help command
+// re-derives it rather than passing Find's error through: one of its two
+// forms has no error to pass. It stops there rather than following gh's
+// nestedSuggestFunc into a usage listing: the root sets SilenceUsage
+// precisely because usage on every failure is noise for an agent consumer.
+func unknownCommandError(cmd *cobra.Command, arg string) error {
 	var suggestions strings.Builder
 	if candidates := unknownCommandCandidates(cmd, arg); len(candidates) > 0 {
 		suggestions.WriteString("\n\nDid you mean this?\n")
@@ -121,7 +198,19 @@ func reportUnknownCommand(cmd *cobra.Command, arg string) {
 			fmt.Fprintf(&suggestions, "\t%v\n", candidate)
 		}
 	}
-	cmd.PrintErrf("Error: unknown command %q for %q%s\n", arg, cmd.CommandPath(), suggestions.String())
+	return fmt.Errorf("unknown command %q for %q%s", arg, cmd.CommandPath(), suggestions.String())
+}
+
+// reportUnknownCommand writes that error for the one caller that cannot
+// return it: cobra's help function has no error return. It is printed the
+// way Execute prints the ones that are returned, down to the byte, so a typo
+// under a group reads exactly like a typo at the top level.
+//
+// PrintErrf rather than a bare Fprintf: it writes to ErrOrStderr — which the
+// tests redirect, unlike os.Stderr — and returns nothing, which is the only
+// sane contract for a help function that cannot propagate a write error.
+func reportUnknownCommand(cmd *cobra.Command, arg string) {
+	cmd.PrintErrf("Error: %v\n", unknownCommandError(cmd, arg))
 }
 
 // unknownCommandCandidates reproduces the candidate list cobra builds in its
