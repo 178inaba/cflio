@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -728,5 +729,217 @@ func TestReadWritesNothingWhenTheAPIFails(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("Stat(%s) = %v, want no file written on failure", path, err)
+	}
+}
+
+// imageBody references one attachment and one image sourced from a URL, so a
+// test can assert what the flag changes and what it leaves alone.
+const imageBody = `<p><ac:image><ri:attachment ri:filename="main.png"/></ac:image></p>` +
+	`<p><ac:image ac:alt="Diagram"><ri:url ri:value="https://example.com/d.png"/></ac:image></p>`
+
+// readAttachmentsAPI counts the attachment requests a read made, so a test can
+// assert that an unreferenced attachment cost nothing and that a body with no
+// image asked for no listing at all.
+type readAttachmentsAPI struct {
+	listings  int
+	downloads int
+}
+
+// newReadAttachmentsAPI serves the page body alongside the listing and the
+// downloads, reusing the listing and transfer handler the `attachments` tests
+// use so the two paths cannot drift apart.
+func newReadAttachmentsAPI(t *testing.T, body string, attachments ...attachment) (*readAttachmentsAPI, http.HandlerFunc) {
+	t.Helper()
+
+	counts := &readAttachmentsAPI{}
+	_, serveAttachments := attachmentsAPI(t, attachments...)
+	return counts, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/attachments"):
+			counts.listings++
+			serveAttachments(w, r)
+		case strings.HasSuffix(r.URL.Path, "/download"):
+			counts.downloads++
+			serveAttachments(w, r)
+		default:
+			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
+		}
+	}
+}
+
+// The storage body is never rewritten, so there is nothing for a downloaded
+// file to be linked from. Naming both flags is what tells the caller which one
+// to drop.
+func TestReadAttachmentsWithoutMarkdownIsRejectedBeforeAnyRequest(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request to %s", r.URL.Path)
+	})
+
+	dir := t.TempDir()
+	_, err := runRead(t, testPageURL, filepath.Join(dir, "page.xml"), "--attachments", filepath.Join(dir, "assets"))
+	if err == nil {
+		t.Fatal("read error = nil, want --attachments to be refused without --markdown")
+	}
+	for _, want := range []string{"--attachments", "--markdown"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+func TestReadMarkdownDownloadsOnlyTheAttachmentsTheBodyReferences(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	counts, handler := newReadAttachmentsAPI(t, imageBody,
+		attachment{title: "main.png", mediaType: "image/png", size: len(pngBytes)},
+		attachment{title: "unused.pdf", mediaType: "application/pdf", size: 12},
+	)
+	startAPI(t, handler)
+
+	t.Chdir(t.TempDir())
+	if _, err := runRead(t, testPageURL, "page.md", "--markdown", "--attachments", "./assets"); err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	written, err := os.ReadFile("page.md")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	want := "![main.png](./assets/main.png)\n\n![Diagram](https://example.com/d.png)\n"
+	if string(written) != want {
+		t.Errorf("file = %q, want %q", written, want)
+	}
+
+	downloaded, err := os.ReadFile(filepath.Join("assets", "main.png"))
+	if err != nil {
+		t.Fatalf("ReadFile(assets/main.png) error = %v", err)
+	}
+	if !bytes.Equal(downloaded, pngBytes) {
+		t.Errorf("downloaded = %v, want the bytes the API served", downloaded)
+	}
+
+	// The page holds it, the body does not reference it: `attachments
+	// download` is the command for pulling that one.
+	if _, err := os.Lstat(filepath.Join("assets", "unused.pdf")); !os.IsNotExist(err) {
+		t.Errorf("Lstat(assets/unused.pdf) error = %v, want the unreferenced attachment left alone", err)
+	}
+	if counts.downloads != 1 {
+		t.Errorf("downloads = %d, want only the referenced attachment fetched", counts.downloads)
+	}
+}
+
+// A fetch that fails is the same kind of outcome as a mention whose lookup
+// failed: the rendering degrades to what the body carries, the read still
+// succeeds, and the count says the answer is missing rather than settled.
+func TestReadMarkdownFallsBackWhenAnAttachmentCannotBeFetched(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/attachments"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"att1","title":"main.png","mediaType":"image/png",` +
+				`"fileSize":11,"downloadLink":"/rest/api/content/123456/child/attachment/att1/download"}],"_links":{}}`))
+		case strings.HasSuffix(r.URL.Path, "/download"):
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte(pageResponse(t, imageBody, testPageWebUI)))
+		}
+	})
+
+	t.Chdir(t.TempDir())
+	run, err := runRead(t, testPageURL, "page.md", "--markdown", "--attachments", "./assets", "--format", "json")
+	if err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	written, err := os.ReadFile("page.md")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.HasPrefix(string(written), "main.png\n") {
+		t.Errorf("file = %q, want the filename text a failed fetch degrades to", written)
+	}
+
+	var result readResult
+	if err := json.Unmarshal([]byte(run.stdout), &result); err != nil {
+		t.Fatalf("Unmarshal(%q) error = %v", run.stdout, err)
+	}
+	if result.UncheckedCount != 1 {
+		t.Errorf("unchecked_count = %d, want the failed fetch counted", result.UncheckedCount)
+	}
+
+	// The transfer took its half-written file with it.
+	if _, err := os.Lstat(filepath.Join("assets", "main.png")); !os.IsNotExist(err) {
+		t.Errorf("Lstat(assets/main.png) error = %v, want no file left behind", err)
+	}
+}
+
+// A body with no image has nothing to resolve, so the listing is a request
+// worth not making and the directory a side effect worth not having.
+func TestReadMarkdownWithNoImageAsksForNothingAndCreatesNothing(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	counts, handler := newReadAttachmentsAPI(t, "<p>plain</p>",
+		attachment{title: "main.png", mediaType: "image/png", size: len(pngBytes)},
+	)
+	startAPI(t, handler)
+
+	t.Chdir(t.TempDir())
+	if _, err := runRead(t, testPageURL, "page.md", "--markdown", "--attachments", "./assets"); err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	if counts.listings != 0 {
+		t.Errorf("listings = %d, want no attachment request for a body with no image", counts.listings)
+	}
+	if _, err := os.Lstat("assets"); !os.IsNotExist(err) {
+		t.Errorf("Lstat(assets) error = %v, want the directory left uncreated", err)
+	}
+}
+
+// Unlike `attachments download`, which refuses the whole run on a collision, a
+// read cannot fail over one: it would make re-reading a page depend on the
+// state of a directory. The existing file is kept and linked instead, which
+// makes the second read of the same page cheap and non-destructive.
+func TestReadMarkdownKeepsAFileAlreadyAtTheDestination(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	counts, handler := newReadAttachmentsAPI(t, imageBody,
+		attachment{title: "main.png", mediaType: "image/png", size: len(pngBytes)},
+	)
+	startAPI(t, handler)
+
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("assets", 0o755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	const existing = "not the attachment"
+	if err := os.WriteFile(filepath.Join("assets", "main.png"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := runRead(t, testPageURL, "page.md", "--markdown", "--attachments", "./assets"); err != nil {
+		t.Fatalf("read error = %v", err)
+	}
+
+	kept, err := os.ReadFile(filepath.Join("assets", "main.png"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(kept) != existing {
+		t.Errorf("file = %q, want the existing file left as it was", kept)
+	}
+	if counts.downloads != 0 {
+		t.Errorf("downloads = %d, want the existing file reused rather than fetched", counts.downloads)
+	}
+
+	written, err := os.ReadFile("page.md")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(written), "![main.png](./assets/main.png)") {
+		t.Errorf("file = %q, want it to link the kept file", written)
 	}
 }
