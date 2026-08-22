@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -24,6 +25,7 @@ func newUpdateCmd(g *globalFlags) *cobra.Command {
 	var (
 		file      string
 		message   string
+		title     string
 		outFormat format.Format
 	)
 
@@ -35,10 +37,18 @@ func newUpdateCmd(g *globalFlags) *cobra.Command {
 The page, the profile and the expected version all come from the file's
 sidecar, so an update can never target the wrong page. If the page changed
 on the server since it was read, the update is refused: re-read the page and
-re-apply the edits.`,
+re-apply the edits.
+
+--title renames the page in the same request. The body still travels, so a
+rename on an untouched file resends the same bytes and only the title
+changes.
+
+After a successful update the sidecar records what the server returned --
+the version, the title and the page's URL -- so the same file can be edited
+and updated again without re-reading the page.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runUpdatePage(cmd, g, file, message, outFormat)
+			return runUpdatePage(cmd, g, file, message, title, outFormat)
 		},
 	}
 
@@ -48,6 +58,8 @@ re-apply the edits.`,
 		"file holding the edited body, as downloaded by cflio read")
 	cmd.Flags().StringVar(&message, "message", defaultVersionMessage,
 		"version message recorded in the page's history")
+	cmd.Flags().StringVar(&title, "title", "",
+		"rename the page to this title; omit to keep the title the page has")
 	if err := cmd.MarkFlagRequired("file"); err != nil {
 		panic(err)
 	}
@@ -65,7 +77,16 @@ type updateResult struct {
 	Message string `json:"message"`
 }
 
-func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message string, outFormat format.Format) error {
+func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, title string, outFormat format.Format) error {
+	// An empty --title is rejected rather than ignored: the API requires a
+	// title, and a blank one is far more likely to be a shell mistake than an
+	// intent. Whether the flag was given at all is what tells that apart from
+	// the flag being absent, which means the page's current title.
+	if cmd.Flags().Changed("title") && title == "" {
+		return errors.New("--title cannot be empty: pass the new title, " +
+			"or leave the flag off to keep the page's current one")
+	}
+
 	meta, err := sidecar.Load(file)
 	if err != nil {
 		return err
@@ -80,7 +101,7 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message string, out
 		return fmt.Errorf("read %s: %w", file, err)
 	}
 
-	client, _, err := resolveClient(g.profile, pageref.HostOf(meta.PageURL))
+	client, creds, err := resolveClient(g.profile, pageref.HostOf(meta.PageURL))
 	if err != nil {
 		return err
 	}
@@ -113,16 +134,27 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message string, out
 		message = defaultVersionMessage
 	}
 
+	// Without --title the sidecar's title travels, which is what leaves the
+	// page's name alone: the API takes the title as a required field, so
+	// there is no way to send an update that does not name one.
+	if title == "" {
+		title = meta.Title
+	}
+
 	req := confluence.NewUpdatePageRequest(
-		meta.PageID, meta.Status, meta.Title, string(body), meta.Version+1, message)
+		meta.PageID, meta.Status, title, string(body), meta.Version+1, message)
 	updated, err := client.UpdatePage(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	// Record the version the server actually assigned, so the next
-	// edit-update cycle works without a fresh read.
+	// Record what the server confirmed, so the next edit-update cycle works
+	// without a fresh read. The title and the web link move with a rename,
+	// and the link is what the stored URL is built from, so all three are
+	// taken from the response rather than from what was sent.
 	meta.Version = updated.Version.Number
+	meta.Title = updated.Title
+	meta.PageURL = pageref.PageURL(creds.SiteURL, updated.Links.WebUI, meta.PageID)
 	if err := sidecar.Write(file, meta); err != nil {
 		return err
 	}

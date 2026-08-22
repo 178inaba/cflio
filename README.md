@@ -55,6 +55,9 @@ cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+No
 cflio update -f page.xml
 cflio update -f page.xml --message 'Clarify the rollback steps'
 
+# Rename the page while writing it back — or on its own, with the body untouched
+cflio update -f page.xml --title 'Release Notes (Q3)'
+
 # Just reading it? Get Markdown instead of storage XHTML
 cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes --markdown
 
@@ -84,8 +87,14 @@ Add `--format json` to any of them for structured output instead of Markdown. Ru
 version it locks against all come from the sidecar, so an update cannot be pointed at the wrong
 page. If the page changed on the server since it was read, `update` exits non-zero without writing
 and tells you to re-read; Confluence's own page history is the undo mechanism, so no local backup
-is kept. After a successful update the sidecar's version is refreshed, so you can keep editing and
-updating the same file without re-reading.
+is kept. After a successful update the sidecar records what the server returned — the new version,
+the title and the page's URL — so you can keep editing and updating the same file without
+re-reading.
+
+`--title` renames the page in the same request that writes the body back, since the update endpoint
+takes the title as a required field: there is nothing else to call. The body still travels, so a
+rename on an untouched file resends the same bytes and only the title changes. An empty `--title`
+is refused before anything is sent.
 
 Every version `cflio` writes carries a message (`Updated via cflio` by default, `--message` to
 override) so agent edits are identifiable in the page history.
