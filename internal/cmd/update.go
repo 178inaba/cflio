@@ -41,7 +41,11 @@ re-apply the edits.
 
 --title renames the page in the same request. The body still travels, so a
 rename on an untouched file resends the same bytes and only the title
-changes.`,
+changes.
+
+After a successful update the sidecar records what the server returned --
+the version, the title and the page's URL -- so the same file can be edited
+and updated again without re-reading the page.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runUpdatePage(cmd, g, file, message, title, outFormat)
