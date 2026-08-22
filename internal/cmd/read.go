@@ -3,7 +3,9 @@ package cmd
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -16,9 +18,10 @@ import (
 
 func newReadCmd(g *globalFlags) *cobra.Command {
 	var (
-		outPath   string
-		markdown  bool
-		outFormat format.Format
+		outPath        string
+		markdown       bool
+		attachmentsDir string
+		outFormat      format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -32,10 +35,17 @@ editing tools and write it back with ` + "`cflio update`" + `.
 
 ` + "`--markdown`" + ` converts the body to Markdown for reading instead. That file
 carries no sidecar and cannot be written back, so use it when the page is
-only going to be read, and the storage default when it might be edited.`,
+only going to be read, and the storage default when it might be edited.
+
+` + "`--attachments <dir>`" + ` additionally downloads the attachments the body's images
+point at into that directory and links to them, so the page's images can be
+read as files. It requires ` + "`--markdown`" + `, only fetches the attachments the body
+actually references, and keeps a file already sitting at the destination
+rather than replacing it. An attachment it cannot fetch leaves the image
+rendered as its filename and is counted in Unchecked.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReadPage(cmd, args, g, outPath, markdown, outFormat)
+			return runReadPage(cmd, args, g, outPath, markdown, attachmentsDir, outFormat)
 		},
 	}
 
@@ -45,6 +55,8 @@ only going to be read, and the storage default when it might be edited.`,
 	// pair as the flag's argument placeholder.
 	cmd.Flags().BoolVar(&markdown, "markdown", false,
 		"convert the body to Markdown for reading; the file gets no sidecar and cannot be updated")
+	cmd.Flags().StringVar(&attachmentsDir, "attachments", "",
+		"directory to download the attachments the body's images reference into, linking to them; requires --markdown")
 	addFormatFlag(cmd, &outFormat)
 
 	return cmd
@@ -75,7 +87,16 @@ type readResult struct {
 	UncheckedCount int `json:"unchecked_count,omitempty"`
 }
 
-func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, outFormat format.Format) error {
+func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, attachmentsDir string, outFormat format.Format) error {
+	// Refused rather than ignored: a storage body is written back verbatim,
+	// so there would be nothing for the downloaded files to be linked from,
+	// and silently writing them would leave the caller waiting for links
+	// that are never coming.
+	if attachmentsDir != "" && !markdown {
+		return errors.New("--attachments requires --markdown: a storage body is never rewritten, " +
+			"so it cannot link the downloaded files")
+	}
+
 	ref, err := pageref.Parse(args[0])
 	if err != nil {
 		return err
@@ -125,7 +146,13 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		// Converting it is purely local; what the converter cannot do itself
 		// is turn the identifiers a body names into names and URLs, so that
 		// much is looked up first and handed in.
-		resolved = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), body)
+		refs := format.References(body)
+		resolved = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), refs)
+		if attachmentsDir != "" {
+			paths, unchecked := downloadReferencedAttachments(ctx, client, page.ID, attachmentsDir, refs.Attachments)
+			resolved.opts.AttachmentPaths = paths
+			resolved.unchecked += unchecked
+		}
 		converted = format.ToMarkdown(body, resolved.opts)
 		body = converted.Markdown
 	}
@@ -194,9 +221,9 @@ type references struct {
 //
 // The failures are counted instead and reported alongside the resolution, the
 // way ToMarkdown reports what it could not represent alongside the Markdown.
-func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey, storage string) references {
-	refs := format.References(storage)
-
+// downloadReferencedAttachments answers the third reference kind on the same
+// terms, and adds its count to this one's.
+func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey string, refs format.Refs) references {
 	var opts format.Options
 	var unchecked int
 	if len(refs.AccountIDs) > 0 {
@@ -271,6 +298,115 @@ func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (groups map[string
 		groups[key] = append(groups[key], ref)
 	}
 	return groups, unkeyed
+}
+
+// downloadReferencedAttachments fetches the attachments the body's images are
+// sourced from into dir, and returns the destination each one is linked from,
+// keyed by filename, plus how many references it could not answer.
+//
+// Only the referenced filenames are fetched. The page's other attachments are
+// `cflio attachments download`'s job, and pulling a 4 MB PDF because it
+// happens to be attached is exactly the cost its --pattern exists to make
+// deliberate.
+//
+// No failure is propagated, on the same terms as resolveReferences: an image
+// that could not be fetched renders as its filename, which is what it renders
+// without the flag at all. The count draws the distinction Unchecked already
+// draws — a filename the listing does not hold is a settled answer, since the
+// attachment is genuinely not on the page, while a listing or a transfer that
+// failed is no answer at all.
+func downloadReferencedAttachments(
+	ctx context.Context, client *confluence.Client, pageID, dir string, filenames []string,
+) (map[string]string, int) {
+	if len(filenames) == 0 {
+		// A flag with nothing to do leaves nothing behind: no request, and
+		// no directory either.
+		return nil, 0
+	}
+
+	// maxLimit rather than a --limit of its own, for the reason
+	// runAttachmentsDownload gives: a referenced attachment outside the
+	// window would be a wrong answer, not a truncated listing.
+	attachments, hasMore, err := client.PageAttachments(ctx, pageID, maxLimit)
+	if err != nil {
+		// The listing is what says which of these filenames the page holds,
+		// so without it none of them has an answer — not even the ones a
+		// file is already sitting at, since nothing confirms that file is
+		// this page's attachment.
+		return nil, len(filenames)
+	}
+
+	byFilename := make(map[string]confluence.Attachment, len(attachments))
+	for _, a := range attachments {
+		byFilename[a.Title] = a
+	}
+
+	unchecked := 0
+	var planned []plannedDownload
+	for _, filename := range filenames {
+		a, ok := byFilename[filename]
+		if !ok {
+			// Not attached to the page — settled, unless the listing was cut
+			// short, in which case it may simply not have been read.
+			if hasMore {
+				unchecked++
+			}
+			continue
+		}
+
+		dest, err := attachmentDest(a.Title, dir)
+		if err != nil {
+			unchecked++
+			continue
+		}
+		planned = append(planned, plannedDownload{attachment: a, dest: dest})
+	}
+	if len(planned) == 0 {
+		return nil, unchecked
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, unchecked + len(planned)
+	}
+
+	paths := make(map[string]string, len(planned))
+	for _, p := range planned {
+		if !fetchAttachment(ctx, client, p) {
+			unchecked++
+			continue
+		}
+		paths[p.attachment.Title] = attachmentLink(dir, p.attachment.Title)
+	}
+	return paths, unchecked
+}
+
+// fetchAttachment writes one attachment to its destination unless a file is
+// already there, reporting whether the destination now holds a file to link.
+//
+// An existing file is kept rather than replaced or re-downloaded. That is a
+// deliberate departure from `attachments download`, which refuses its whole
+// run on a collision: a read must not fail over the state of a directory, or
+// reading the same page twice would stop working the second time.
+//
+// The collision is read off downloadToFile's O_EXCL create rather than checked
+// for first. That create opens the file before a byte is requested, so an
+// existing destination costs no transfer either way, and asking the filesystem
+// once is what keeps this from drifting away from the answer planDownloads
+// gets — a dangling symlink included, which O_EXCL rejects as an entry too.
+func fetchAttachment(ctx context.Context, client *confluence.Client, p plannedDownload) bool {
+	if _, err := downloadToFile(ctx, client, p.attachment.DownloadLink, p.dest); err != nil {
+		return errors.Is(err, fs.ErrExist)
+	}
+	return true
+}
+
+// attachmentLink builds the destination an image links its downloaded file
+// from. The directory goes in exactly as it was given, so the link resolves
+// from the working directory — the same place --attachments and -o are
+// themselves interpreted from — and it is joined with a forward slash,
+// because what is being built is a link rather than a filesystem path.
+func attachmentLink(dir, filename string) string {
+	return strings.TrimRight(dir, "/") + "/" + filename
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:

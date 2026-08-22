@@ -5,3 +5,9 @@ See [Deployment Runbook](https://example.atlassian.net/wiki/spaces/DEV/pages/123
 Same space: [the other page](https://example.atlassian.net/wiki/spaces/DEV/pages/789012).
 
 Attachment: spec.pdf.
+
+Image: ![main.png](./assets/main.png)
+
+Missing image: gone.png
+
+Another page's image: main.png

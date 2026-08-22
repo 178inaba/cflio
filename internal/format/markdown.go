@@ -33,10 +33,16 @@ type Options struct {
 	UserNames map[string]string
 	// PageURLs maps a link target to the page's URL.
 	PageURLs map[PageRef]string
+	// AttachmentPaths maps an attachment's filename to the destination an
+	// image of it links to. It holds what the caller wants written into the
+	// link, which is not necessarily the path it wrote the file to: the
+	// caller builds a link out of forward slashes, and on Windows the file
+	// went to a path built out of backslashes.
+	AttachmentPaths map[string]string
 }
 
 // Refs are the references a body makes that ToMarkdown cannot render without
-// an Options filled in from the API. Both slices are deduplicated and sorted,
+// an Options filled in from the API. Every slice is deduplicated and sorted,
 // so the requests a caller builds from them are deterministic.
 type Refs struct {
 	// AccountIDs are the ri:user targets.
@@ -45,12 +51,18 @@ type Refs struct {
 	// in the same space, which is how storage writes one — and that empty key
 	// is what Options.PageURLs has to be keyed by for the lookup to hit.
 	Pages []PageRef
+	// Attachments are the filenames the page's own images are sourced from.
+	// A filename is all storage carries, and it is also what the attachment
+	// listing identifies a file by, so it is what Options.AttachmentPaths is
+	// keyed by too.
+	Attachments []string
 }
 
 // References collects what a caller has to resolve for ToMarkdown to render
-// names and URLs instead of identifiers. It walks for the same ac:link
-// targets link renders, through the same accessor; the kinds worth resolving
-// are listed in collectTarget, which link has to be kept in step with.
+// names, URLs and image paths instead of identifiers. It walks for the same
+// targets link and image render, through the same accessors; the kinds worth
+// resolving are listed in collectTarget and imageAttachment, which those two
+// renderers have to be kept in step with.
 //
 // Parsing the body twice — once here, once in ToMarkdown — is the price of
 // keeping the converter a pure function. Returning the references from the
@@ -59,12 +71,22 @@ type Refs struct {
 func References(storage string) Refs {
 	accountIDs := make(map[string]struct{})
 	pages := make(map[PageRef]struct{})
+	attachments := make(map[string]struct{})
 
 	var walk func(nodes []*node)
 	walk = func(nodes []*node) {
 		for _, n := range nodes {
-			if n.space == "ac" && n.local == "link" {
-				collectTarget(riChild(n), accountIDs, pages)
+			if n.space == "ac" {
+				switch n.local {
+				case "link":
+					collectTarget(riChild(n), accountIDs, pages)
+				case "image":
+					// Like collectTarget, a source carrying no filename is
+					// dropped: nothing could match it.
+					if a := imageAttachment(riChild(n)); a != nil && a.attr["filename"] != "" {
+						attachments[a.attr["filename"]] = struct{}{}
+					}
+				}
 			}
 			walk(n.children)
 		}
@@ -76,6 +98,7 @@ func References(storage string) Refs {
 		Pages: slices.SortedFunc(maps.Keys(pages), func(a, b PageRef) int {
 			return cmp.Or(cmp.Compare(a.SpaceKey, b.SpaceKey), cmp.Compare(a.Title, b.Title))
 		}),
+		Attachments: slices.Sorted(maps.Keys(attachments)),
 	}
 }
 
@@ -83,9 +106,10 @@ func References(storage string) Refs {
 // resolving would change the rendering of. A target carrying no identifier is
 // dropped: the lookup could not match, and the renderer already falls back.
 //
-// The kinds handled here are the ones link consults Options for. Teaching
-// link to resolve a further kind means adding it here too, or the resolution
-// it now expects will never be looked up.
+// The kinds handled here are the ones link consults Options for; an image's
+// attachment is collected through imageAttachment instead. Teaching link to
+// resolve a further kind means adding it here too, or the resolution it now
+// expects will never be looked up.
 func collectTarget(target *node, accountIDs map[string]struct{}, pages map[PageRef]struct{}) {
 	if target == nil {
 		return
@@ -809,10 +833,24 @@ func (r *renderer) linkBody(n *node) string {
 }
 
 // image renders <ac:image>. An attachment has no URL the converter could put
-// here — it is fetched, not linked — so the filename is what is kept, and it is
-// also what `cflio attachments download --pattern` selects the file by.
+// here — it is fetched, not linked — so unless the caller downloaded it and
+// said where to, the filename is what is kept, and it is also what
+// `cflio attachments download --pattern` selects the file by.
 func (r *renderer) image(n *node) string {
-	if source := riChild(n); source != nil {
+	source := riChild(n)
+
+	// The resolution is a prefix rather than a branch of the switch below:
+	// what it does not answer falls through to the rendering that has always
+	// applied, so an image imageAttachment excludes degrades exactly as it
+	// did before there was anything to resolve.
+	if attachment := imageAttachment(source); attachment != nil {
+		if dest := r.opts.AttachmentPaths[attachment.attr["filename"]]; dest != "" {
+			return "![" + escapeText(cmp.Or(n.attr["alt"], attachment.attr["filename"])) +
+				"](" + linkDestination(dest) + ")"
+		}
+	}
+
+	if source != nil {
 		switch source.local {
 		case "url":
 			return "![" + escapeText(n.attr["alt"]) + "](" + source.attr["value"] + ")"
@@ -822,6 +860,43 @@ func (r *renderer) image(n *node) string {
 	}
 	return escapeText(n.attr["alt"])
 }
+
+// imageAttachment narrows an <ac:image>'s source, as riChild returned it, to
+// the attachment a download could resolve — nil for an image sourced from a
+// URL, or for an attachment carrying a nested content identifier.
+//
+// The nested identifier is why this is an accessor and not an inline check: it
+// names a file on a different page (<ri:page>) or blog post (<ri:blog-post>),
+// and a filename is all the rest of the pipeline carries, so a caller that
+// listed this page's attachments would match the name against the wrong
+// content's file. Any ri: child is excluded rather than those two by name, so
+// an identifier kind storage adds later cannot slip through as this page's
+// file. References and image both go through here so neither can start
+// disagreeing about which images have a file. It takes the source rather than
+// the image for the reason collectTarget does: the caller has already
+// resolved it.
+func imageAttachment(source *node) *node {
+	if source == nil || source.local != "attachment" || riChild(source) != nil {
+		return nil
+	}
+	return source
+}
+
+// linkDestination renders a link target that is a local path rather than a
+// URL. A space or a bracket in it would end the destination early — Confluence
+// names screenshots with spaces routinely — so those go in the angle-bracket
+// form CommonMark provides for the purpose, which needs only its own
+// delimiters escaped. The path is left as it is otherwise: it is meant to be
+// opened as a file, and percent-encoding it would be a form no file reader
+// takes.
+func linkDestination(dest string) string {
+	if !strings.ContainsAny(dest, " ()<>") {
+		return dest
+	}
+	return "<" + destinationEscaper.Replace(dest) + ">"
+}
+
+var destinationEscaper = strings.NewReplacer(`\`, `\\`, "<", `\<`, ">", `\>`)
 
 // rawText concatenates the text under a node without touching it, for CDATA
 // bodies that have to come out byte-identical.

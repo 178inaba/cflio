@@ -2,3 +2,6 @@
 <p>See <ac:link><ri:page ri:space-key="DEV" ri:content-title="Deployment Runbook" /></ac:link> for the steps.</p>
 <p>Same space: <ac:link><ri:page ri:content-title="Other Page" /><ac:plain-text-link-body><![CDATA[the other page]]></ac:plain-text-link-body></ac:link>.</p>
 <p>Attachment: <ac:link><ri:attachment ri:filename="spec.pdf" /></ac:link>.</p>
+<p>Image: <ac:image><ri:attachment ri:filename="main.png" /></ac:image></p>
+<p>Missing image: <ac:image><ri:attachment ri:filename="gone.png" /></ac:image></p>
+<p>Another page's image: <ac:image><ri:attachment ri:filename="main.png"><ri:page ri:content-title="Other Page" /></ri:attachment></ac:image></p>

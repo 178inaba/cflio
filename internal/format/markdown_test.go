@@ -64,6 +64,10 @@ func TestToMarkdownMatchesTheResolvedGoldenFile(t *testing.T) {
 			// key by exactly what the body carries.
 			{Title: "Other Page"}: "https://example.atlassian.net/wiki/spaces/DEV/pages/789012",
 		},
+		// The fixture points two images at this filename: one attached to
+		// the page, one carrying a nested ri:page. Only the first is this
+		// page's file, so only the first may become a link.
+		AttachmentPaths: map[string]string{"main.png": "./assets/main.png"},
 	}
 
 	checkGolden(t, "testdata/references.resolved.md", ToMarkdown(string(storage), opts).Markdown)
@@ -134,6 +138,70 @@ func TestToMarkdownResolvesReferencesWhenSupplied(t *testing.T) {
 	}
 }
 
+func TestToMarkdownLinksTheAttachmentsItWasGivenPathsFor(t *testing.T) {
+	opts := Options{AttachmentPaths: map[string]string{
+		"main.png":        "./assets/main.png",
+		"Screen Shot.png": "./assets/Screen Shot.png",
+	}}
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "a downloaded attachment becomes an image link",
+			in:   `<p><ac:image><ri:attachment ri:filename="main.png"/></ac:image></p>`,
+			want: "![main.png](./assets/main.png)\n",
+		},
+		{
+			name: "the image's own alt text wins over the filename",
+			in:   `<p><ac:image ac:alt="Architecture"><ri:attachment ri:filename="main.png"/></ac:image></p>`,
+			want: "![Architecture](./assets/main.png)\n",
+		},
+		{
+			name: "an attachment with no path keeps the filename it renders today",
+			in:   `<p><ac:image><ri:attachment ri:filename="gone.png"/></ac:image></p>`,
+			want: "gone.png\n",
+		},
+		{
+			// A space would end the destination early, and Confluence names
+			// screenshots with them.
+			name: "a destination with a space is wrapped so the link survives",
+			in:   `<p><ac:image><ri:attachment ri:filename="Screen Shot.png"/></ac:image></p>`,
+			want: "![Screen Shot.png](<./assets/Screen Shot.png>)\n",
+		},
+		{
+			name: "an image sourced from a URL renders as it always has",
+			in:   `<p><ac:image ac:alt="Diagram"><ri:url ri:value="https://example.com/d.png"/></ac:image></p>`,
+			want: "![Diagram](https://example.com/d.png)\n",
+		},
+		{
+			// Same filename, different page: the path in hand belongs to
+			// this page's attachment, so linking it would show the wrong
+			// file.
+			name: "an attachment naming another page stays filename text even with that name resolved",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:page ri:content-title="Other Page"/></ri:attachment></ac:image></p>`,
+			want: "main.png\n",
+		},
+		{
+			name: "an attachment naming a blog post stays filename text too",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:blog-post ri:content-title="Post" ri:posting-day="2026/01/01"/></ri:attachment></ac:image></p>`,
+			want: "main.png\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToMarkdown(tt.in, opts).Markdown; got != tt.want {
+				t.Errorf("ToMarkdown(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // References feeds the command layer's lookups, so what it collects has to
 // be exactly what link() would render — no reference missed, and nothing
 // collected that could only turn into a request whose answer is unusable.
@@ -192,8 +260,43 @@ func TestReferencesCollectsWhatLinkRenders(t *testing.T) {
 			},
 		},
 		{
-			name: "attachments are not collected: References answers mentions and page links only",
+			// link renders an attachment as text whatever is resolved, so a
+			// collected filename here could only buy a download nothing
+			// would point at.
+			name: "a link to an attachment is not collected: only an image resolves one",
 			in:   `<p><ac:link><ri:attachment ri:filename="spec.pdf"/></ac:link></p>`,
+			want: Refs{},
+		},
+		{
+			name: "an image's attachment is collected",
+			in:   `<p><ac:image><ri:attachment ri:filename="main.png"/></ac:image></p>`,
+			want: Refs{Attachments: []string{"main.png"}},
+		},
+		{
+			name: "repeated image filenames are collected once and sorted",
+			in: `<p><ac:image><ri:attachment ri:filename="b.png"/></ac:image>` +
+				`<ac:image><ri:attachment ri:filename="a.png"/></ac:image>` +
+				`<ac:image><ri:attachment ri:filename="b.png"/></ac:image></p>`,
+			want: Refs{Attachments: []string{"a.png", "b.png"}},
+		},
+		{
+			name: "an image sourced from a URL has no attachment to fetch",
+			in:   `<p><ac:image><ri:url ri:value="https://example.com/d.png"/></ac:image></p>`,
+			want: Refs{},
+		},
+		{
+			// The file is on another page, which is not the page whose
+			// attachments the command layer lists, so fetching it by
+			// filename would download the wrong file.
+			name: "an attachment naming another page is not collected",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:page ri:content-title="Other Page"/></ri:attachment></ac:image></p>`,
+			want: Refs{},
+		},
+		{
+			name: "an attachment naming a blog post is not collected either",
+			in: `<p><ac:image><ri:attachment ri:filename="main.png">` +
+				`<ri:blog-post ri:content-title="Post" ri:posting-day="2026/01/01"/></ri:attachment></ac:image></p>`,
 			want: Refs{},
 		},
 		{
@@ -208,9 +311,9 @@ func TestReferencesCollectsWhatLinkRenders(t *testing.T) {
 			want: Refs{},
 		},
 		{
-			// ac:image reaches the same ri: children, so collecting from
-			// anything but a link would spend a lookup on a reference the
-			// renderer never resolves.
+			// ac:image is walked too, but only for the attachment it names:
+			// image renders nothing from a page target, so collecting one
+			// would spend a lookup on an answer nothing reads.
 			name: "an image target is not a link target",
 			in:   `<p><ac:image><ri:page ri:space-key="DEV" ri:content-title="Runbook"/></ac:image></p>`,
 			want: Refs{},

@@ -5,3 +5,9 @@ See Deployment Runbook for the steps.
 Same space: the other page.
 
 Attachment: spec.pdf.
+
+Image: main.png
+
+Missing image: gone.png
+
+Another page's image: main.png

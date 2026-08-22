@@ -265,6 +265,20 @@ type plannedDownload struct {
 	dest       string
 }
 
+// attachmentDest resolves the file an attachment is written to under outDir.
+//
+// The filename comes from the server, so it is also what pins the write inside
+// outDir: a title carrying a path would otherwise land somewhere the caller
+// never named. Base is the local filesystem's idea of a separator, which is
+// the right one — this is a path being built, not a pattern being matched.
+func attachmentDest(title, outDir string) (string, error) {
+	if filepath.Base(title) != title || title == "." || title == ".." {
+		return "", fmt.Errorf("attachment %q is not a plain filename; "+
+			"refusing to write it outside %s", title, outDir)
+	}
+	return filepath.Join(outDir, title), nil
+}
+
 // planDownloads resolves where each matched attachment will be written, and
 // refuses the whole run if any of those files already exists.
 //
@@ -273,22 +287,16 @@ type plannedDownload struct {
 // a directory neither the caller nor a re-run can reason about. Lstat rather
 // than Stat, so a dangling symlink counts as an existing entry here — which is
 // what the O_EXCL create would say about it too.
-//
-// The filename comes from the server, so it is also what pins the write inside
-// outDir: a title carrying a path would otherwise land somewhere the caller
-// never named. Base is the local filesystem's idea of a separator, which is
-// the right one — this is a path being built, not a pattern being matched.
 func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDownload, error) {
 	planned := make([]plannedDownload, 0, len(matched))
 	var collisions []string
 
 	for _, a := range matched {
-		if filepath.Base(a.Title) != a.Title || a.Title == "." || a.Title == ".." {
-			return nil, fmt.Errorf("attachment %q is not a plain filename; "+
-				"refusing to write it outside %s", a.Title, outDir)
+		dest, err := attachmentDest(a.Title, outDir)
+		if err != nil {
+			return nil, err
 		}
 
-		dest := filepath.Join(outDir, a.Title)
 		if _, err := os.Lstat(dest); err == nil {
 			collisions = append(collisions, dest)
 		} else if !os.IsNotExist(err) {
@@ -309,8 +317,10 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 //
 // O_EXCL rather than a plain create: planDownloads has already ruled out a
 // collision, and this is what keeps a file that appeared in between from being
-// clobbered anyway. A transfer that fails part-way takes its file with it, so
-// no truncated file is left at a name that looks complete.
+// clobbered anyway. fetchAttachment does no check of its own and reads the
+// collision off this create instead, so the fs.ErrExist it wraps is part of
+// the contract. A transfer that fails part-way takes its file with it, so no
+// truncated file is left at a name that looks complete.
 func downloadToFile(ctx context.Context, client *confluence.Client, downloadLink, dest string) (int64, error) {
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {

@@ -63,7 +63,10 @@ cflio search 'type = page and space = "DEV" and text ~ "release notes"'
 cflio children 123456
 cflio comments https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
 
-# See what the page shows: list its attachments, then pull the ones you want
+# See what the page shows: pull the images the body uses along with the Markdown
+cflio read 123456 --markdown --attachments ./assets
+
+# ...or reach for an attachment the body does not reference
 cflio attachments list 123456
 cflio attachments download 123456 --pattern '*.png' -o ./assets
 ```
@@ -99,7 +102,8 @@ link to another page becomes a Markdown link you can pass straight back to `cfli
 a couple of extra requests, batched so the count does not grow with the number of links. A reference
 that cannot be resolved — a deleted account, a page this token cannot see — falls back to the
 account ID or the bare page title rather than failing the read. So does one whose lookup failed
-outright, and the output says when that happened (below).
+outright, and the output says when that happened (below). Images resolve the same way if you ask
+for it — see [Reading a page's images and files](#reading-a-pages-images-and-files).
 
 That file has **no sidecar** and cannot be written back: `update` refuses it, by design. So use
 `--markdown` when a page is only going to be read, and the storage default when it might be edited.
@@ -131,17 +135,37 @@ Unchecked: 2 (not looked up; names and links may be missing)
 When that line is present, the rendering may be missing names and links that do exist. Re-reading
 without `--markdown` does not help — storage resolves nothing at all — so the useful response is to
 run the same command again; in keeping with the no-retries posture below, `cflio` will not do it
-for you.
+for you. The same count covers the attachment fetches `--attachments` makes (below).
 
 ### Reading a page's images and files
 
 A page's images and files are attachments, and no representation of the body carries their contents:
-`read --markdown` renders an image as its filename and nothing more. To actually see one, download
-it and read the file.
+`read --markdown` on its own renders an image as its filename and nothing more. To actually see
+one, the file has to be downloaded and read.
 
-`attachments list` shows every attachment's filename, media type and size, so you can tell a 10 KB
-screenshot from a 4 MB PDF before fetching either. `attachments download` then writes the ones whose
-filename matches a glob:
+For the images the body actually uses, `--attachments` does that as part of the read:
+
+```sh
+cflio read 123456 --markdown --attachments ./assets
+```
+
+The referenced attachments land in `./assets`, and the Markdown links to them
+(`![main.png](./assets/main.png)`) so an image can be opened straight from the body. It requires
+`--markdown` — a storage body is written back verbatim, so there would be nothing to link the files
+from — and it fetches only what the body references; the page's other attachments are the
+`attachments` commands' job. The link is the directory as you passed it joined with the filename,
+so it resolves from the working directory, the same as `-o`.
+
+An attachment that cannot be fetched leaves the image rendered as its filename rather than failing
+the read, and is counted in `Unchecked:` above. A file already sitting at the destination is kept —
+not replaced, and not downloaded again — so reading the same page twice is cheap and never
+overwrites anything. (`attachments download` refuses the whole run on such a collision; a read
+cannot, or re-reading a page would stop working the second time.)
+
+For an attachment the body does not reference — a PDF linked from the text, a spreadsheet — use the
+`attachments` commands directly. `attachments list` shows every attachment's filename, media type
+and size, so you can tell a 10 KB screenshot from a 4 MB PDF before fetching either.
+`attachments download` then writes the ones whose filename matches a glob:
 
 ```sh
 cflio attachments download 123456 --pattern '*.png' -o ./assets
@@ -181,9 +205,9 @@ A run that ends normally reports which happened in its exit status, so a caller 
 read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
 every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
 retrying — with a larger `--timeout`; every other one needs the `Error:` line read instead. A
-deadline that expires while `read --markdown` is resolving references is the exception: it is
-absorbed like any other lookup failure, so the reference is counted in `Unchecked: N` above and
-the run still exits `0`.
+deadline that expires while `read --markdown` is resolving references or downloading attachments is
+the exception: it is absorbed like any other lookup failure, so the reference is counted in
+`Unchecked: N` above and the run still exits `0`.
 
 Ctrl-C and `SIGTERM` are not reported as failures: cflio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over
@@ -241,8 +265,9 @@ docker compose run --rm lint --fix
 - **Short links** (`/wiki/x/…`) are not resolved — open one in a browser and pass the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
-  A downloaded file is also not wired back into `read --markdown`, which still renders an image as
-  its filename.
+  `read --markdown --attachments` links the images it downloads, but an image whose attachment
+  lives on another page or blog post still renders as its filename: the file would have to be
+  fetched from content other than the page being read.
 - Creating, deleting and moving pages, posting comments, uploading attachments, and ADF (the
   representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/cflio/issues/1) for the full list.
