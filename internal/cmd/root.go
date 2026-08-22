@@ -122,9 +122,10 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 // in ValidArgsFunction, where cobra keeps `help` in the candidate list by
 // comparing against the unexported helpCommand field that IsAvailableCommand
 // excludes; a closure over helpCmd does the same from outside the package,
-// which is why the function is assigned after the literal rather than in it.
+// which is what the declaration ahead of the literal is for.
 func newHelpCmd(root *cobra.Command) *cobra.Command {
-	helpCmd := &cobra.Command{
+	var helpCmd *cobra.Command
+	helpCmd = &cobra.Command{
 		Use:   "help [command]",
 		Short: "Help about any command",
 		Long: `Help provides help for any command in the application.
@@ -151,28 +152,27 @@ Simply type ` + root.DisplayName() + ` help [path to command] for full details.`
 			target.InitDefaultVersionFlag() // make possible 'version' flag to be shown
 			return target.Help()
 		},
-	}
-
-	helpCmd.ValidArgsFunction = func(
-		c *cobra.Command, args []string, toComplete string,
-	) ([]cobra.Completion, cobra.ShellCompDirective) {
-		var completions []cobra.Completion
-		cmd, _, e := c.Root().Find(args)
-		if e != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		if cmd == nil {
-			// Root help command.
-			cmd = c.Root()
-		}
-		for _, subCmd := range cmd.Commands() {
-			if subCmd.IsAvailableCommand() || subCmd == helpCmd {
-				if strings.HasPrefix(subCmd.Name(), toComplete) {
-					completions = append(completions, cobra.CompletionWithDesc(subCmd.Name(), subCmd.Short))
+		ValidArgsFunction: func(
+			c *cobra.Command, args []string, toComplete string,
+		) ([]cobra.Completion, cobra.ShellCompDirective) {
+			var completions []cobra.Completion
+			cmd, _, e := c.Root().Find(args)
+			if e != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			if cmd == nil {
+				// Root help command.
+				cmd = c.Root()
+			}
+			for _, subCmd := range cmd.Commands() {
+				if subCmd.IsAvailableCommand() || subCmd == helpCmd {
+					if strings.HasPrefix(subCmd.Name(), toComplete) {
+						completions = append(completions, cobra.CompletionWithDesc(subCmd.Name(), subCmd.Short))
+					}
 				}
 			}
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
+			return completions, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
 
 	return helpCmd
