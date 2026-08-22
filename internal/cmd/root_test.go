@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -394,5 +395,153 @@ func TestRootRejectsAnUnknownCommand(t *testing.T) {
 	if run.stdout != "" || run.stderr != "" {
 		t.Errorf("cflio bogus wrote stdout = %q, stderr = %q, want nothing from the tree itself",
 			run.stdout, run.stderr)
+	}
+}
+
+// TestHelpRejectsAnUnresolvableTopic covers what cobra's own help command
+// does not: its Run cannot fail, so a topic that does not resolve exits 0 —
+// and `cflio help auth bogus` reports nothing at all, since Find resolves
+// `auth` and discards the leftover argument. The assertions are on the
+// returned error rather than on an exit code, which does not exist at this
+// level, and the message is matched whole so a usage listing sneaking back
+// in would fail here.
+func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "topic the root cannot resolve",
+			args:    []string{"help", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio"`,
+		},
+		{
+			// bogus is too far from any command to be suggested, so a table
+			// built only on it would never exercise the candidates.
+			name:    "topic close enough to suggest",
+			args:    []string{"help", "raed"},
+			wantErr: "unknown command \"raed\" for \"cflio\"\n\nDid you mean this?\n\tread\n",
+		},
+		{
+			name:    "topic a group command cannot resolve",
+			args:    []string{"help", "auth", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio auth"`,
+		},
+		{
+			name:    "topic under a group close enough to suggest",
+			args:    []string{"help", "auth", "loign"},
+			wantErr: "unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n",
+		},
+		{
+			name:    "several leftovers report the first",
+			args:    []string{"help", "bogus1", "bogus2"},
+			wantErr: `unknown command "bogus1" for "cflio"`,
+		},
+		{
+			name:    "several leftovers under a group report the first",
+			args:    []string{"help", "auth", "bogus", "extra"},
+			wantErr: `unknown command "bogus" for "cflio auth"`,
+		},
+		{
+			// `help` is not a subcommand of a group command, so nothing but
+			// unknownCommandCandidates' own case offers anything for it.
+			name:    "help under a group points at the flag",
+			args:    []string{"help", "auth", "help"},
+			wantErr: "unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n",
+		},
+		{
+			// The third shape: a command that resolves and has no
+			// subcommands at all, with an argument left over anyway. Neither
+			// Find's error nor the target having subcommands separates it
+			// from `cflio help read`, so a condition built on either would
+			// still render the help here and exit 0, as this did before.
+			name:    "leftover after a command that takes arguments",
+			args:    []string{"help", "read", "123456"},
+			wantErr: `unknown command "123456" for "cflio read"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run, err := runCflio(t, tt.args...)
+			if err == nil {
+				t.Fatalf("%v error = nil, want an error", tt.args)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("%v error = %q, want %q", tt.args, err, tt.wantErr)
+			}
+			if run.unknownCommand {
+				t.Errorf("%v recorded a failure, want the returned error to carry it instead", tt.args)
+			}
+			if run.stdout != "" || run.stderr != "" {
+				t.Errorf("%v wrote stdout = %q, stderr = %q, want nothing from the tree itself",
+					tt.args, run.stdout, run.stderr)
+			}
+		})
+	}
+}
+
+// TestHelpPrintsHelpForAResolvingTopic pins the invocations the report above
+// must leave alone. Each is compared against the flag spelling of the same
+// request, so a replacement help command that rendered something else would
+// fail here rather than pass on a substring match.
+func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
+	for _, topic := range [][]string{nil, {"auth"}, {"auth", "login"}, {"read"}} {
+		t.Run("cflio help "+strings.Join(topic, " "), func(t *testing.T) {
+			run, err := runCflio(t, append([]string{"help"}, topic...)...)
+			if err != nil {
+				t.Fatalf("help %v error = %v, want nil", topic, err)
+			}
+			if run.unknownCommand {
+				t.Errorf("help %v recorded a failure, want none", topic)
+			}
+			if run.stderr != "" {
+				t.Errorf("help %v stderr = %q, want nothing", topic, run.stderr)
+			}
+
+			withFlag, err := runCflio(t, append(topic, "--help")...)
+			if err != nil {
+				t.Fatalf("%v --help error = %v, want nil", topic, err)
+			}
+			if run.stdout != withFlag.stdout {
+				t.Errorf("help %v stdout = %q, want the same help as %v --help", topic, run.stdout, topic)
+			}
+		})
+	}
+}
+
+// TestHelpTopicCompletion pins the completion the replacement help command
+// has to keep working. `help` itself is the case worth having: cobra keeps
+// it in the list by comparing against its unexported helpCommand field,
+// which IsAvailableCommand excludes, so a replacement that dropped that
+// comparison would still list everything else.
+//
+// stderr is not asserted here, unlike the tests above: cobra ends every
+// __complete run with a "Completion ended with directive" line on it.
+func TestHelpTopicCompletion(t *testing.T) {
+	want := []string{
+		"attachments", "auth", "children", "comments", "completion",
+		"help", "profile", "read", "search", "update",
+	}
+
+	run, err := runCflio(t, "__complete", "help", "")
+	if err != nil {
+		t.Fatalf("cflio __complete help \"\" error = %v, want nil", err)
+	}
+
+	var got []string
+	for _, line := range strings.Split(strings.TrimSuffix(run.stdout, "\n"), "\n") {
+		// The listing ends with cobra's ":<directive>" line.
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		name, _, _ := strings.Cut(line, "\t")
+		got = append(got, name)
+	}
+
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("cflio __complete help \"\" listed %v, want %v", got, want)
 	}
 }
