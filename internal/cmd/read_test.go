@@ -739,10 +739,12 @@ const imageBody = `<p><ac:image><ri:attachment ri:filename="main.png"/></ac:imag
 
 // readAttachmentsAPI counts the attachment requests a read made, so a test can
 // assert that an unreferenced attachment cost nothing and that a body with no
-// image asked for no listing at all.
+// image asked for no listing at all. downloads is attachmentsAPI's own counter
+// rather than a second tally of the same requests, which would drift from it
+// the moment the download path changes shape.
 type readAttachmentsAPI struct {
 	listings  int
-	downloads int
+	downloads *int
 }
 
 // newReadAttachmentsAPI serves the page body alongside the listing and the
@@ -751,15 +753,14 @@ type readAttachmentsAPI struct {
 func newReadAttachmentsAPI(t *testing.T, body string, attachments ...attachment) (*readAttachmentsAPI, http.HandlerFunc) {
 	t.Helper()
 
-	counts := &readAttachmentsAPI{}
-	_, serveAttachments := attachmentsAPI(t, attachments...)
+	downloads, serveAttachments := attachmentsAPI(t, attachments...)
+	counts := &readAttachmentsAPI{downloads: downloads}
 	return counts, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/attachments"):
 			counts.listings++
 			serveAttachments(w, r)
 		case strings.HasSuffix(r.URL.Path, "/download"):
-			counts.downloads++
 			serveAttachments(w, r)
 		default:
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
@@ -825,8 +826,8 @@ func TestReadMarkdownDownloadsOnlyTheAttachmentsTheBodyReferences(t *testing.T) 
 	if _, err := os.Lstat(filepath.Join("assets", "unused.pdf")); !os.IsNotExist(err) {
 		t.Errorf("Lstat(assets/unused.pdf) error = %v, want the unreferenced attachment left alone", err)
 	}
-	if counts.downloads != 1 {
-		t.Errorf("downloads = %d, want only the referenced attachment fetched", counts.downloads)
+	if *counts.downloads != 1 {
+		t.Errorf("downloads = %d, want only the referenced attachment fetched", *counts.downloads)
 	}
 }
 
@@ -931,8 +932,8 @@ func TestReadMarkdownKeepsAFileAlreadyAtTheDestination(t *testing.T) {
 	if string(kept) != existing {
 		t.Errorf("file = %q, want the existing file left as it was", kept)
 	}
-	if counts.downloads != 0 {
-		t.Errorf("downloads = %d, want the existing file reused rather than fetched", counts.downloads)
+	if *counts.downloads != 0 {
+		t.Errorf("downloads = %d, want the existing file reused rather than fetched", *counts.downloads)
 	}
 
 	written, err := os.ReadFile("page.md")

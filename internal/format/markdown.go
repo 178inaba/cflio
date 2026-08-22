@@ -83,8 +83,8 @@ func References(storage string) Refs {
 				case "image":
 					// Like collectTarget, a source carrying no filename is
 					// dropped: nothing could match it.
-					if source := imageAttachment(n); source != nil && source.attr["filename"] != "" {
-						attachments[source.attr["filename"]] = struct{}{}
+					if a := imageAttachment(riChild(n)); a != nil && a.attr["filename"] != "" {
+						attachments[a.attr["filename"]] = struct{}{}
 					}
 				}
 			}
@@ -837,18 +837,20 @@ func (r *renderer) linkBody(n *node) string {
 // said where to, the filename is what is kept, and it is also what
 // `cflio attachments download --pattern` selects the file by.
 func (r *renderer) image(n *node) string {
+	source := riChild(n)
+
 	// The resolution is a prefix rather than a branch of the switch below:
 	// what it does not answer falls through to the rendering that has always
 	// applied, so an image imageAttachment excludes degrades exactly as it
 	// did before there was anything to resolve.
-	if source := imageAttachment(n); source != nil {
-		if dest := r.opts.AttachmentPaths[source.attr["filename"]]; dest != "" {
-			return "![" + escapeText(cmp.Or(n.attr["alt"], source.attr["filename"])) +
+	if attachment := imageAttachment(source); attachment != nil {
+		if dest := r.opts.AttachmentPaths[attachment.attr["filename"]]; dest != "" {
+			return "![" + escapeText(cmp.Or(n.attr["alt"], attachment.attr["filename"])) +
 				"](" + linkDestination(dest) + ")"
 		}
 	}
 
-	if source := riChild(n); source != nil {
+	if source != nil {
 		switch source.local {
 		case "url":
 			return "![" + escapeText(n.attr["alt"]) + "](" + source.attr["value"] + ")"
@@ -859,17 +861,18 @@ func (r *renderer) image(n *node) string {
 	return escapeText(n.attr["alt"])
 }
 
-// imageAttachment returns the attachment an <ac:image> is sourced from, or nil
-// when there is nothing about it a download could resolve — an image sourced
-// from a URL, or an attachment carrying a nested <ri:page>.
+// imageAttachment narrows an <ac:image>'s source, as riChild returned it, to
+// the attachment a download could resolve — nil for an image sourced from a
+// URL, or for an attachment carrying a nested <ri:page>.
 //
 // The nested page is why this is an accessor and not an inline check: it names
 // a file on a different page, and a filename is all the rest of the pipeline
 // carries, so a caller that listed this page's attachments would match the
 // name against the wrong page's file. References and image both go through
-// here so neither can start disagreeing about which images have a file.
-func imageAttachment(n *node) *node {
-	source := riChild(n)
+// here so neither can start disagreeing about which images have a file. It
+// takes the source rather than the image for the reason collectTarget does:
+// the caller has already resolved it.
+func imageAttachment(source *node) *node {
 	if source == nil || source.local != "attachment" || source.child("ri", "page") != nil {
 		return nil
 	}

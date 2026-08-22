@@ -383,18 +383,17 @@ func downloadReferencedAttachments(
 // fetchAttachment writes one attachment to its destination unless a file is
 // already there, reporting whether the destination now holds a file to link.
 //
-// An existing file is kept rather than replaced or re-downloaded, including
-// one that appears between the check and the create — which downloadToFile's
-// O_EXCL turns into an fs.ErrExist. This is a deliberate departure from
-// `attachments download`, which refuses its whole run on a collision: a read
-// must not fail over the state of a directory, or reading the same page twice
-// would stop working the second time.
+// An existing file is kept rather than replaced or re-downloaded. That is a
+// deliberate departure from `attachments download`, which refuses its whole
+// run on a collision: a read must not fail over the state of a directory, or
+// reading the same page twice would stop working the second time.
+//
+// The collision is read off downloadToFile's O_EXCL create rather than checked
+// for first. That create opens the file before a byte is requested, so an
+// existing destination costs no transfer either way, and asking the filesystem
+// once is what keeps this from drifting away from the answer planDownloads
+// gets — a dangling symlink included, which O_EXCL rejects as an entry too.
 func fetchAttachment(ctx context.Context, client *confluence.Client, p plannedDownload) bool {
-	// Lstat rather than Stat, so a dangling symlink counts as an entry here —
-	// which is what the O_EXCL create would say about it too.
-	if _, err := os.Lstat(p.dest); err == nil {
-		return true
-	}
 	if _, err := downloadToFile(ctx, client, p.attachment.DownloadLink, p.dest); err != nil {
 		return errors.Is(err, fs.ErrExist)
 	}
