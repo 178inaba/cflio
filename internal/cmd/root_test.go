@@ -450,6 +450,16 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 			args:    []string{"help", "auth", "help"},
 			wantErr: "unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n",
 		},
+		{
+			// The third shape: a command that resolves and has no
+			// subcommands at all, with an argument left over anyway. Neither
+			// Find's error nor the target having subcommands separates it
+			// from `cflio help read`, so a condition built on either would
+			// still render the help here and exit 0, as this did before.
+			name:    "leftover after a command that takes arguments",
+			args:    []string{"help", "read", "123456"},
+			wantErr: `unknown command "123456" for "cflio read"`,
+		},
 	}
 
 	for _, tt := range tests {
