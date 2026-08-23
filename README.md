@@ -231,7 +231,8 @@ stale attachment is left as it is, which only shows up in page exports.
 
 Macros are selected by `ac:local-id`, which Confluence keeps across editor saves (it reissues
 `ac:macro-id` instead). `--name <filename>` is there for convenience and must match exactly one
-macro; a macro with no `ac:local-id` can only be reached that way.
+macro; a macro with no `ac:local-id` can only be reached that way, and passing its empty local-id
+as `--id ''` is refused rather than quietly matched against something else.
 
 One case is refused rather than half-done: a macro with no `ac:local-id` on a **live doc**. The
 live editor matches the storage body back onto its own copy by local-id, so the edit never reaches
