@@ -174,3 +174,81 @@ func TestWriteOverwritesAnExistingSidecar(t *testing.T) {
 		t.Errorf("version = %d, want 8", got.Version)
 	}
 }
+
+// TestSubtypeRoundTripsItsThreeStates pins the distinction the field exists
+// for: a sidecar written before subtype was recorded has to be tellable from
+// one written for a page that has no subtype, because only the first is a
+// reason to ask for a fresh read.
+func TestSubtypeRoundTripsItsThreeStates(t *testing.T) {
+	classic, live := "", "live"
+	for _, tt := range []struct {
+		name    string
+		subtype *string
+		// present is whether the key is expected in the file at all.
+		present bool
+	}{
+		{name: "not recorded", subtype: nil, present: false},
+		{name: "classic page", subtype: &classic, present: true},
+		{name: "live doc", subtype: &live, present: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body := filepath.Join(t.TempDir(), "page.xml")
+			want := testMeta()
+			want.Subtype = tt.subtype
+			if err := Write(body, want); err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
+
+			raw, err := os.ReadFile(Path(body))
+			if err != nil {
+				t.Fatalf("ReadFile() error = %v", err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if _, ok := fields["subtype"]; ok != tt.present {
+				t.Errorf("subtype present in the file = %v, want %v; got %v", ok, tt.present, fields)
+			}
+
+			got, err := Load(body)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			switch {
+			case tt.subtype == nil && got.Subtype != nil:
+				t.Errorf("Load().Subtype = %q, want it unrecorded", *got.Subtype)
+			case tt.subtype != nil && got.Subtype == nil:
+				t.Errorf("Load().Subtype is unrecorded, want %q", *tt.subtype)
+			case tt.subtype != nil && *got.Subtype != *tt.subtype:
+				t.Errorf("Load().Subtype = %q, want %q", *got.Subtype, *tt.subtype)
+			}
+		})
+	}
+}
+
+// TestLoadAcceptsASidecarWithNoSubtype covers the sidecars already on disk:
+// they predate the field, and refusing them would break `update` on a file
+// that was read before this version.
+func TestLoadAcceptsASidecarWithNoSubtype(t *testing.T) {
+	body := filepath.Join(t.TempDir(), "page.xml")
+	const written = `{
+  "page_id": "123456",
+  "version": 7,
+  "title": "Some Page",
+  "status": "current",
+  "page_url": "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Some+Page"
+}
+`
+	if err := os.WriteFile(Path(body), []byte(written), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := Load(body)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Subtype != nil {
+		t.Errorf("Load().Subtype = %q, want it unrecorded", *got.Subtype)
+	}
+}

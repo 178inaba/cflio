@@ -272,11 +272,18 @@ type plannedDownload struct {
 // never named. Base is the local filesystem's idea of a separator, which is
 // the right one — this is a path being built, not a pattern being matched.
 func attachmentDest(title, outDir string) (string, error) {
-	if filepath.Base(title) != title || title == "." || title == ".." {
+	if !isPlainFilename(title) {
 		return "", fmt.Errorf("attachment %q is not a plain filename; "+
 			"refusing to write it outside %s", title, outDir)
 	}
 	return filepath.Join(outDir, title), nil
+}
+
+// isPlainFilename reports whether a name the server supplied can be joined to
+// a directory without escaping it. Every path a page names a file with is
+// checked through here, so the rule cannot be applied in two versions.
+func isPlainFilename(name string) bool {
+	return name != "" && name != "." && name != ".." && filepath.Base(name) == name
 }
 
 // planDownloads resolves where each matched attachment will be written, and

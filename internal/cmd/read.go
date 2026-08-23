@@ -166,6 +166,10 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		Title:   page.Title,
 		Status:  page.Status,
 		PageURL: pageref.PageURL(creds.SiteURL, page.Links.WebUI, page.ID),
+		// Always recorded, empty subtype and all: what the API reported is an
+		// answer, and a caller has to be able to tell it from a sidecar
+		// written before cflio asked the question at all.
+		Subtype: &page.Subtype,
 	}
 
 	result := readResult{
