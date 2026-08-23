@@ -11,6 +11,7 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 
 - The user shares a Confluence URL, or asks what a page says → `cflio read <url> --markdown -o <file>`, then read the file.
 - The user asks you to change something on a page → `cflio read <url> -o <file>` (no `--markdown`), edit the downloaded file, then `cflio update -f <file>`.
+- The user asks you to rename a page → `cflio read <url> -o <file>`, then `cflio update -f <file> --title '<new title>'`. No body edit is needed; the file is resent as it was downloaded.
 - The user asks you to find something in Confluence → `cflio search '<CQL>'`.
 - You need to see how a page fits in the tree, or what people said on it → `cflio children <page>` and `cflio comments <page>`.
 - The task needs the images a page shows → add `--attachments <dir>` to the `read --markdown` above; the body links the files it downloaded, so read those paths.
