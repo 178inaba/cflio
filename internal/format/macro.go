@@ -100,19 +100,22 @@ type macroScan struct {
 }
 
 // openElement is one entry of the scan's element stack: which macro it is, or
-// which of that macro's parameters it opened.
+// which of that macro's parameters it opened. Every index is -1 when it does
+// not apply.
 type openElement struct {
-	macro bool
-	// param indexes macros[macroIndex].Params, or is -1 for an element that
-	// opened no parameter.
-	macroIndex int
-	param      int
+	// macro indexes macros when this element is an ac:structured-macro. It is
+	// what a parameter resolves its owner through, so an enclosing macro is
+	// still found after a nested one has been read and closed.
+	macro int
+	// paramOf and param index macros[paramOf].Params for the parameter this
+	// element opened.
+	paramOf, param int
 }
 
 // start records a start element, appending a macro or a parameter as the
 // element calls for.
 func (sc *macroScan) start(t xml.StartElement) {
-	el := openElement{param: -1}
+	el := openElement{macro: -1, paramOf: -1, param: -1}
 	defer func() { sc.stack = append(sc.stack, el) }()
 
 	if strings.ToLower(t.Name.Space) != "ac" {
@@ -121,17 +124,26 @@ func (sc *macroScan) start(t xml.StartElement) {
 	switch strings.ToLower(t.Name.Local) {
 	case "structured-macro":
 		sc.macros = append(sc.macros, Macro{Name: attrValue(t, "name"), LocalID: attrValue(t, "local-id")})
-		el.macro = true
+		el.macro = len(sc.macros) - 1
 	case "parameter":
 		// Only a direct child counts, matching what the Markdown converter
 		// reads: an ac:parameter deeper inside a macro's body belongs to
 		// whatever holds it, not to the macro.
-		if len(sc.stack) == 0 || !sc.stack[len(sc.stack)-1].macro {
+		//
+		// The owner comes off the stack rather than being the macro most
+		// recently appended: once a nested macro has been read and closed,
+		// those two are different, and the enclosing macro's remaining
+		// parameters are the ones that would go to the wrong macro.
+		if len(sc.stack) == 0 {
+			return
+		}
+		owner := sc.stack[len(sc.stack)-1].macro
+		if owner < 0 {
 			return
 		}
 		// After the start element, InputOffset is the byte just past its ">".
 		start := int(sc.decoder.InputOffset())
-		macro := &sc.macros[len(sc.macros)-1]
+		macro := &sc.macros[owner]
 		macro.Params = append(macro.Params, MacroParam{
 			Name:  attrValue(t, "name"),
 			Start: start,
@@ -143,8 +155,7 @@ func (sc *macroScan) start(t xml.StartElement) {
 			Empty: start >= 2 && sc.storage[start-2:start] == "/>",
 		})
 
-		el.macroIndex = len(sc.macros) - 1
-		el.param = len(macro.Params) - 1
+		el.paramOf, el.param = owner, len(macro.Params)-1
 		sc.text.Reset()
 	}
 }
@@ -172,7 +183,7 @@ func (sc *macroScan) end(end int) {
 		return
 	}
 
-	p := &sc.macros[el.macroIndex].Params[el.param]
+	p := &sc.macros[el.paramOf].Params[el.param]
 	// A synthesized close -- non-strict parsing recovering from an unclosed
 	// tag -- can land before the content started. There is no range to splice
 	// then, so the parameter is marked as having none rather than carrying an

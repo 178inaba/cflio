@@ -181,3 +181,40 @@ func TestMacrosReportsNothingForABodyWithNoMacro(t *testing.T) {
 		t.Errorf("Macros() = %v, want none", macroNames(got))
 	}
 }
+
+// TestMacrosAttributesAParameterFollowingANestedMacro pins the ordering the
+// stack exists for: after a nested macro has been read and closed, the macro
+// most recently appended is no longer the one the next parameter belongs to.
+// Confluence's own serializer writes parameters before a body, so this shape
+// comes from bodies written through the API by other tools -- where getting
+// it wrong would have `set` rewrite bytes inside an unrelated macro.
+func TestMacrosAttributesAParameterFollowingANestedMacro(t *testing.T) {
+	const storage = `<ac:structured-macro ac:name="outer">` +
+		`<ac:rich-text-body><ac:structured-macro ac:name="inner">` +
+		`<ac:parameter ac:name="p">inner value</ac:parameter>` +
+		`</ac:structured-macro></ac:rich-text-body>` +
+		`<ac:parameter ac:name="p">outer value</ac:parameter>` +
+		`</ac:structured-macro>`
+
+	macros := Macros(storage)
+	want := []string{"outer", "inner"}
+	if got := macroNames(macros); !slices.Equal(got, want) {
+		t.Fatalf("Macros() = %v, want %v", got, want)
+	}
+
+	outer, inner := macros[0], macros[1]
+	if p, ok := outer.Param("p"); !ok || p.Value != "outer value" {
+		t.Errorf("outer Param(\"p\") = %q (found %v), want %q", p.Value, ok, "outer value")
+	}
+	if len(inner.Params) != 1 {
+		t.Errorf("inner macro has %d parameters, want 1", len(inner.Params))
+	}
+	if p, ok := inner.Param("p"); !ok || p.Value != "inner value" {
+		t.Errorf("inner Param(\"p\") = %q (found %v), want %q", p.Value, ok, "inner value")
+	}
+	// The ranges have to follow the attribution, or a splice would land in the
+	// other macro.
+	if p, _ := outer.Param("p"); storage[p.Start:p.End] != "outer value" {
+		t.Errorf("outer range = %q, want %q", storage[p.Start:p.End], "outer value")
+	}
+}
