@@ -168,9 +168,9 @@ sent as the `storage` representation, byte for byte — the same representation 
 nothing is converted on the way. Markdown written into that file therefore posts as the literal
 characters you typed. `-f -` reads the body from stdin instead.
 
-Top-level comments only: replies and inline comments are not posted, and there is no `--body`
-string flag — storage XHTML in a single shell argument is a quoting trap, which is the paste this
-command exists to remove.
+Top-level comments only: replies and inline comments are not posted. There is no `--body` string
+flag either: storage XHTML in a single shell argument is a quoting trap, and passing a body through
+one would put back the copy-paste this command exists to remove.
 
 The comment cannot be edited or deleted with `cflio`; do that in the browser.
 

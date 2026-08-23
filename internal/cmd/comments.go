@@ -81,7 +81,7 @@ you typed, not as formatting.
 ` + "`-f -`" + ` reads the body from stdin instead of from a file.
 
 Top-level comments only. This command posts no replies, and no inline
-comment, which have to be anchored to a span of the body.`,
+comments, which have to be anchored to a span of the body.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommentsCreate(cmd, args, g, file, outFormat)
@@ -168,10 +168,10 @@ func readCommentBody(cmd *cobra.Command, file string) ([]byte, error) {
 	return body, nil
 }
 
+// writeCommentResult renders one result per --format, the way
+// writeUpdateResult does. It does not validate the format: its caller hoists
+// that check ahead of posting the comment.
 func writeCommentResult(cmd *cobra.Command, outFormat format.Format, result commentResult) error {
-	if err := outFormat.Validate(); err != nil {
-		return err
-	}
 	if outFormat == format.JSON {
 		return writeJSON(cmd, result)
 	}
