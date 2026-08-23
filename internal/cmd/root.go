@@ -266,8 +266,10 @@ func Execute() int {
 		// cobra reports a mistyped subcommand under a group command by
 		// calling the help function, which has no error to return, so a nil
 		// here is the one thing that can still be hiding a failure (see
-		// runResult.unknownCommand). cobra's own error wins where both are
-		// set, since it is the one that stopped the run.
+		// runResult.unknownCommand). ExecuteC returns nil for the very path
+		// that records one, so the two are never both set; reading the
+		// record only when cobra returned nothing keeps that a property of
+		// the code rather than an assumption about it.
 		err = res.unknownCommand
 	}
 	if err != nil {
