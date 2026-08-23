@@ -184,6 +184,28 @@ func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
 	cmd.MarkFlagsOneRequired("id", "name")
 }
 
+// validatePlantUMLSelector rejects an explicitly empty --id or --name.
+//
+// An empty value would otherwise read as "the flag was not given": selectMacro
+// branches on which of the two is empty, so `--id ""` falls through to
+// matching on --name, and an empty --name matches every macro that carries no
+// filename. That is a path an agent actually takes -- `list --format json`
+// reports "local_id": "" for a macro that has none -- and following it would
+// act on a different diagram without saying so. `update --title` refuses an
+// empty value for the same reason.
+func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
+	if cmd.Flags().Changed("id") && id == "" {
+		return errors.New("--id cannot be empty: a macro that `cflio plantuml list` reports " +
+			"with no local-id carries no ac:local-id to select it by, so name it with " +
+			"--name <filename> instead")
+	}
+	if cmd.Flags().Changed("name") && name == "" {
+		return errors.New("--name cannot be empty: pass the macro's filename parameter, " +
+			"or select it with --id <local-id>")
+	}
+	return nil
+}
+
 // plantUMLFile is a downloaded page body, its sidecar and the PlantUML macros
 // it holds. The three travel together because every subcommand needs all of
 // them: the body to read offsets into, the sidecar to reject a file that was
@@ -419,6 +441,9 @@ func runPlantUMLGet(cmd *cobra.Command, file, id, name, outPath string, outForma
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
+	if err := validatePlantUMLSelector(cmd, id, name); err != nil {
+		return err
+	}
 
 	f, err := loadPlantUMLFile(file)
 	if err != nil {
@@ -497,6 +522,9 @@ type plantUMLRevision struct {
 
 func runPlantUMLSet(cmd *cobra.Command, file, id, name, source string, outFormat format.Format) error {
 	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if err := validatePlantUMLSelector(cmd, id, name); err != nil {
 		return err
 	}
 

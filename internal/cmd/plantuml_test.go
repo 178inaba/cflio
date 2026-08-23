@@ -599,3 +599,71 @@ func TestPlantUMLReportsAFileWithNoDiagramToSelectFrom(t *testing.T) {
 		t.Errorf("error = %q, want it to say %q", err, want)
 	}
 }
+
+// TestPlantUMLRefusesAnEmptySelector covers the value an agent can reach for
+// by accident: `list --format json` reports an empty local_id for a macro that
+// has none, and feeding that straight back to --id used to fall through to
+// matching on an empty --name -- which matches every macro with no filename.
+func TestPlantUMLRefusesAnEmptySelector(t *testing.T) {
+	file := seedDiagramPage(t, classicMeta(),
+		// No filename, so an empty --name would match it, and a local-id, so
+		// selecting it is a different answer from selecting by name.
+		diagramMacro(t, ` ac:local-id="aaa"`, "", "@startuml\nactor User\n@enduml", "1"))
+
+	source := filepath.Join(t.TempDir(), "diagram.puml")
+	if err := os.WriteFile(source, []byte("@startuml\n@enduml"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		selector []string
+		want     string
+	}{
+		{name: "empty id", selector: []string{"--id", ""}, want: "--id cannot be empty"},
+		{name: "empty name", selector: []string{"--name", ""}, want: "--name cannot be empty"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, verb := range []string{"get", "set"} {
+				args := append([]string{"plantuml", verb, "-f", file}, tt.selector...)
+				if verb == "set" {
+					args = append(args, "--source", source)
+				} else {
+					args = append(args, "-o", filepath.Join(t.TempDir(), "out.puml"))
+				}
+
+				_, err := runCflio(t, args...)
+				if err == nil {
+					t.Errorf("plantuml %s error = nil, want a failure", verb)
+					continue
+				}
+				if !strings.Contains(err.Error(), tt.want) {
+					t.Errorf("plantuml %s error = %q, want it to mention %q", verb, err, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// TestPlantUMLGetRefusesAFilenameThatIsNotAPlainName covers the default output
+// name's guard: the filename comes from the page, so it is what could carry a
+// path out of the working directory.
+func TestPlantUMLGetRefusesAFilenameThatIsNotAPlainName(t *testing.T) {
+	file := seedDiagramPage(t, classicMeta(),
+		diagramMacro(t, ` ac:local-id="aaa"`, "../evil.svg", "@startuml\nactor User\n@enduml", "1"))
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// -o is left off, so the filename parameter is what would name the file.
+	_, err := runCflio(t, "plantuml", "get", "-f", file, "--id", "aaa")
+	if err == nil {
+		t.Fatal("plantuml get error = nil, want a failure")
+	}
+	if !strings.Contains(err.Error(), "-o") {
+		t.Errorf("error = %q, want it to point at -o", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "..", "evil.puml")); statErr == nil {
+		t.Error("plantuml get wrote a file outside the working directory")
+	}
+}
