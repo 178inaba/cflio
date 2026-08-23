@@ -107,6 +107,13 @@ func TestReadWritesTheSidecar(t *testing.T) {
 		Status:  "current",
 		PageURL: testPageURL,
 	}
+	// Subtype is a pointer, so comparing the structs would compare addresses.
+	// That it is recorded at all is the part that matters here; the values it
+	// takes are TestReadRecordsThePageSubtype's.
+	if meta.Subtype == nil {
+		t.Error("sidecar records no subtype")
+	}
+	meta.Subtype = nil
 	if meta != want {
 		t.Errorf("sidecar = %+v, want %+v", meta, want)
 	}
@@ -977,5 +984,47 @@ func TestReadMarkdownCountsEveryImageUncheckedWhenTheListingFails(t *testing.T) 
 	}
 	if _, err := os.Lstat("assets"); !os.IsNotExist(err) {
 		t.Errorf("Lstat(assets) error = %v, want the directory left uncreated", err)
+	}
+}
+
+// TestReadRecordsThePageSubtype pins what makes `plantuml set` able to tell a
+// live doc from a classic page offline. The API omits the field for a classic
+// page, and the sidecar has to record that as an answer rather than as a gap.
+func TestReadRecordsThePageSubtype(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// field is what the page response carries, spliced in as JSON.
+		field   string
+		want    string
+		wantKey bool
+	}{
+		{name: "live doc", field: `"subtype": "live",`, want: "live", wantKey: true},
+		{name: "classic page", field: `"subtype": "",`, want: "", wantKey: true},
+		{name: "field absent", field: "", want: "", wantKey: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+			startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+				response := pageResponse(t, "<p>body</p>", testPageWebUI)
+				_, _ = w.Write([]byte("{" + tt.field + strings.TrimPrefix(response, "{")))
+			})
+
+			out := filepath.Join(t.TempDir(), "page.xml")
+			if _, err := runRead(t, "123456", out); err != nil {
+				t.Fatalf("read error = %v", err)
+			}
+
+			meta, err := sidecar.Load(out)
+			if err != nil {
+				t.Fatalf("sidecar.Load() error = %v", err)
+			}
+			if (meta.Subtype != nil) != tt.wantKey {
+				t.Fatalf("sidecar records a subtype = %v, want %v", meta.Subtype != nil, tt.wantKey)
+			}
+			if meta.Subtype != nil && *meta.Subtype != tt.want {
+				t.Errorf("subtype = %q, want %q", *meta.Subtype, tt.want)
+			}
+		})
 	}
 }

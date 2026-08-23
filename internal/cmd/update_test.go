@@ -547,3 +547,32 @@ func TestUpdateSurfacesADuplicateTitle(t *testing.T) {
 		t.Errorf("sidecar = %+v, want it untouched by the failed update", meta)
 	}
 }
+
+// TestUpdateKeepsTheRecordedSubtype covers the field `update` neither sends
+// nor learns anything new about: it rewrites the sidecar from the response,
+// so a subtype dropped here would send the next `plantuml set` back for a
+// fresh read for no reason.
+func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	live := "live"
+	meta := currentMeta()
+	meta.Subtype = &live
+	file := seedReadPage(t, "<p>body</p>", meta)
+
+	stub := &updateStub{serverVersion: 7}
+	startAPI(t, stub.handler(t))
+
+	if _, err := runCflio(t, "update", "-f", file); err != nil {
+		t.Fatalf("update error = %v", err)
+	}
+
+	got, err := sidecar.Load(file)
+	if err != nil {
+		t.Fatalf("sidecar.Load() error = %v", err)
+	}
+	if got.Subtype == nil || *got.Subtype != live {
+		t.Errorf("subtype after update = %v, want %q", got.Subtype, live)
+	}
+}

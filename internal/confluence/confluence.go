@@ -195,9 +195,14 @@ type Version struct {
 // Page is the subset of v2's PageSingle cflio needs. Body holds the raw
 // storage representation exactly as the API returned it.
 type Page struct {
-	ID      string  `json:"id"`
-	Status  string  `json:"status"`
-	Title   string  `json:"title"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Title  string `json:"title"`
+	// Subtype is "live" for a live doc and absent for a classic page. It is
+	// what tells the two apart offline, once `read` has recorded it in the
+	// sidecar: a live doc's editor rewrites the storage body behind cflio's
+	// back, which some edits have to refuse rather than silently lose.
+	Subtype string  `json:"subtype"`
 	Version Version `json:"version"`
 	Body    struct {
 		Storage struct {

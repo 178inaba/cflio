@@ -15,15 +15,25 @@ import (
 // Suffix is appended to the body file's path to get the sidecar's path.
 const Suffix = ".meta.json"
 
-// Meta is the sidecar's contents. Every field is required: page ID and
-// version drive the optimistic lock, title and status are mandatory in the
-// update payload, and the page URL is what selects the profile.
+// Meta is the sidecar's contents. Every field but Subtype is required: page
+// ID and version drive the optimistic lock, title and status are mandatory in
+// the update payload, and the page URL is what selects the profile.
 type Meta struct {
 	PageID  string `json:"page_id"`
 	Version int    `json:"version"`
 	Title   string `json:"title"`
 	Status  string `json:"status"`
 	PageURL string `json:"page_url"`
+	// Subtype is the page's v2 subtype — "live" for a live doc, empty for a
+	// classic page. It is a pointer, and the one optional field, because
+	// three states have to be told apart: a sidecar written before cflio
+	// recorded it (nil, the key absent), a page the API reported no subtype
+	// for (empty, the key present), and a live doc. A plain string would
+	// collapse the first two, and they call for opposite answers — one is a
+	// reason to ask for a fresh read, the other is a settled "not a live
+	// doc". Nothing requires it: a sidecar already on disk has to keep
+	// working with `update`.
+	Subtype *string `json:"subtype,omitempty"`
 }
 
 // Path returns the sidecar path for a body file.
