@@ -71,6 +71,10 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"attachments":          false,
 		"attachments list":     true,
 		"attachments download": true,
+		"plantuml":             false,
+		"plantuml list":        true,
+		"plantuml get":         true,
+		"plantuml set":         true,
 		"auth":                 false,
 		"auth login":           false,
 		"profile":              false,
@@ -135,6 +139,18 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 			// reported. Supplying -f here would drop that guarantee.
 			name: "update, before cobra reports a missing required flag",
 			args: []string{"update", "--format", "bogus"},
+		},
+		{
+			name: "plantuml list, before cobra reports a missing required flag",
+			args: []string{"plantuml", "list", "--format", "bogus"},
+		},
+		{
+			name: "plantuml get, before cobra reports a missing required flag",
+			args: []string{"plantuml", "get", "--format", "bogus"},
+		},
+		{
+			name: "plantuml set, before cobra reports a missing required flag",
+			args: []string{"plantuml", "set", "--format", "bogus"},
 		},
 	}
 
@@ -522,7 +538,7 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 func TestHelpTopicCompletion(t *testing.T) {
 	want := []string{
 		"attachments", "auth", "children", "comments", "completion",
-		"help", "profile", "read", "search", "update",
+		"help", "plantuml", "profile", "read", "search", "update",
 	}
 
 	run, err := runCflio(t, "__complete", "help", "")

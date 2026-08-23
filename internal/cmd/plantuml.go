@@ -1,0 +1,660 @@
+package cmd
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/178inaba/cflio/internal/format"
+	"github.com/178inaba/cflio/internal/plantuml"
+	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/spf13/cobra"
+)
+
+// plantUMLMacroName is the macro the app "PlantUML Diagrams for Confluence"
+// writes. It is the only macro this command group touches.
+const plantUMLMacroName = "plantumlcloud"
+
+// liveSubtype is the v2 subtype of a live doc. Every other page reports an
+// empty subtype.
+const liveSubtype = "live"
+
+// plantUMLPreviewLimit caps `list`'s one-line source preview. The full source
+// is what `get` is for.
+const plantUMLPreviewLimit = 60
+
+func newPlantUMLCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "plantuml",
+		Short: "Read and rewrite the PlantUML diagrams in a downloaded page",
+		Long: `Work with the PlantUML diagrams on a page you have downloaded with
+` + "`cflio read`" + `, without hand-editing the macro's encoded payload.
+
+A ` + "`plantumlcloud`" + ` macro stores its diagram source percent-encoded, deflated
+and base64'd in a data parameter. Producing that by hand is both error-prone
+-- the encoding is the app's own, not PlantUML's public one -- and exactly
+the kind of blob this tool exists to keep out of an agent's context. These
+subcommands read and write it for you:
+
+  cflio read <url> -o page.xml
+  cflio plantuml list -f page.xml
+  cflio plantuml get -f page.xml --id <local-id> -o diagram.puml
+  ...edit diagram.puml with your regular file editing tools...
+  cflio plantuml set -f page.xml --id <local-id> --source diagram.puml
+  cflio update -f page.xml
+
+All three work on the local file and never talk to Confluence; the page is
+only written when you run ` + "`cflio update`" + `. Inserting a new diagram is not
+supported: draw it in the Confluence editor and edit it from here.`,
+	}
+	cmd.AddCommand(newPlantUMLListCmd(), newPlantUMLGetCmd(), newPlantUMLSetCmd())
+	return cmd
+}
+
+func newPlantUMLListCmd() *cobra.Command {
+	var (
+		file      string
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "list -f <file>",
+		Short: "List the PlantUML diagrams in a downloaded page body",
+		Long: `List every plantumlcloud macro in a downloaded page body, in the order it
+appears, with the identifiers ` + "`get`" + ` and ` + "`set`" + ` select one by.
+
+A macro whose payload does not decode is still listed, marked as
+undecodable, so a page can be inspected without the listing hiding what it
+could not read.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runPlantUMLList(cmd, file, outFormat)
+		},
+	}
+
+	addPlantUMLFileFlag(cmd, &file)
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+func newPlantUMLGetCmd() *cobra.Command {
+	var (
+		file      string
+		id        string
+		name      string
+		outPath   string
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "get -f <file> --id <local-id>",
+		Short: "Write one diagram's source to a file",
+		Long: `Decode one diagram's source out of a downloaded page body and write it to
+a file, then print where it went.
+
+The source is never printed: edit the file with your regular file editing
+tools and write it back with ` + "`cflio plantuml set`" + `, the same way a page body
+is edited. It is written exactly as it was decoded, with no trailing newline
+added, so what you edit is the diagram as the page holds it. (` + "`set`" + ` re-encodes
+whatever it is given, so running it on an unedited file still rewrites the
+macro's payload and bumps its revision -- the diagram is the same, the bytes
+are not.)
+
+An existing file at the destination is overwritten, as ` + "`cflio read -o`" + `
+overwrites one -- so do not run this again over a source you have already
+edited.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runPlantUMLGet(cmd, file, id, name, outPath, outFormat)
+		},
+	}
+
+	addPlantUMLFileFlag(cmd, &file)
+	addPlantUMLSelectFlags(cmd, &id, &name)
+	cmd.Flags().StringVarP(&outPath, "output", "o", "",
+		"file to write the diagram source to (default ./<filename without extension>.puml)")
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+func newPlantUMLSetCmd() *cobra.Command {
+	var (
+		file      string
+		id        string
+		name      string
+		source    string
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "set -f <file> --id <local-id> --source <path>",
+		Short: "Replace one diagram's source in a downloaded page body",
+		Long: `Encode a diagram source file into one macro's data parameter, leaving every
+other byte of the page body untouched. Write the page back with
+` + "`cflio update`" + `.
+
+The macro's revision parameter is incremented at the same time, when it has
+one. A diagram drawn in the Confluence editor also exists as a rendered
+attachment on the page, and the viewer keeps showing that attachment for as
+long as the revision matches it -- so without the bump the page would go on
+displaying the old diagram. A macro with no revision parameter has no such
+attachment and is left without one.
+
+The source file is encoded exactly as it is, trailing newline included.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runPlantUMLSet(cmd, file, id, name, source, outFormat)
+		},
+	}
+
+	addPlantUMLFileFlag(cmd, &file)
+	addPlantUMLSelectFlags(cmd, &id, &name)
+	cmd.Flags().StringVar(&source, "source", "",
+		"file holding the new diagram source")
+	if err := cmd.MarkFlagRequired("source"); err != nil {
+		panic(err)
+	}
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+// addPlantUMLFileFlag registers the -f every subcommand takes. It names the
+// downloaded page body, exactly as `update` takes it.
+func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
+	cmd.Flags().StringVarP(file, "file", "f", "",
+		"page body downloaded by cflio read, without --markdown")
+	if err := cmd.MarkFlagRequired("file"); err != nil {
+		panic(err)
+	}
+}
+
+// addPlantUMLSelectFlags registers the two ways to name a macro. Exactly one
+// has to be given: with several diagrams on a page there is no sane default,
+// and picking the first would silently rewrite the wrong one.
+func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
+	cmd.Flags().StringVar(id, "id", "",
+		"ac:local-id of the macro to act on, as cflio plantuml list prints it")
+	cmd.Flags().StringVar(name, "name", "",
+		"filename parameter of the macro to act on; must match exactly one")
+	cmd.MarkFlagsMutuallyExclusive("id", "name")
+	cmd.MarkFlagsOneRequired("id", "name")
+}
+
+// plantUMLFile is a downloaded page body, its sidecar and the PlantUML macros
+// it holds. The three travel together because every subcommand needs all of
+// them: the body to read offsets into, the sidecar to reject a file that was
+// not produced by `read` and to tell a live doc apart, and the macros to
+// select from.
+type plantUMLFile struct {
+	path    string
+	storage string
+	meta    sidecar.Meta
+	macros  []format.Macro
+}
+
+// loadPlantUMLFile reads the body file and its sidecar.
+//
+// The sidecar is loaded even by `list`, which has no use for its contents: it
+// is what refuses a --markdown file, whose Markdown holds no macro to find and
+// could not be written back if it did. sidecar.Load already says that in the
+// words `update` says it in.
+func loadPlantUMLFile(path string) (plantUMLFile, error) {
+	meta, err := sidecar.Load(path)
+	if err != nil {
+		return plantUMLFile{}, err
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return plantUMLFile{}, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	storage := string(body)
+	var macros []format.Macro
+	for _, m := range format.Macros(storage) {
+		if m.Name == plantUMLMacroName {
+			macros = append(macros, m)
+		}
+	}
+	return plantUMLFile{path: path, storage: storage, meta: meta, macros: macros}, nil
+}
+
+// selectMacro resolves --id or --name to the one macro it names, and fails
+// with the candidates listed rather than acting on a guess.
+func (f plantUMLFile) selectMacro(id, name string) (format.Macro, error) {
+	if len(f.macros) == 0 {
+		return format.Macro{}, fmt.Errorf("%s holds no %s macro", f.path, plantUMLMacroName)
+	}
+
+	flag, want := "--id", id
+	match := func(m format.Macro) bool { return m.LocalID == id }
+	if id == "" {
+		flag, want = "--name", name
+		match = func(m format.Macro) bool { return plantUMLFilename(m) == name }
+	}
+
+	var matched []format.Macro
+	for _, m := range f.macros {
+		if match(m) {
+			matched = append(matched, m)
+		}
+	}
+
+	switch len(matched) {
+	case 1:
+		return matched[0], nil
+	case 0:
+		return format.Macro{}, fmt.Errorf("no %s macro in %s has %s %q; the file holds %s",
+			plantUMLMacroName, f.path, flag, want, plantUMLCandidates(f.macros))
+	default:
+		return format.Macro{}, fmt.Errorf("%s %q matches %d macros in %s (%s); name one of them with --id",
+			flag, want, len(matched), f.path, plantUMLCandidates(matched))
+	}
+}
+
+// plantUMLCandidates renders the macros an ambiguous or unmatched selection
+// could have meant, so the next command can be written from the error alone.
+func plantUMLCandidates(macros []format.Macro) string {
+	described := make([]string, 0, len(macros))
+	for _, m := range macros {
+		described = append(described, fmt.Sprintf("%s (%s)", plantUMLLocalID(m), plantUMLName(m)))
+	}
+	return strings.Join(described, ", ")
+}
+
+// plantUMLFilename is the macro's filename parameter, empty when it has none.
+func plantUMLFilename(m format.Macro) string {
+	p, _ := m.Param("filename")
+	return p.Value
+}
+
+// plantUMLLocalID and plantUMLName render the two identifiers for a human
+// reader, standing in for the ones a macro can be missing. Both appear in
+// error messages and in `list`, so the placeholders read the same in each.
+func plantUMLLocalID(m format.Macro) string {
+	if m.LocalID == "" {
+		return "(no local-id)"
+	}
+	return "local-id " + m.LocalID
+}
+
+func plantUMLName(m format.Macro) string {
+	if filename := plantUMLFilename(m); filename != "" {
+		return filename
+	}
+	return "(no filename)"
+}
+
+// plantUMLSource decodes a macro's payload.
+//
+// A compressed parameter that is not "true" is refused rather than guessed
+// at: the value has never been seen on a real page and its payload format is
+// unknown, so writing one would be a diagram nobody wrote. The Markdown
+// conversion draws the same line.
+func plantUMLSource(m format.Macro) (string, error) {
+	if compressed, _ := m.Param("compressed"); compressed.Value != "true" {
+		return "", fmt.Errorf("macro %s has compressed=%q rather than \"true\"; "+
+			"cflio does not know that payload format and will not guess at it",
+			plantUMLLocalID(m), compressed.Value)
+	}
+
+	data, _ := m.Param("data")
+	source, err := plantuml.Decode(data.Value)
+	if err != nil {
+		return "", fmt.Errorf("decode the diagram in macro %s: %w", plantUMLLocalID(m), err)
+	}
+	return source, nil
+}
+
+// plantUMLMacroItem is one macro as `list` reports it.
+type plantUMLMacroItem struct {
+	// LocalID and Filename are empty when the macro carries neither; the
+	// Markdown rendering substitutes a placeholder, the JSON does not, so a
+	// consumer can tell an absent identifier from a literal one.
+	LocalID  string `json:"local_id"`
+	Filename string `json:"filename"`
+	// Revision is the parameter's text rather than a number: it is absent on
+	// a macro that has no rendered attachment, and `set` reports what it did
+	// with it separately.
+	Revision string `json:"revision"`
+	// Decodable says whether the payload could be read at all. Preview is
+	// empty when it could not.
+	Decodable bool   `json:"decodable"`
+	Preview   string `json:"source_preview"`
+}
+
+func (p plantUMLMacroItem) markdown() string {
+	localID, filename, revision := p.LocalID, p.Filename, p.Revision
+	if localID == "" {
+		localID = "(no local-id)"
+	} else {
+		localID = "local-id " + localID
+	}
+	if filename == "" {
+		filename = "(no filename)"
+	}
+	if revision == "" {
+		revision = "no revision"
+	} else {
+		revision = "revision " + revision
+	}
+
+	preview := p.Preview
+	if !p.Decodable {
+		preview = "(source did not decode)"
+	}
+	return fmt.Sprintf("- **%s** %s (%s) — %s", localID, filename, revision, preview)
+}
+
+func runPlantUMLList(cmd *cobra.Command, file string, outFormat format.Format) error {
+	f, err := loadPlantUMLFile(file)
+	if err != nil {
+		return err
+	}
+
+	items := make([]plantUMLMacroItem, 0, len(f.macros))
+	for _, m := range f.macros {
+		revision, _ := m.Param("revision")
+		item := plantUMLMacroItem{
+			LocalID:  m.LocalID,
+			Filename: plantUMLFilename(m),
+			Revision: revision.Value,
+		}
+		if source, err := plantUMLSource(m); err == nil {
+			item.Decodable = true
+			item.Preview = plantUMLPreview(source)
+		}
+		items = append(items, item)
+	}
+
+	return writeList(cmd, outFormat, "diagrams", items, "")
+}
+
+// plantUMLPreview reduces a diagram source to the one line `list` shows.
+//
+// The first line that is not a @start directive is the useful one — every
+// diagram opens with @startuml, so showing that would tell the reader nothing
+// — but a source that is nothing but directives still gets its first line
+// rather than an empty preview.
+func plantUMLPreview(source string) string {
+	var first string
+	for line := range strings.SplitSeq(source, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "@start") {
+			return truncatePreview(line)
+		}
+		if first == "" {
+			first = line
+		}
+	}
+	return truncatePreview(first)
+}
+
+// truncatePreview cuts a preview to length, counting characters rather than
+// bytes so a multi-byte one is never cut in half.
+func truncatePreview(line string) string {
+	runes := []rune(line)
+	if len(runes) <= plantUMLPreviewLimit {
+		return line
+	}
+	return string(runes[:plantUMLPreviewLimit]) + "…"
+}
+
+// plantUMLGetResult is what get prints on success: where the source went,
+// never the source itself.
+type plantUMLGetResult struct {
+	LocalID  string `json:"local_id"`
+	Filename string `json:"filename"`
+	Path     string `json:"path"`
+	Bytes    int    `json:"bytes"`
+}
+
+func runPlantUMLGet(cmd *cobra.Command, file, id, name, outPath string, outFormat format.Format) error {
+	// Validated before the file is read, the way `attachments download`
+	// hoists it: this command writes a file, and reaching the writer with an
+	// unvalidated format would leave one behind on the way to the error.
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+
+	f, err := loadPlantUMLFile(file)
+	if err != nil {
+		return err
+	}
+	m, err := f.selectMacro(id, name)
+	if err != nil {
+		return err
+	}
+	source, err := plantUMLSource(m)
+	if err != nil {
+		return err
+	}
+
+	dest := outPath
+	if dest == "" {
+		if dest, err = plantUMLDest(m); err != nil {
+			return err
+		}
+	}
+	// Written with the page body's writer, so the source lands byte for byte:
+	// a newline added here would travel back into the macro on the next `set`.
+	if err := writeBody(dest, source); err != nil {
+		return err
+	}
+
+	return writePlantUMLResult(cmd, outFormat, plantUMLGetResult{
+		LocalID:  m.LocalID,
+		Filename: plantUMLFilename(m),
+		Path:     dest,
+		Bytes:    len(source),
+	}, fmt.Sprintf("Diagram:  %s (%s)\nSource:   %s (%d bytes)\n",
+		plantUMLName(m), plantUMLLocalID(m), dest, len(source)))
+}
+
+// plantUMLDest names the file `get` writes when -o is left off: the filename
+// parameter with its extension swapped for .puml, or the local-id when the
+// macro has no filename.
+//
+// Both come from the page, which is what makes the check at the end the same
+// one attachmentDest makes: a value carrying a path would put the file
+// somewhere the caller never named.
+func plantUMLDest(m format.Macro) (string, error) {
+	stem := m.LocalID
+	if filename := plantUMLFilename(m); filename != "" {
+		// Only when something is left: a filename that is nothing but an
+		// extension falls back to the local-id rather than to an empty name.
+		if trimmed := strings.TrimSuffix(filename, filepath.Ext(filename)); trimmed != "" {
+			stem = trimmed
+		}
+	}
+	if stem == "" {
+		return "", errors.New("this macro has neither a filename nor an ac:local-id " +
+			"to name the output file after; pass -o")
+	}
+	if filepath.Base(stem) != stem || stem == "." || stem == ".." {
+		return "", fmt.Errorf("%q is not a plain filename, so it cannot name the output file; pass -o", stem)
+	}
+	return stem + ".puml", nil
+}
+
+// plantUMLSetResult is what set prints on success. Revision is nil when the
+// macro carries no revision parameter, which is also what says the page has no
+// rendered attachment of this diagram to out-rank.
+type plantUMLSetResult struct {
+	LocalID  string            `json:"local_id"`
+	Filename string            `json:"filename"`
+	Path     string            `json:"path"`
+	Bytes    int               `json:"bytes"`
+	Revision *plantUMLRevision `json:"revision,omitempty"`
+}
+
+type plantUMLRevision struct {
+	From int `json:"from"`
+	To   int `json:"to"`
+}
+
+func runPlantUMLSet(cmd *cobra.Command, file, id, name, source string, outFormat format.Format) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+
+	f, err := loadPlantUMLFile(file)
+	if err != nil {
+		return err
+	}
+	m, err := f.selectMacro(id, name)
+	if err != nil {
+		return err
+	}
+	// Checked before anything is written, and before the source is even read:
+	// the payload format has to be one cflio can read back, or the next `get`
+	// would fail on a diagram cflio itself wrote.
+	if _, err := plantUMLSource(m); err != nil {
+		return err
+	}
+	if err := f.checkReachable(m); err != nil {
+		return err
+	}
+
+	diagram, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", source, err)
+	}
+	data, err := plantuml.Encode(string(diagram))
+	if err != nil {
+		return err
+	}
+
+	edits, revision, err := plantUMLEdits(m, data)
+	if err != nil {
+		return err
+	}
+	if err := writeBody(f.path, applyStorageEdits(f.storage, edits)); err != nil {
+		return err
+	}
+
+	rendered := fmt.Sprintf("Diagram:  %s (%s)\nUpdated:  %s (%d bytes of source)\n",
+		plantUMLName(m), plantUMLLocalID(m), f.path, len(diagram))
+	if revision != nil {
+		rendered += fmt.Sprintf("Revision: %d -> %d\n", revision.From, revision.To)
+	} else {
+		rendered += "Revision: none (this macro has no revision parameter)\n"
+	}
+	rendered += "Write the page back with `cflio update -f " + f.path + "`.\n"
+
+	return writePlantUMLResult(cmd, outFormat, plantUMLSetResult{
+		LocalID:  m.LocalID,
+		Filename: plantUMLFilename(m),
+		Path:     f.path,
+		Bytes:    len(diagram),
+		Revision: revision,
+	}, rendered)
+}
+
+// checkReachable refuses the one macro a storage edit cannot reach: one with
+// no ac:local-id on a live doc.
+//
+// The live doc's editor keeps its own copy of the document and matches the
+// storage body back onto it by local-id. A macro without one is not matched:
+// the change never reaches what the editor and the viewer render, and the next
+// autosave writes the old macro back over the storage body. Refusing is the
+// only honest answer — an update that reports success and then silently
+// reverts is worse than one that never ran.
+func (f plantUMLFile) checkReachable(m format.Macro) error {
+	if m.LocalID != "" {
+		return nil
+	}
+
+	if f.meta.Subtype == nil {
+		return fmt.Errorf("macro %s in %s has no ac:local-id, and the sidecar does not say whether "+
+			"the page is a live doc -- it was written before cflio recorded that. "+
+			"Run `cflio read` on the page again and redo the edit on the fresh file",
+			plantUMLName(m), f.path)
+	}
+	if *f.meta.Subtype == liveSubtype {
+		return fmt.Errorf("macro %s has no ac:local-id and %s is a live doc, "+
+			"so a change to it through the storage body never reaches the rendered document "+
+			"and is overwritten by the next edit in Confluence. "+
+			"Open the diagram in the Confluence editor and save it once, which gives the macro an "+
+			"ac:local-id, then read the page again and retry",
+			plantUMLName(m), f.meta.PageURL)
+	}
+	return nil
+}
+
+// storageEdit is one byte range of a storage body and what replaces it.
+type storageEdit struct {
+	start, end int
+	value      string
+}
+
+// plantUMLEdits works out what set has to rewrite, and reports the revision
+// change for the caller to print.
+func plantUMLEdits(m format.Macro, data string) ([]storageEdit, *plantUMLRevision, error) {
+	dataParam, ok := m.Param("data")
+	if !ok || dataParam.Empty {
+		// Only reachable on a macro cflio would refuse to read, since a
+		// decodable one has a data parameter by definition. Reported rather
+		// than assumed away, because writing one is a different feature:
+		// cflio does not insert diagrams.
+		return nil, nil, fmt.Errorf("macro %s has no data parameter to replace", plantUMLLocalID(m))
+	}
+	edits := []storageEdit{{start: dataParam.Start, end: dataParam.End, value: data}}
+
+	revisionParam, ok := m.Param("revision")
+	if !ok {
+		return edits, nil, nil
+	}
+	// A parameter that is there but unreadable is not treated as absent:
+	// leaving it alone would leave the viewer showing the old diagram, which
+	// is the failure this command exists to prevent.
+	current, err := strconv.Atoi(revisionParam.Value)
+	if revisionParam.Empty || err != nil || current < 0 {
+		return nil, nil, fmt.Errorf("macro %s has revision=%q, which is not a number to increment; "+
+			"fix it in the page body first", plantUMLLocalID(m), revisionParam.Value)
+	}
+	edits = append(edits, storageEdit{
+		start: revisionParam.Start,
+		end:   revisionParam.End,
+		value: strconv.Itoa(current + 1),
+	})
+	return edits, &plantUMLRevision{From: current, To: current + 1}, nil
+}
+
+// applyStorageEdits splices every edit into the body, back to front so an
+// earlier replacement never shifts a later one's offsets.
+//
+// Splicing rather than re-serializing the parsed body is what keeps the rest
+// of the page byte-identical: a page holds macros, layouts and markup this
+// tool has no model of, and rewriting it from a model would quietly normalise
+// all of them.
+func applyStorageEdits(storage string, edits []storageEdit) string {
+	slices.SortFunc(edits, func(a, b storageEdit) int { return cmp.Compare(b.start, a.start) })
+	for _, e := range edits {
+		storage = storage[:e.start] + e.value + storage[e.end:]
+	}
+	return storage
+}
+
+// writePlantUMLResult prints payload as JSON or rendered as the caller
+// prepared it. The two forms are built by the caller because they say
+// different things: the JSON is the result's fields, the Markdown is a
+// human-readable summary with what to run next.
+func writePlantUMLResult(cmd *cobra.Command, outFormat format.Format, payload any, rendered string) error {
+	if outFormat == format.JSON {
+		return writeJSON(cmd, payload)
+	}
+	_, err := fmt.Fprint(cmd.OutOrStdout(), rendered)
+	return err
+}
