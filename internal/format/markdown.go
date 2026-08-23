@@ -1,19 +1,16 @@
 package format
 
 import (
-	"bytes"
 	"cmp"
-	"compress/flate"
-	"encoding/base64"
 	"encoding/xml"
-	"io"
 	"maps"
-	"net/url"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/178inaba/cflio/internal/plantuml"
 )
 
 // PageRef names a page the way storage links to one: by space key and title,
@@ -627,42 +624,19 @@ func (n *node) childNodes() []*node {
 
 // plantUMLSource decodes the diagram source a plantumlcloud macro carries in
 // its data parameter, reporting false for anything it cannot get all the way
-// through. The encoding is the app's own and undocumented, so only the shape
-// observed on a real page is decoded: a compressed value other than "true"
-// has never been seen and its payload format is unknown, which makes guessing
-// at it a way to emit a diagram nobody wrote.
+// through. The decoding itself belongs to internal/plantuml, which owns the
+// encoder too, so the two directions cannot drift apart.
+//
+// The compressed parameter stays here because it is what says the payload is
+// in that format at all: a value other than "true" has never been seen on a
+// real page and its format is unknown, which makes guessing at it a way to
+// emit a diagram nobody wrote.
 func plantUMLSource(n *node) (string, bool) {
 	if macroParameter(n, "compressed") != "true" {
 		return "", false
 	}
-	data := macroParameter(n, "data")
-	if data == "" {
-		return "", false
-	}
 
-	// Standard base64, not PlantUML's own URL-safe alphabet: the payload
-	// carries + and /.
-	//
-	// Padding is unreliable: a real page can carry a data value with no =
-	// padding (#37). Neither Encoding alone accepts both shapes, so any
-	// padding is trimmed first and the rest is decoded raw.
-	deflated, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(data, "="))
-	if err != nil {
-		return "", false
-	}
-
-	// Raw deflate, with neither a zlib nor a gzip header. Not closing the
-	// reader loses nothing: it wraps a buffer, and ReadAll already surfaces a
-	// truncated or corrupt stream as an error.
-	escaped, err := io.ReadAll(flate.NewReader(bytes.NewReader(deflated)))
-	if err != nil {
-		return "", false
-	}
-
-	// PathUnescape rather than QueryUnescape, because a + in the inflated
-	// source is a plus sign and not a space. Non-ASCII is percent-encoded too,
-	// so what comes out is UTF-8 text.
-	source, err := url.PathUnescape(string(escaped))
+	source, err := plantuml.Decode(macroParameter(n, "data"))
 	if err != nil {
 		return "", false
 	}
