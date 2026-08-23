@@ -2,15 +2,27 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
+// runCommentsCmd runs `comments list` with an explicit --limit.
+//
+// runLimitCmd cannot express this: its name parameter becomes a single argv
+// token, and this command's name is two. --limit=N rather than --limit N for
+// the same reason it gives — the range check is tested with negative values,
+// which would otherwise be read as flags rather than as the value.
 func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
-	return runLimitCmd(t, "comments", arg, limit, extra...)
+
+	args := append([]string{"comments", "list", fmt.Sprintf("--limit=%d", limit)}, extra...)
+	return runCflio(t, append(args, arg)...)
 }
 
 // commentsAPI routes the four calls comments makes: the two root listings
@@ -263,5 +275,168 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 
 	if _, err := runCommentsCmd(t, testPageURL, maxLimit+1); err == nil {
 		t.Error("comments error = nil for an oversized --limit, want an error")
+	}
+}
+
+// createCommentAPI answers the one POST `comments create` makes, recording
+// the raw request body so a test can assert on what actually travelled
+// rather than on what a decoder made of it.
+func createCommentAPI(t *testing.T, raw *string) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/footer-comments") {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll() error = %v", err)
+			return
+		}
+		*raw = string(body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"id":"c9","_links":{"webui":"`+testPageWebUI+`?focusedCommentId=c9"}}`)
+	}
+}
+
+// writeCommentFile writes a comment body to a temporary file and returns its
+// path.
+func writeCommentFile(t *testing.T, body string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "note.xml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
+}
+
+// commentBodySent returns the body value out of a recorded request payload.
+func commentBodySent(t *testing.T, raw string) string {
+	t.Helper()
+
+	var sent struct {
+		PageID string `json:"pageId"`
+		Body   struct {
+			Representation string `json:"representation"`
+			Value          string `json:"value"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(raw), &sent); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v; payload = %q", err, raw)
+	}
+	if sent.PageID != "123456" {
+		t.Errorf("pageId = %q, want the page the command addressed", sent.PageID)
+	}
+	if sent.Body.Representation != "storage" {
+		t.Errorf("representation = %q, want storage", sent.Body.Representation)
+	}
+	return sent.Body.Value
+}
+
+// TestCommentsCreateSendsTheFileUnchanged covers the reason this command
+// exists: a note written as storage XHTML has to reach Confluence as the
+// markup it is, not as text describing it.
+func TestCommentsCreateSendsTheFileUnchanged(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	body := `<ac:structured-macro ac:name="info"><ac:rich-text-body><p>a &amp; b</p>` +
+		`</ac:rich-text-body></ac:structured-macro>`
+	var raw string
+	startAPI(t, createCommentAPI(t, &raw))
+
+	run, err := runCflio(t, "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
+	if err != nil {
+		t.Fatalf("comments create error = %v", err)
+	}
+
+	if got := commentBodySent(t, raw); got != body {
+		t.Errorf("body = %q, want it byte-identical to %q", got, body)
+	}
+	for _, want := range []string{"c9", "123456", testPageURL} {
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
+		}
+	}
+}
+
+func TestCommentsCreateReadsTheBodyFromStdin(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	body := "<p>from stdin</p>"
+	var raw string
+	startAPI(t, createCommentAPI(t, &raw))
+
+	if _, err := runCflioWithStdin(t, body, "comments", "create", testPageURL, "-f", "-"); err != nil {
+		t.Fatalf("comments create error = %v", err)
+	}
+	if got := commentBodySent(t, raw); got != body {
+		t.Errorf("body = %q, want the bytes read from stdin (%q)", got, body)
+	}
+}
+
+// TestCommentsCreateAcceptsABarePageID pins the page-addressing parity the
+// other commands have: an id names the same page a URL does.
+func TestCommentsCreateAcceptsABarePageID(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	var raw string
+	startAPI(t, createCommentAPI(t, &raw))
+
+	run, err := runCflio(t, "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
+	if err != nil {
+		t.Fatalf("comments create error = %v", err)
+	}
+	if got := commentBodySent(t, raw); got != "<p>note</p>" {
+		t.Errorf("body = %q, want the file's contents", got)
+	}
+	if !strings.Contains(run.stdout, "c9") {
+		t.Errorf("output = %q, want the created comment id", run.stdout)
+	}
+}
+
+func TestCommentsCreateJSONOutput(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	var raw string
+	startAPI(t, createCommentAPI(t, &raw))
+
+	run, err := runCflio(t, "comments", "create", testPageURL,
+		"-f", writeCommentFile(t, "<p>note</p>"), "--format", "json")
+	if err != nil {
+		t.Fatalf("comments create error = %v", err)
+	}
+
+	var got commentResult
+	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(output) error = %v; output = %q", err, run.stdout)
+	}
+	if got.CommentID != "c9" || got.PageID != "123456" {
+		t.Errorf("result = %+v, want the created comment and its page", got)
+	}
+	if !strings.HasPrefix(got.CommentURL, testPageURL) {
+		t.Errorf("comment url = %q, want it under the page URL", got.CommentURL)
+	}
+}
+
+// TestCommentsCreateSendsNothingForAnUnreadableFile pins that the read comes
+// first: a comment cannot be taken back, so a missing file has to fail before
+// anything is posted.
+func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the API was called despite an unreadable body file: %s %s", r.Method, r.URL.Path)
+	})
+
+	missing := filepath.Join(t.TempDir(), "missing.xml")
+	if _, err := runCflio(t, "comments", "create", testPageURL, "-f", missing); err == nil {
+		t.Error("comments create error = nil for a missing file, want an error")
 	}
 }

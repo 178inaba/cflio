@@ -20,6 +20,14 @@ const defaultTimeout = 90 * time.Second
 // stderr. Sibling repos use it for the same purpose.
 const timeoutExitCode = 124
 
+// unknownCommandHint is the Annotations key a command carries to add a line
+// to the error a mistyped subcommand under it is reported with. It exists for
+// the intent cobra's suggestions cannot reach: they compare the argument
+// against subcommand names, so an argument that is not a misspelling of one —
+// a page id passed to a command that used to take one — gets nothing offered
+// for it.
+const unknownCommandHint = "cflio_unknown_command_hint"
+
 // globalFlags holds the root's persistent flags. Every subcommand that reads
 // one takes this pointer, so the flag names stay type-checked instead of
 // being looked up by string at each site.
@@ -199,6 +207,16 @@ func unknownCommandError(cmd *cobra.Command, arg string) error {
 		for _, candidate := range candidates {
 			fmt.Fprintf(&suggestions, "\t%v\n", candidate)
 		}
+	}
+	// After the candidates, so the machine-generated guess stays next to the
+	// argument it was derived from and the hint reads as the closing word.
+	// The candidate block already ends in a newline, so only one more is
+	// needed to leave the same blank line either way.
+	if hint := cmd.Annotations[unknownCommandHint]; hint != "" {
+		if suggestions.Len() == 0 {
+			suggestions.WriteString("\n")
+		}
+		fmt.Fprintf(&suggestions, "\n%s", hint)
 	}
 	return fmt.Errorf("unknown command %q for %q%s", arg, cmd.CommandPath(), suggestions.String())
 }
