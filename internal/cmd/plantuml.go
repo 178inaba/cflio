@@ -705,9 +705,10 @@ func plantUMLEdits(m format.Macro, data string) ([]storageEdit, *plantUMLRevisio
 	dataParam, ok := m.Param("data")
 	if !ok || dataParam.Empty {
 		// Only reachable on a macro cflio would refuse to read, since a
-		// decodable one has a data parameter by definition. Reported rather
-		// than assumed away, because writing one is a different feature:
-		// cflio does not insert diagrams.
+		// decodable one has a data parameter by definition -- and one `add`
+		// wrote always has it. Reported rather than assumed away, because
+		// adding the parameter to someone else's macro is a guess about what
+		// that macro is, which `set` does not make.
 		return nil, nil, fmt.Errorf("macro %s has no data parameter to replace", plantUMLLocalID(m.LocalID))
 	}
 	edits := []storageEdit{{start: dataParam.Start, end: dataParam.End, value: data}}

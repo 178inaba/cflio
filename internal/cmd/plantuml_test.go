@@ -969,7 +969,8 @@ func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 		t.Fatalf("Unmarshal() error = %v; output was %s", err, run.stdout)
 	}
 	if added.Filename != "d.svg" || added.Path != file || added.Bytes != len("@startuml\nactor User\n@enduml") {
-		t.Errorf("result = %+v, want d.svg / %s / 27 bytes", added, file)
+		t.Errorf("result = %+v, want d.svg / %s / %d bytes",
+			added, file, len("@startuml\nactor User\n@enduml"))
 	}
 
 	// The reported id has to select the new macro, not merely resemble one.
@@ -989,5 +990,24 @@ func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 	}
 	if want := "@startuml\nactor Admin\n@enduml"; string(got) != want {
 		t.Errorf("round-tripped source = %q, want %q", got, want)
+	}
+}
+
+// TestPlantUMLAddAcceptsALiveDoc pins the absence of a guard rather than its
+// presence. `set` refuses a macro with no ac:local-id on a live doc, because a
+// change to one never reaches the rendered document; `add` needs no equivalent
+// precisely because the macro it writes always carries a local-id. Extending
+// that refusal down the shared load path would break adding a diagram on the
+// page type the command matters most on.
+func TestPlantUMLAddAcceptsALiveDoc(t *testing.T) {
+	const before = "<p>before</p>"
+	file := seedReadPage(t, before, liveMeta())
+
+	macro, _ := addedMacro(t, file, before, len(before),
+		"--source", seedDiagramSource(t, "d.puml", "@startuml\n@enduml"))
+
+	if macro.LocalID == "" {
+		t.Error("the macro added to a live doc carries no ac:local-id, " +
+			"so no later edit through the storage body would reach it")
 	}
 }
