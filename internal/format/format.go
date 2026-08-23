@@ -3,13 +3,16 @@
 // storage-XHTML to Markdown conversion, search highlight-marker stripping
 // and indentation.
 //
-// Nothing here is part of an edit round-trip. A page body that will be
-// written back is read from and written to a file untouched, so that path
-// stays byte-lossless; the conversions in this package produce output for
-// reading only. ToMarkdown serves both readers of a storage body: `read
-// --markdown`, whose output carries no sidecar and cannot be updated, and
-// comment bodies, which arrive as storage XHTML because the comment
-// endpoints refuse body-format=view.
+// Nothing here rewrites a body. A page body that will be written back is read
+// from and written to a file untouched, so that path stays byte-lossless; the
+// conversions in this package produce output for reading only, and Macros --
+// the one thing here an edit does consult — reports where a macro's
+// parameters sit and leaves the writing to its caller.
+//
+// ToMarkdown serves both readers of a storage body: `read --markdown`, whose
+// output carries no sidecar and cannot be updated, and comment bodies, which
+// arrive as storage XHTML because the comment endpoints refuse
+// body-format=view.
 package format
 
 import (
