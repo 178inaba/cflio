@@ -75,6 +75,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"plantuml list":        true,
 		"plantuml get":         true,
 		"plantuml set":         true,
+		"plantuml add":         true,
 		"auth":                 false,
 		"auth login":           false,
 		"profile":              false,

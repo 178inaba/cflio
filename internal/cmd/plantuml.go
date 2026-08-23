@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -44,11 +46,16 @@ subcommands read and write it for you:
   cflio plantuml set -f page.xml --id <local-id> --source diagram.puml
   cflio update -f page.xml
 
-All three work on the local file and never talk to Confluence; the page is
-only written when you run ` + "`cflio update`" + `. Inserting a new diagram is not
-supported: draw it in the Confluence editor and edit it from here.`,
+` + "`add`" + ` puts a new diagram on the page the same way, building the whole
+macro element out of a source file:
+
+  cflio plantuml add -f page.xml --source diagram.puml
+  cflio update -f page.xml
+
+All four work on the local file and never talk to Confluence; the page is
+only written when you run ` + "`cflio update`" + `.`,
 	}
-	cmd.AddCommand(newPlantUMLListCmd(), newPlantUMLGetCmd(), newPlantUMLSetCmd())
+	cmd.AddCommand(newPlantUMLListCmd(), newPlantUMLGetCmd(), newPlantUMLSetCmd(), newPlantUMLAddCmd())
 	return cmd
 }
 
@@ -157,6 +164,62 @@ The source file is encoded exactly as it is, trailing newline included.`,
 	if err := cmd.MarkFlagRequired("source"); err != nil {
 		panic(err)
 	}
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+func newPlantUMLAddCmd() *cobra.Command {
+	var (
+		file      string
+		source    string
+		after     string
+		filename  string
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "add -f <file> --source <path>",
+		Short: "Insert a new PlantUML diagram into a downloaded page body",
+		Long: `Build a plantumlcloud macro around a diagram source file and splice it into
+a downloaded page body, then print the new macro's ac:local-id so ` + "`set`" + ` can
+address it. Write the page back with ` + "`cflio update`" + `.
+
+The whole element is written here rather than by hand, because one part of
+it cannot be left out and has no visible symptom. Confluence keeps the
+identifiers it is given, and back-fills ` + "`ac:macro-id`" + ` when it is missing --
+but it does not back-fill ` + "`ac:local-id`" + `. A macro inserted without one
+renders, and then can never be changed through the storage body again on a
+live doc: the edit does not reach the document the editor and viewer render,
+and the next autosave writes the old macro back. Both ids are generated here
+for that reason.
+
+Without ` + "`--after`" + ` the macro is appended at the end of the body. ` + "`--after`" + `
+puts it directly after the element carrying that identifier -- Confluence
+stamps ` + "`local-id`" + ` on block elements and ` + "`ac:local-id`" + ` on macros, and either
+is accepted, so ` + "`cflio plantuml list`" + ` names the anchors for placing a diagram
+beside an existing one. Every other byte of the file is left untouched.
+
+The ` + "`filename`" + ` parameter defaults to the source file's name with its
+extension replaced by ` + "`.svg`" + `. The app names the attachments it creates after
+it when someone later saves the diagram in the editor; the viewer renders
+without it.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runPlantUMLAdd(cmd, file, source, after, filename, outFormat)
+		},
+	}
+
+	addPlantUMLFileFlag(cmd, &file)
+	cmd.Flags().StringVar(&source, "source", "",
+		"file holding the diagram source to insert")
+	if err := cmd.MarkFlagRequired("source"); err != nil {
+		panic(err)
+	}
+	cmd.Flags().StringVar(&after, "after", "",
+		"local-id of the element to insert the diagram after (default: append to the body)")
+	cmd.Flags().StringVar(&filename, "filename", "",
+		"filename parameter for the new macro (default: the source file's name with a .svg extension)")
 	addFormatFlag(cmd, &outFormat)
 
 	return cmd
@@ -693,6 +756,225 @@ func writePlantUMLSetResult(cmd *cobra.Command, outFormat format.Format, result 
 	} else {
 		out.WriteString("Revision: none (this macro has no revision parameter)\n")
 	}
+	fmt.Fprintf(&out, "Write the page back with `cflio update -f %s`.\n", result.Path)
+
+	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
+	return err
+}
+
+// plantUMLAddResult is what add prints on success. LocalID is what the caller
+// needs next: it is the identifier `get` and `set` select this diagram by, and
+// nothing else on the page names it.
+type plantUMLAddResult struct {
+	LocalID  string `json:"local_id"`
+	Filename string `json:"filename"`
+	Path     string `json:"path"`
+	Bytes    int    `json:"bytes"`
+	// After is the anchor the macro was inserted behind, empty when it was
+	// appended at the end of the body.
+	After string `json:"after,omitempty"`
+}
+
+func runPlantUMLAdd(cmd *cobra.Command, file, source, after, filename string, outFormat format.Format) error {
+	// Everything that can fail is resolved before the body is written, so a
+	// refusal leaves the file exactly as `read` left it -- a half-applied
+	// insertion is not something a re-run can reason about.
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+	if err := validatePlantUMLAddFlags(cmd, after, filename); err != nil {
+		return err
+	}
+
+	f, err := loadPlantUMLFile(file)
+	if err != nil {
+		return err
+	}
+	filename, err = plantUMLDiagramFilename(filename, source)
+	if err != nil {
+		return err
+	}
+	at, err := plantUMLInsertAt(f, after)
+	if err != nil {
+		return err
+	}
+
+	diagram, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", source, err)
+	}
+	data, err := plantuml.Encode(string(diagram))
+	if err != nil {
+		return err
+	}
+
+	element, localID, err := plantUMLElement(filename, data)
+	if err != nil {
+		return err
+	}
+	// A zero-width edit: applyStorageEdits copies the body up to the
+	// insertion point and resumes at the same offset, so the rest of the page
+	// survives byte for byte without this having to check that it did.
+	edits := []storageEdit{{start: at, end: at, value: element}}
+	if err := writeBody(f.path, applyStorageEdits(f.storage, edits)); err != nil {
+		return err
+	}
+
+	return writePlantUMLAddResult(cmd, outFormat, plantUMLAddResult{
+		LocalID:  localID,
+		Filename: filename,
+		Path:     f.path,
+		Bytes:    len(diagram),
+		After:    after,
+	})
+}
+
+// validatePlantUMLAddFlags rejects an explicitly empty --after or --filename.
+//
+// An empty value reads as "the flag was not given", and for both flags that is
+// a different command: an empty --after would append at the end of the body
+// rather than beside the element the caller meant, and an empty --filename
+// would be derived from the source instead. Neither is worth guessing at, for
+// the reason validatePlantUMLSelector refuses an empty --id.
+func validatePlantUMLAddFlags(cmd *cobra.Command, after, filename string) error {
+	if cmd.Flags().Changed("after") && after == "" {
+		return errors.New("--after cannot be empty: pass the local-id of the element to insert " +
+			"the diagram after, or leave --after off to append it at the end of the body")
+	}
+	if cmd.Flags().Changed("filename") && filename == "" {
+		return errors.New("--filename cannot be empty: pass the name the diagram's attachments " +
+			"should take, or leave --filename off to derive it from the source file")
+	}
+	return nil
+}
+
+// plantUMLDiagramFilename settles the filename parameter: the --filename value
+// when one was given, otherwise the source file's name with its extension
+// replaced by .svg -- the extension the app gives the diagram it renders.
+//
+// Either way the result is checked the way plantUMLDest checks the value it
+// reads back: `get` names its default output file after this parameter, so a
+// value carrying a path would be written here and refused there.
+func plantUMLDiagramFilename(flag, source string) (string, error) {
+	if flag != "" {
+		if !isPlainFilename(flag) {
+			return "", fmt.Errorf("--filename %q is not a plain filename; "+
+				"it names the attachments the app creates for this diagram, and "+
+				"`cflio plantuml get` names its default output file after it", flag)
+		}
+		return flag, nil
+	}
+
+	base := filepath.Base(source)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem == "" || !isPlainFilename(stem) {
+		return "", fmt.Errorf("%q has no name to build the diagram's filename out of; "+
+			"pass --filename <name>", source)
+	}
+	return stem + ".svg", nil
+}
+
+// plantUMLInsertAt resolves where the new macro goes: just past the end tag of
+// the element --after names, or the end of the body when it names nothing.
+func plantUMLInsertAt(f plantUMLFile, after string) (int, error) {
+	if after == "" {
+		return len(f.storage), nil
+	}
+
+	ends := format.ElementEnds(f.storage, after)
+	switch len(ends) {
+	case 1:
+		return ends[0], nil
+	case 0:
+		return 0, fmt.Errorf("no element in %s has --after %q; "+
+			"anchor on a macro's ac:local-id, as `cflio plantuml list` prints it, "+
+			"or on a block element's local-id", f.path, after)
+	default:
+		// Confluence does not write a body with one identifier on two
+		// elements, but inserting after the first of them would put the
+		// diagram somewhere the caller never named.
+		return 0, fmt.Errorf("--after %q matches %d elements in %s; "+
+			"anchor on an identifier only one element carries", after, len(ends), f.path)
+	}
+}
+
+// plantUMLElement renders the macro, and reports the ac:local-id it generated.
+//
+// The shape is the editor's, whitespace and all: attributes in the order
+// Confluence writes them, no whitespace between the children, and the five
+// parameters an editor-created macro carries. Only data and compressed are
+// needed to render, but writing what the app writes keeps a page cflio added a
+// diagram to indistinguishable from one drawn in the editor.
+func plantUMLElement(filename, data string) (string, string, error) {
+	localID, err := newUUID()
+	if err != nil {
+		return "", "", err
+	}
+	// Generated separately: Confluence keeps both ids it is given, and the
+	// two identify different things -- ac:local-id survives editor saves,
+	// ac:macro-id is reissued by them.
+	macroID, err := newUUID()
+	if err != nil {
+		return "", "", err
+	}
+
+	var out strings.Builder
+	fmt.Fprintf(&out, `<ac:structured-macro ac:name=%q ac:schema-version="1" data-layout="default"`+
+		` ac:local-id=%q ac:macro-id=%q>`, plantUMLMacroName, localID, macroID)
+	plantUMLParameter(&out, "toolbar", "bottom")
+	plantUMLParameter(&out, "filename", filename)
+	plantUMLParameter(&out, "data", data)
+	plantUMLParameter(&out, "compressed", "true")
+	// A new diagram has no rendered attachment for the viewer to prefer, so
+	// it starts where the editor starts one; `set` takes it from there.
+	plantUMLParameter(&out, "revision", "1")
+	out.WriteString(`</ac:structured-macro>`)
+	return out.String(), localID, nil
+}
+
+// plantUMLParameter writes one ac:parameter, escaping the value.
+//
+// Only filename can carry a character that needs escaping -- the payload is
+// base64 and the rest are literals -- but escaping every value is what keeps
+// that from having to be re-checked whenever a parameter is added.
+func plantUMLParameter(out *strings.Builder, name, value string) {
+	fmt.Fprintf(out, `<ac:parameter ac:name=%q>`, name)
+	// The error is the writer's, and a strings.Builder does not fail.
+	_ = xml.EscapeText(out, []byte(value))
+	out.WriteString(`</ac:parameter>`)
+}
+
+// newUUID returns a random version-4 UUID in the lower-case hyphenated form
+// Confluence writes its own identifiers in.
+//
+// Written out rather than taken from a library: it is a dozen lines, and cflio
+// is otherwise a module with no dependency beyond cobra.
+func newUUID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate an identifier for the new macro: %w", err)
+	}
+	// Version 4 in the high nibble of byte 6, and the RFC 4122 variant in the
+	// top bits of byte 8.
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+func writePlantUMLAddResult(cmd *cobra.Command, outFormat format.Format, result plantUMLAddResult) error {
+	if outFormat == format.JSON {
+		return writeJSON(cmd, result)
+	}
+
+	position := "end of the body"
+	if result.After != "" {
+		position = "after local-id " + result.After
+	}
+
+	var out strings.Builder
+	fmt.Fprintf(&out, "Diagram:  %s (%s)\nAdded:    %s (%d bytes of source)\nPosition: %s\n",
+		plantUMLName(result.Filename), plantUMLLocalID(result.LocalID),
+		result.Path, result.Bytes, position)
 	fmt.Fprintf(&out, "Write the page back with `cflio update -f %s`.\n", result.Path)
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
