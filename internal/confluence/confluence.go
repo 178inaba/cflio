@@ -355,6 +355,42 @@ func (c *Client) CommentReplies(ctx context.Context, kind CommentKind, commentID
 	return paginate[Comment](ctx, c, path, query, limit, nil)
 }
 
+// createCommentRequest is the payload that posts a top-level comment.
+//
+// parentCommentId, which would make it a reply, is deliberately absent: the
+// API takes it as an alternative to pageId rather than in addition to one, so
+// a reply is a different request shape and not an extra field to leave empty.
+type createCommentRequest struct {
+	PageID string      `json:"pageId"`
+	Body   commentBody `json:"body"`
+}
+
+// commentBody is the representation-tagged body a comment is written with.
+type commentBody struct {
+	Representation string `json:"representation"`
+	Value          string `json:"value"`
+}
+
+// CreateFooterComment posts body as a new footer comment on a page and
+// returns the comment the server created.
+//
+// The body travels as the storage representation, unchanged. The API also
+// accepts "wiki" and "atlas_doc_format", neither of which cflio sends: they
+// are conversions, and a body that is converted on the way in is no longer
+// the one the caller wrote.
+func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (*Comment, error) {
+	req := createCommentRequest{
+		PageID: pageID,
+		Body:   commentBody{Representation: "storage", Value: body},
+	}
+
+	var comment Comment
+	if err := c.post(ctx, "/api/v2/"+string(FooterComments), req, &comment); err != nil {
+		return nil, err
+	}
+	return &comment, nil
+}
+
 // Attachment is one file attached to a page. Title is the filename, which is
 // what `attachments download` matches its glob against. DownloadLink is
 // relative to the site base URL, in the form
@@ -600,12 +636,24 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 }
 
 func (c *Client) put(ctx context.Context, path string, payload, out any) error {
+	return c.send(ctx, http.MethodPut, path, payload, out)
+}
+
+func (c *Client) post(ctx context.Context, path string, payload, out any) error {
+	return c.send(ctx, http.MethodPost, path, payload, out)
+}
+
+// send issues a request carrying a JSON body. The two methods that do share
+// everything but the verb, and encodeJSON's escaping trade is the reason to
+// keep them on one path: a comment body is storage XHTML like a page body,
+// and a second encoder would be the place for that to drift.
+func (c *Client) send(ctx context.Context, method, path string, payload, out any) error {
 	body, err := encodeJSON(payload)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.site.JoinPath(path).String(), body)
+	req, err := http.NewRequestWithContext(ctx, method, c.site.JoinPath(path).String(), body)
 	if err != nil {
 		return fmt.Errorf("build request for %s: %w", path, err)
 	}

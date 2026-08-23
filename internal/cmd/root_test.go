@@ -67,7 +67,9 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"update":               true,
 		"search":               true,
 		"children":             true,
-		"comments":             true,
+		"comments":             false,
+		"comments list":        true,
+		"comments create":      true,
 		"attachments":          false,
 		"attachments list":     true,
 		"attachments download": true,
@@ -123,7 +125,13 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		{name: "read", args: []string{"read", "--format", "bogus", "123456"}},
 		{name: "search", args: []string{"search", "--format", "bogus", "text ~ x"}},
 		{name: "children", args: []string{"children", "--format", "bogus", "123456"}},
-		{name: "comments", args: []string{"comments", "--format", "bogus", "123456"}},
+		{name: "comments list", args: []string{"comments", "list", "--format", "bogus", "123456"}},
+		{
+			// -f is left off on purpose, for the same reason it is left off
+			// `update` below.
+			name: "comments create, before cobra reports a missing required flag",
+			args: []string{"comments", "create", "--format", "bogus", "123456"},
+		},
 		{
 			name: "attachments list",
 			args: []string{"attachments", "list", "--format", "bogus", "123456"},
@@ -291,6 +299,24 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantStderr: "Error: unknown command \"bogus\" for \"cflio profile\"\n",
 		},
 		{
+			// The form `comments` had before it became a group. A page id is
+			// not a misspelling of any subcommand, so nothing would be
+			// suggested for it: the hint is what names the replacement.
+			name: "comments, the retired form",
+			args: []string{"comments", "65815"},
+			wantStderr: "Error: unknown command \"65815\" for \"cflio comments\"\n\n" +
+				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
+		},
+		{
+			// A hint and a suggestion together: the hint follows the
+			// candidate block, one blank line away either way.
+			name: "comments, close enough to suggest",
+			args: []string{"comments", "lsit"},
+			wantStderr: "Error: unknown command \"lsit\" for \"cflio comments\"\n\n" +
+				"Did you mean this?\n\tlist\n\n" +
+				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
+		},
+		{
 			// completion is cobra's own command, added inside ExecuteC, so
 			// nothing cflio's constructors set could reach it.
 			name:       "completion",
@@ -337,7 +363,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 // above must leave alone: a group command with nothing after it is a request
 // for help, not a typo.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
-	for _, name := range []string{"", "attachments", "auth", "profile", "completion"} {
+	for _, name := range []string{"", "attachments", "comments", "auth", "profile", "completion"} {
 		t.Run("cflio "+name, func(t *testing.T) {
 			var args []string
 			if name != "" {

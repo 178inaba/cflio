@@ -64,7 +64,10 @@ cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+No
 # Explore
 cflio search 'type = page and space = "DEV" and text ~ "release notes"'
 cflio children 123456
-cflio comments https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
+cflio comments list https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
+
+# Leave a note on the page without leaving the terminal
+cflio comments create 123456 -f note.xml
 
 # See what the page shows: pull the images the body uses along with the Markdown
 cflio read 123456 --markdown --attachments ./assets
@@ -156,6 +159,20 @@ When that line is present, the rendering may be missing names and links that do 
 without `--markdown` does not help — storage resolves nothing at all — so the useful response is to
 run the same command again; in keeping with the no-retries posture below, `cflio` will not do it
 for you. The same count covers the attachment fetches `--attachments` makes (below).
+
+### Posting a comment
+
+`cflio comments create <page> -f <file>` posts a file's contents as a footer comment. The file is
+sent as the `storage` representation, byte for byte — the same representation `read` downloads and
+`update` writes back — so a comment can carry an info panel, a code block or any other macro, and
+nothing is converted on the way. Markdown written into that file therefore posts as the literal
+characters you typed. `-f -` reads the body from stdin instead.
+
+Top-level comments only: replies and inline comments are not posted. There is no `--body` string
+flag either: storage XHTML in a single shell argument is a quoting trap, and passing a body through
+one would put back the copy-paste this command exists to remove.
+
+The comment cannot be edited or deleted with `cflio`; do that in the browser.
 
 ### Reading a page's images and files
 
@@ -341,7 +358,7 @@ docker compose run --rm lint --fix
 - **Confluence Cloud only.** Data Center and Server are out of scope.
 - **Comment display is best-effort.** The comment API offers no rendered representation, so comment
   bodies are converted from storage XHTML to Markdown locally, by the same converter
-  `read --markdown` uses. `comments` shows root comments and their direct replies; replies to
+  `read --markdown` uses. `comments list` shows root comments and their direct replies; replies to
   replies are not fetched. Authors appear as Atlassian account IDs, and references inside a comment
   body are not resolved — only `read --markdown` resolves mentions and page links.
 - **Converted output never feeds an update.** Both converted outputs — comment bodies and
@@ -352,6 +369,8 @@ docker compose run --rm lint --fix
   `read --markdown --attachments` links the images it downloads, but an image whose attachment
   lives on another page or blog post still renders as its filename: the file would have to be
   fetched from content other than the page being read.
-- Creating, deleting and moving pages, posting comments, uploading attachments, and ADF (the
+- **Comments are post-only.** A footer comment can be posted; editing or deleting one, replying to
+  one, and posting an inline comment are not supported.
+- Creating, deleting and moving pages, uploading attachments, and ADF (the
   representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/cflio/issues/1) for the full list.

@@ -310,6 +310,64 @@ func TestCommentRepliesUsesTheChildrenEndpoint(t *testing.T) {
 	}
 }
 
+// TestCreateFooterCommentPostsAStorageBodyUnescaped pins the whole request a
+// comment is posted with: a comment body is storage XHTML like a page body,
+// so the same escaping trade applies to it.
+func TestCreateFooterCommentPostsAStorageBodyUnescaped(t *testing.T) {
+	body := `<ac:structured-macro ac:name="info"><ac:rich-text-body><p>a & b</p></ac:rich-text-body></ac:structured-macro>`
+
+	var gotMethod, gotPath, gotRaw string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll() error = %v", err)
+			return
+		}
+		gotRaw = string(raw)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"id":"c9","_links":{"webui":"/spaces/DEV/pages/123/Title?focusedCommentId=c9"}}`)
+	})
+
+	comment, err := client.CreateFooterComment(t.Context(), "123", body)
+	if err != nil {
+		t.Fatalf("CreateFooterComment() error = %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/wiki/api/v2/footer-comments" {
+		t.Errorf("request = %s %s, want POST /wiki/api/v2/footer-comments", gotMethod, gotPath)
+	}
+	// Asserted on the markup rather than on the whole body, which carries
+	// the quotes JSON escapes whatever the encoder's HTML setting is.
+	if !strings.Contains(gotRaw, "<ac:structured-macro") || strings.Contains(gotRaw, `\u003c`) {
+		t.Errorf("payload = %s, want the markup inline and unescaped (no \\u003c sequences)", gotRaw)
+	}
+
+	var sent struct {
+		PageID string `json:"pageId"`
+		Body   struct {
+			Representation string `json:"representation"`
+			Value          string `json:"value"`
+		} `json:"body"`
+		// A reply is a different call: the API rejects a payload naming
+		// both, so this must never travel.
+		ParentCommentID string `json:"parentCommentId"`
+	}
+	if err := json.Unmarshal([]byte(gotRaw), &sent); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v", err)
+	}
+	if sent.PageID != "123" || sent.Body.Representation != "storage" || sent.Body.Value != body {
+		t.Errorf("payload = %+v, want the page id and the body as storage", sent)
+	}
+	if sent.ParentCommentID != "" {
+		t.Errorf("payload names parentCommentId = %q, want a top-level comment", sent.ParentCommentID)
+	}
+
+	if comment.ID != "c9" || comment.Links.WebUI == "" {
+		t.Errorf("comment = %+v, want the created id and its web link", comment)
+	}
+}
+
 func TestPageAttachmentsListsTitleMediaTypeSizeAndDownloadLink(t *testing.T) {
 	var gotPath string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
