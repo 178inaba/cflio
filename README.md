@@ -72,6 +72,13 @@ cflio read 123456 --markdown --attachments ./assets
 # ...or reach for an attachment the body does not reference
 cflio attachments list 123456
 cflio attachments download 123456 --pattern '*.png' -o ./assets
+
+# Change a PlantUML diagram on the page, without hand-encoding its payload
+cflio plantuml list -f page.xml
+cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
+# ...edit diagram.puml, then put it back and update the page
+cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
+cflio update -f page.xml
 ```
 
 Commands that address a page accept both the URL as copied from the browser and a bare page ID.
@@ -81,7 +88,7 @@ Add `--format json` to any of them for structured output instead of Markdown. Ru
 ### The read/update cycle
 
 `read` writes two files: the page body (`page.xml`) exactly as the API returned it, and a sidecar
-(`page.xml.meta.json`) holding the page ID, version, title, status and URL.
+(`page.xml.meta.json`) holding the page ID, version, title, status, URL and subtype.
 
 `update` takes only the body file — the page it targets, the profile it authenticates with and the
 version it locks against all come from the sidecar, so an update cannot be pointed at the wrong
@@ -193,6 +200,50 @@ and others not — delete them, or point `-o` somewhere else. `-o` defaults to t
 and is created if it does not exist.
 
 Uploading attachments is not supported.
+
+### PlantUML diagrams
+
+A page drawn on with the [PlantUML Diagrams for Confluence][puml-app] app stores each diagram as a
+`plantumlcloud` macro, whose source is percent-encoded, deflated and base64'd into a `data`
+parameter. `read --markdown` already renders one as a fenced `plantuml` block; `cflio plantuml` is
+the way back:
+
+```sh
+cflio read <url> -o page.xml
+cflio plantuml list -f page.xml
+cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
+# ...edit diagram.puml with your regular tools...
+cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
+cflio update -f page.xml
+```
+
+All three subcommands work on the file `read` downloaded and never talk to Confluence; the page
+changes when you run `update`. A `--markdown` file is refused, with the guidance `update` gives.
+
+Do not edit the `data` parameter by hand. The encoding is the app's own, not PlantUML's public one
+(which uses a custom base64 alphabet and is rejected), and there is a second half to it: a diagram
+drawn in the Confluence editor also exists as a rendered `.svg`/`.png` attachment, and the viewer
+keeps showing that attachment for as long as the macro's `revision` matches it. `set` increments
+`revision` for you, which is what makes the new diagram appear; a macro with no `revision`
+parameter has no such attachment and is left without one. Nothing else in the file changes — only
+those two text nodes are rewritten, so unrelated macros and layout survive byte for byte. The
+stale attachment is left as it is, which only shows up in page exports.
+
+Macros are selected by `ac:local-id`, which Confluence keeps across editor saves (it reissues
+`ac:macro-id` instead). `--name <filename>` is there for convenience and must match exactly one
+macro; a macro with no `ac:local-id` can only be reached that way.
+
+One case is refused rather than half-done: a macro with no `ac:local-id` on a **live doc**. The
+live editor matches the storage body back onto its own copy by local-id, so the edit never reaches
+what the editor and viewer render, and the next autosave overwrites the storage body with the old
+macro. Open that diagram in the Confluence editor and save it once — which gives the macro a
+local-id — then read the page again. `read` records the page's subtype in the sidecar so this can
+be told offline; a sidecar written before it did says so and asks for a fresh read rather than
+guessing.
+
+Inserting a new diagram is not supported. Draw it in the Confluence editor, then edit it from here.
+
+[puml-app]: https://marketplace.atlassian.com/apps/1215115/plantuml-diagrams-for-confluence-i-uml-flowchart-git?hosting=cloud&tab=overview
 
 ### Multiple sites
 
