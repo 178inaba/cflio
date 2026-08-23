@@ -64,12 +64,9 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 }
 
 // cflioRun is what one invocation of the command tree produced. The two
-// streams are kept apart so a test can assert which one a message reached,
-// and unknownCommand exposes the failure the tree records out of band —
-// cobra returns nil on that path, and no exit code exists at this level.
+// streams are kept apart so a test can assert which one a message reached.
 type cflioRun struct {
 	stdout, stderr string
-	unknownCommand bool
 }
 
 // runCflio builds a fresh command tree and runs args through it, returning
@@ -99,11 +96,13 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, er
 	root.SetArgs(args)
 
 	err := root.ExecuteContext(t.Context())
-	return cflioRun{
-		stdout:         out.String(),
-		stderr:         errOut.String(),
-		unknownCommand: res.unknownCommand,
-	}, err
+	if err == nil {
+		// The merge Execute does, so a test observes a mistyped subcommand
+		// under a group command the way the process does: as the returned
+		// error rather than out of band (see runResult.unknownCommand).
+		err = res.unknownCommand
+	}
+	return cflioRun{stdout: out.String(), stderr: errOut.String()}, err
 }
 
 // runLimitCmd runs one of the listing commands with an explicit --limit. The

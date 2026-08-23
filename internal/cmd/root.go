@@ -44,11 +44,12 @@ type globalFlags struct {
 // value. It is per-tree rather than package state so tests can build
 // independent trees in one process.
 type runResult struct {
-	// unknownCommand reports that the help function rejected a mistyped
-	// subcommand of a group command. cobra resolves that path to
-	// flag.ErrHelp, which ExecuteC turns into a nil error, so nothing else
-	// would tell Execute the run failed.
-	unknownCommand bool
+	// unknownCommand is the failure the help function built for a mistyped
+	// subcommand of a group command, or nil if it never fired. cobra
+	// resolves that path to flag.ErrHelp, which ExecuteC turns into a nil
+	// error, so nothing else would tell Execute the run failed. Execute
+	// prints and maps it like any failure that came back the usual way.
+	unknownCommand error
 }
 
 // newRootCmd builds the command tree. globalFlags travels in — pflag fills
@@ -100,12 +101,11 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 	// recurse.
 	defaultHelp := cmd.HelpFunc()
 	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if help, _ := c.Flags().GetBool("help"); !help && !c.Runnable() && len(c.Flags().Args()) > 0 {
-			reportUnknownCommand(c, c.Flags().Args()[0])
-			res.unknownCommand = true
+		if help, _ := c.Flags().GetBool("help"); help || c.Runnable() || c.Flags().NArg() == 0 {
+			defaultHelp(c, args)
 			return
 		}
-		defaultHelp(c, args)
+		res.unknownCommand = unknownCommandError(c, c.Flags().Arg(0))
 	})
 
 	// The help command has to be replaced rather than overridden, for the
@@ -221,18 +221,6 @@ func unknownCommandError(cmd *cobra.Command, arg string) error {
 	return fmt.Errorf("unknown command %q for %q%s", arg, cmd.CommandPath(), suggestions.String())
 }
 
-// reportUnknownCommand writes that error for the one caller that cannot
-// return it: cobra's help function has no error return. It is printed the
-// way Execute prints the ones that are returned, down to the byte, so a typo
-// under a group reads exactly like a typo at the top level.
-//
-// PrintErrf rather than a bare Fprintf: it writes to ErrOrStderr — which the
-// tests redirect, unlike os.Stderr — and returns nothing, which is the only
-// sane contract for a help function that cannot propagate a write error.
-func reportUnknownCommand(cmd *cobra.Command, arg string) {
-	cmd.PrintErrf("Error: %v\n", unknownCommandError(cmd, arg))
-}
-
 // unknownCommandCandidates reproduces the candidate list cobra builds in its
 // unexported findSuggestions — minus the DisableSuggestions escape hatch,
 // which nothing here sets — plus the one case cobra cannot cover: `help` is
@@ -275,18 +263,19 @@ func Execute() int {
 	root, res := newRootCmd(g)
 	err := root.Execute()
 	if err == nil {
-		// The help function has already written the message for a mistyped
-		// subcommand (see runResult.unknownCommand), so this only has to
-		// make the run fail.
-		if res.unknownCommand {
-			return 1
-		}
-		return 0
+		// cobra reports a mistyped subcommand under a group command by
+		// calling the help function, which has no error to return, so a nil
+		// here is the one thing that can still be hiding a failure (see
+		// runResult.unknownCommand). cobra's own error wins where both are
+		// set, since it is the one that stopped the run.
+		err = res.unknownCommand
 	}
-
-	code, err := describeFailure(err, g.timeout)
-	fmt.Fprintln(os.Stderr, "Error:", err)
-	return code
+	if err != nil {
+		code, err := describeFailure(err, g.timeout)
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		return code
+	}
+	return 0
 }
 
 // describeFailure maps a failure to the exit code it ends the process with and
@@ -298,9 +287,6 @@ func Execute() int {
 // only thing separating timeoutExitCode from 1, and splitting the message and
 // the code across two functions would let a third failure class be added to
 // one and missed in the other, with nothing failing loudly when they disagree.
-// That covers every failure that carries an error, which is all of them but
-// one: a mistyped subcommand under a group command is reported by the help
-// function and never reaches here (see Execute).
 //
 // Only the deadline gets rewritten, and it is detected from the error: it
 // comes from a context derived per command, so the error is what carries it,
