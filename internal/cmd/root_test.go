@@ -268,35 +268,37 @@ func TestDescribeFailure(t *testing.T) {
 // TestGroupCommandRejectsAnUnknownSubcommand covers the case cobra does not
 // report: under a group command it resolves a mistyped subcommand to
 // flag.ErrHelp, which ExecuteC prints help for and returns nil from. The
-// assertions are on the recorded failure and the message rather than on an
-// exit code, since the tree produces neither.
+// assertions are on the error the tree hands back — recorded by the help
+// function and merged in by the caller — rather than on an exit code, which
+// does not exist at this level, and the message is matched whole so a usage
+// listing sneaking in would fail here.
 func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantStderr string
+		name    string
+		args    []string
+		wantErr string
 	}{
 		{
-			name:       "auth",
-			args:       []string{"auth", "bogus"},
-			wantStderr: "Error: unknown command \"bogus\" for \"cflio auth\"\n",
+			name:    "auth",
+			args:    []string{"auth", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio auth"`,
 		},
 		{
 			// bogus is too far from any subcommand to be suggested, so a
 			// table built only on it would never exercise the candidates.
-			name:       "auth, close enough to suggest",
-			args:       []string{"auth", "loign"},
-			wantStderr: "Error: unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n\n",
+			name:    "auth, close enough to suggest",
+			args:    []string{"auth", "loign"},
+			wantErr: "unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n",
 		},
 		{
-			name:       "attachments",
-			args:       []string{"attachments", "bogus"},
-			wantStderr: "Error: unknown command \"bogus\" for \"cflio attachments\"\n",
+			name:    "attachments",
+			args:    []string{"attachments", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio attachments"`,
 		},
 		{
-			name:       "profile",
-			args:       []string{"profile", "bogus"},
-			wantStderr: "Error: unknown command \"bogus\" for \"cflio profile\"\n",
+			name:    "profile",
+			args:    []string{"profile", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio profile"`,
 		},
 		{
 			// The form `comments` had before it became a group. A page id is
@@ -304,56 +306,54 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			// suggested for it: the hint is what names the replacement.
 			name: "comments, the retired form",
 			args: []string{"comments", "65815"},
-			wantStderr: "Error: unknown command \"65815\" for \"cflio comments\"\n\n" +
-				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
+			wantErr: "unknown command \"65815\" for \"cflio comments\"\n\n" +
+				"A page's comments are now read with `cflio comments list <page-url|page-id>`.",
 		},
 		{
 			// A hint and a suggestion together: the hint follows the
 			// candidate block, one blank line away either way.
 			name: "comments, close enough to suggest",
 			args: []string{"comments", "lsit"},
-			wantStderr: "Error: unknown command \"lsit\" for \"cflio comments\"\n\n" +
+			wantErr: "unknown command \"lsit\" for \"cflio comments\"\n\n" +
 				"Did you mean this?\n\tlist\n\n" +
-				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
+				"A page's comments are now read with `cflio comments list <page-url|page-id>`.",
 		},
 		{
 			// completion is cobra's own command, added inside ExecuteC, so
 			// nothing cflio's constructors set could reach it.
-			name:       "completion",
-			args:       []string{"completion", "bogus"},
-			wantStderr: "Error: unknown command \"bogus\" for \"cflio completion\"\n",
+			name:    "completion",
+			args:    []string{"completion", "bogus"},
+			wantErr: `unknown command "bogus" for "cflio completion"`,
 		},
 		{
-			name:       "auth help",
-			args:       []string{"auth", "help"},
-			wantStderr: "Error: unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n\n",
+			name:    "auth help",
+			args:    []string{"auth", "help"},
+			wantErr: "unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
-			name:       "profile help",
-			args:       []string{"profile", "help"},
-			wantStderr: "Error: unknown command \"help\" for \"cflio profile\"\n\nDid you mean this?\n\t--help\n\n",
+			name:    "profile help",
+			args:    []string{"profile", "help"},
+			wantErr: "unknown command \"help\" for \"cflio profile\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
-			name:       "completion help",
-			args:       []string{"completion", "help"},
-			wantStderr: "Error: unknown command \"help\" for \"cflio completion\"\n\nDid you mean this?\n\t--help\n\n",
+			name:    "completion help",
+			args:    []string{"completion", "help"},
+			wantErr: "unknown command \"help\" for \"cflio completion\"\n\nDid you mean this?\n\t--help\n",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			run, err := runCflio(t, tt.args...)
-			if err != nil {
-				t.Fatalf("%v error = %v, want nil: cobra reports this path as success", tt.args, err)
+			if err == nil {
+				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
-			if !run.unknownCommand {
-				t.Errorf("%v recorded no failure, want one", tt.args)
+			if err.Error() != tt.wantErr {
+				t.Errorf("%v error = %q, want %q", tt.args, err, tt.wantErr)
 			}
-			if run.stdout != "" {
-				t.Errorf("%v stdout = %q, want nothing where the command's output belongs", tt.args, run.stdout)
-			}
-			if run.stderr != tt.wantStderr {
-				t.Errorf("%v stderr = %q, want %q", tt.args, run.stderr, tt.wantStderr)
+			if run.stdout != "" || run.stderr != "" {
+				t.Errorf("%v wrote stdout = %q, stderr = %q, want nothing from the tree itself",
+					tt.args, run.stdout, run.stderr)
 			}
 		})
 	}
@@ -361,7 +361,8 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 
 // TestGroupCommandWithoutArgumentsPrintsHelp pins the invocations the report
 // above must leave alone: a group command with nothing after it is a request
-// for help, not a typo.
+// for help, not a typo. A run that ends without an error is one the help
+// function recorded nothing for, since runCflio merges the two.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	for _, name := range []string{"", "attachments", "comments", "auth", "profile", "completion"} {
 		t.Run("cflio "+name, func(t *testing.T) {
@@ -373,9 +374,6 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 			run, err := runCflio(t, args...)
 			if err != nil {
 				t.Fatalf("%v error = %v, want nil", args, err)
-			}
-			if run.unknownCommand {
-				t.Errorf("%v recorded a failure, want none", args)
 			}
 			if run.stderr != "" {
 				t.Errorf("%v stderr = %q, want nothing", args, run.stderr)
@@ -393,9 +391,8 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 			if withFlag.stdout != run.stdout {
 				t.Errorf("%v --help stdout = %q, want the same help as %v", args, withFlag.stdout, args)
 			}
-			if withFlag.unknownCommand || withFlag.stderr != "" {
-				t.Errorf("%v --help recorded failure = %v and wrote stderr = %q, want neither",
-					args, withFlag.unknownCommand, withFlag.stderr)
+			if withFlag.stderr != "" {
+				t.Errorf("%v --help stderr = %q, want nothing", args, withFlag.stderr)
 			}
 		})
 	}
@@ -410,9 +407,6 @@ func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cflio auth bogus --help error = %v, want nil", err)
 	}
-	if run.unknownCommand {
-		t.Error("cflio auth bogus --help recorded a failure, want the help request answered")
-	}
 	if run.stderr != "" {
 		t.Errorf("cflio auth bogus --help stderr = %q, want nothing", run.stderr)
 	}
@@ -423,7 +417,7 @@ func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
 
 // TestRootRejectsAnUnknownCommand pins the path cobra does handle: at the
 // root, Find fails before the help function is ever reached, so the error
-// comes back for Execute to print rather than being recorded.
+// comes back from Execute itself rather than travelling beside it.
 func TestRootRejectsAnUnknownCommand(t *testing.T) {
 	run, err := runCflio(t, "bogus")
 	if err == nil {
@@ -431,9 +425,6 @@ func TestRootRejectsAnUnknownCommand(t *testing.T) {
 	}
 	if want := `unknown command "bogus" for "cflio"`; !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
-	}
-	if run.unknownCommand {
-		t.Error("cflio bogus recorded a failure, want the returned error to carry it instead")
 	}
 	if run.stdout != "" || run.stderr != "" {
 		t.Errorf("cflio bogus wrote stdout = %q, stderr = %q, want nothing from the tree itself",
@@ -514,9 +505,6 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 			if err.Error() != tt.wantErr {
 				t.Errorf("%v error = %q, want %q", tt.args, err, tt.wantErr)
 			}
-			if run.unknownCommand {
-				t.Errorf("%v recorded a failure, want the returned error to carry it instead", tt.args)
-			}
 			if run.stdout != "" || run.stderr != "" {
 				t.Errorf("%v wrote stdout = %q, stderr = %q, want nothing from the tree itself",
 					tt.args, run.stdout, run.stderr)
@@ -535,9 +523,6 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 			run, err := runCflio(t, append([]string{"help"}, topic...)...)
 			if err != nil {
 				t.Fatalf("help %v error = %v, want nil", topic, err)
-			}
-			if run.unknownCommand {
-				t.Errorf("help %v recorded a failure, want none", topic)
 			}
 			if run.stderr != "" {
 				t.Errorf("help %v stderr = %q, want nothing", topic, run.stderr)
