@@ -247,38 +247,42 @@ func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
 	cmd.MarkFlagsOneRequired("id", "name")
 }
 
-// validatePlantUMLSelector rejects an explicitly empty --id or --name.
+// refuseEmptyFlag rejects a flag that was given an explicitly empty value.
 //
-// An empty value would otherwise read as "the flag was not given": selectMacro
-// branches on which of the two is empty, so `--id ""` falls through to
-// matching on --name, and an empty --name matches every macro that carries no
-// filename. That is a path an agent actually takes -- `list --format json`
-// reports "local_id": "" for a macro that has none -- and following it would
-// act on a different diagram without saying so. `update --title` refuses an
-// empty value for the same reason.
-func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
-	if cmd.Flags().Changed("id") && id == "" {
-		return errors.New("--id cannot be empty: a macro that `cflio plantuml list` reports " +
-			"with no local-id carries no ac:local-id to select it by, so name it with " +
-			"--name <filename> instead")
+// An empty value would otherwise read as "the flag was not given", and every
+// flag routed through here does something different when it is left off:
+// selectMacro branches on which of --id and --name is empty, so `--id ""`
+// falls through to matching on --name, and an empty --name matches every macro
+// that carries no filename. That is a path an agent actually takes -- `list
+// --format json` reports "local_id": "" for a macro that has none -- and
+// following it would act on a different diagram without saying so. `update
+// --title` refuses an empty value for the same reason.
+func refuseEmptyFlag(cmd *cobra.Command, flag, value, guidance string) error {
+	if !cmd.Flags().Changed(flag) || value != "" {
+		return nil
 	}
-	if cmd.Flags().Changed("name") && name == "" {
-		return errors.New("--name cannot be empty: pass the macro's filename parameter, " +
-			"or select it with --id <local-id>")
-	}
-	return nil
+	return fmt.Errorf("--%s cannot be empty: %s", flag, guidance)
 }
 
-// plantUMLFile is a downloaded page body, its sidecar and the PlantUML macros
-// it holds. The three travel together because every subcommand needs all of
-// them: the body to read offsets into, the sidecar to reject a file that was
-// not produced by `read` and to tell a live doc apart, and the macros to
-// select from.
+// validatePlantUMLSelector rejects an explicitly empty --id or --name.
+func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
+	if err := refuseEmptyFlag(cmd, "id", id,
+		"a macro that `cflio plantuml list` reports with no local-id carries no "+
+			"ac:local-id to select it by, so name it with --name <filename> instead"); err != nil {
+		return err
+	}
+	return refuseEmptyFlag(cmd, "name", name,
+		"pass the macro's filename parameter, or select it with --id <local-id>")
+}
+
+// plantUMLFile is a downloaded page body and its sidecar. The two travel
+// together because every subcommand needs both: the body to read offsets into,
+// and the sidecar to reject a file that was not produced by `read` and to tell
+// a live doc apart.
 type plantUMLFile struct {
 	path    string
 	storage string
 	meta    sidecar.Meta
-	macros  []format.Macro
 }
 
 // loadPlantUMLFile reads the body file and its sidecar.
@@ -298,20 +302,29 @@ func loadPlantUMLFile(path string) (plantUMLFile, error) {
 		return plantUMLFile{}, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	storage := string(body)
+	return plantUMLFile{path: path, storage: string(body), meta: meta}, nil
+}
+
+// diagrams are the PlantUML macros the body holds, in document order.
+//
+// Scanned on demand rather than alongside the file, because `add` needs the
+// body and the sidecar but no macro at all -- and the scan walks the whole
+// page, which is the largest thing this tool handles.
+func (f plantUMLFile) diagrams() []format.Macro {
 	var macros []format.Macro
-	for _, m := range format.Macros(storage) {
+	for _, m := range format.Macros(f.storage) {
 		if m.Name == plantUMLMacroName {
 			macros = append(macros, m)
 		}
 	}
-	return plantUMLFile{path: path, storage: storage, meta: meta, macros: macros}, nil
+	return macros
 }
 
 // selectMacro resolves --id or --name to the one macro it names, and fails
 // with the candidates listed rather than acting on a guess.
 func (f plantUMLFile) selectMacro(id, name string) (format.Macro, error) {
-	if len(f.macros) == 0 {
+	macros := f.diagrams()
+	if len(macros) == 0 {
 		return format.Macro{}, fmt.Errorf("%s holds no %s macro", f.path, plantUMLMacroName)
 	}
 
@@ -323,7 +336,7 @@ func (f plantUMLFile) selectMacro(id, name string) (format.Macro, error) {
 	}
 
 	var matched []format.Macro
-	for _, m := range f.macros {
+	for _, m := range macros {
 		if match(m) {
 			matched = append(matched, m)
 		}
@@ -334,7 +347,7 @@ func (f plantUMLFile) selectMacro(id, name string) (format.Macro, error) {
 		return matched[0], nil
 	case 0:
 		return format.Macro{}, fmt.Errorf("no %s macro in %s has %s %q; the file holds %s",
-			plantUMLMacroName, f.path, flag, want, plantUMLCandidates(f.macros))
+			plantUMLMacroName, f.path, flag, want, plantUMLCandidates(macros))
 	default:
 		return format.Macro{}, fmt.Errorf("%s %q matches %d macros in %s (%s); name one of them with --id",
 			flag, want, len(matched), f.path, plantUMLCandidates(matched))
@@ -385,6 +398,22 @@ func plantUMLRevisionLabel(revision string) string {
 	return "revision " + revision
 }
 
+// plantUMLEncodedSource reads a diagram source file and encodes it into what a
+// data parameter carries, reporting the source's size for the caller to print.
+// It is what `set` and `add` both put into a macro, so the two cannot drift in
+// how they read a source file or what they say when they cannot.
+func plantUMLEncodedSource(source string) (string, int, error) {
+	diagram, err := os.ReadFile(source)
+	if err != nil {
+		return "", 0, fmt.Errorf("read %s: %w", source, err)
+	}
+	data, err := plantuml.Encode(string(diagram))
+	if err != nil {
+		return "", 0, err
+	}
+	return data, len(diagram), nil
+}
+
 // plantUMLSource decodes a macro's payload, naming the macro in whatever the
 // codec refuses. Which payloads are readable is internal/plantuml's rule, so
 // that the Markdown conversion and this draw the same line.
@@ -432,8 +461,9 @@ func runPlantUMLList(cmd *cobra.Command, file string, outFormat format.Format) e
 		return err
 	}
 
-	items := make([]plantUMLMacroItem, 0, len(f.macros))
-	for _, m := range f.macros {
+	macros := f.diagrams()
+	items := make([]plantUMLMacroItem, 0, len(macros))
+	for _, m := range macros {
 		revision, _ := m.Param("revision")
 		item := plantUMLMacroItem{
 			LocalID:  m.LocalID,
@@ -609,11 +639,7 @@ func runPlantUMLSet(cmd *cobra.Command, file, id, name, source string, outFormat
 		return err
 	}
 
-	diagram, err := os.ReadFile(source)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", source, err)
-	}
-	data, err := plantuml.Encode(string(diagram))
+	data, size, err := plantUMLEncodedSource(source)
 	if err != nil {
 		return err
 	}
@@ -630,7 +656,7 @@ func runPlantUMLSet(cmd *cobra.Command, file, id, name, source string, outFormat
 		LocalID:  m.LocalID,
 		Filename: plantUMLFilename(m),
 		Path:     f.path,
-		Bytes:    len(diagram),
+		Bytes:    size,
 		Revision: revision,
 	})
 }
@@ -799,11 +825,7 @@ func runPlantUMLAdd(cmd *cobra.Command, file, source, after, filename string, ou
 		return err
 	}
 
-	diagram, err := os.ReadFile(source)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", source, err)
-	}
-	data, err := plantuml.Encode(string(diagram))
+	data, size, err := plantUMLEncodedSource(source)
 	if err != nil {
 		return err
 	}
@@ -824,28 +846,23 @@ func runPlantUMLAdd(cmd *cobra.Command, file, source, after, filename string, ou
 		LocalID:  localID,
 		Filename: filename,
 		Path:     f.path,
-		Bytes:    len(diagram),
+		Bytes:    size,
 		After:    after,
 	})
 }
 
 // validatePlantUMLAddFlags rejects an explicitly empty --after or --filename.
-//
-// An empty value reads as "the flag was not given", and for both flags that is
-// a different command: an empty --after would append at the end of the body
-// rather than beside the element the caller meant, and an empty --filename
-// would be derived from the source instead. Neither is worth guessing at, for
-// the reason validatePlantUMLSelector refuses an empty --id.
+// Left off, the first appends at the end of the body and the second is derived
+// from the source, so an empty value is a different command in both cases.
 func validatePlantUMLAddFlags(cmd *cobra.Command, after, filename string) error {
-	if cmd.Flags().Changed("after") && after == "" {
-		return errors.New("--after cannot be empty: pass the local-id of the element to insert " +
-			"the diagram after, or leave --after off to append it at the end of the body")
+	if err := refuseEmptyFlag(cmd, "after", after,
+		"pass the local-id of the element to insert the diagram after, or leave "+
+			"--after off to append it at the end of the body"); err != nil {
+		return err
 	}
-	if cmd.Flags().Changed("filename") && filename == "" {
-		return errors.New("--filename cannot be empty: pass the name the diagram's attachments " +
-			"should take, or leave --filename off to derive it from the source file")
-	}
-	return nil
+	return refuseEmptyFlag(cmd, "filename", filename,
+		"pass the name the diagram's attachments should take, or leave --filename off "+
+			"to derive it from the source file")
 }
 
 // plantUMLDiagramFilename settles the filename parameter: the --filename value
@@ -919,8 +936,13 @@ func plantUMLElement(filename, data string) (string, string, error) {
 	}
 
 	var out strings.Builder
-	fmt.Fprintf(&out, `<ac:structured-macro ac:name=%q ac:schema-version="1" data-layout="default"`+
-		` ac:local-id=%q ac:macro-id=%q>`, plantUMLMacroName, localID, macroID)
+	out.WriteString(`<ac:structured-macro`)
+	plantUMLAttribute(&out, "ac:name", plantUMLMacroName)
+	plantUMLAttribute(&out, "ac:schema-version", "1")
+	plantUMLAttribute(&out, "data-layout", "default")
+	plantUMLAttribute(&out, "ac:local-id", localID)
+	plantUMLAttribute(&out, "ac:macro-id", macroID)
+	out.WriteString(`>`)
 	plantUMLParameter(&out, "toolbar", "bottom")
 	plantUMLParameter(&out, "filename", filename)
 	plantUMLParameter(&out, "data", data)
@@ -932,16 +954,31 @@ func plantUMLElement(filename, data string) (string, string, error) {
 	return out.String(), localID, nil
 }
 
-// plantUMLParameter writes one ac:parameter, escaping the value.
+// plantUMLAttribute and plantUMLParameter write the element's two kinds of
+// value, both through xml.EscapeText.
 //
-// Only filename can carry a character that needs escaping -- the payload is
-// base64 and the rest are literals -- but escaping every value is what keeps
-// that from having to be re-checked whenever a parameter is added.
+// Only filename can carry a character that needs escaping today -- the payload
+// is base64, the ids are hex, and the rest are literals -- but escaping every
+// value is what keeps that from having to be re-checked whenever one is added.
+// Escaping the attributes with %q would look like it does the same thing and
+// would not: it writes Go's escapes, not XML's.
+func plantUMLAttribute(out *strings.Builder, name, value string) {
+	fmt.Fprintf(out, ` %s="`, name)
+	writeEscaped(out, value)
+	out.WriteString(`"`)
+}
+
 func plantUMLParameter(out *strings.Builder, name, value string) {
-	fmt.Fprintf(out, `<ac:parameter ac:name=%q>`, name)
+	out.WriteString(`<ac:parameter`)
+	plantUMLAttribute(out, "ac:name", name)
+	out.WriteString(`>`)
+	writeEscaped(out, value)
+	out.WriteString(`</ac:parameter>`)
+}
+
+func writeEscaped(out *strings.Builder, value string) {
 	// The error is the writer's, and a strings.Builder does not fail.
 	_ = xml.EscapeText(out, []byte(value))
-	out.WriteString(`</ac:parameter>`)
 }
 
 // newUUID returns a random version-4 UUID in the lower-case hyphenated form
