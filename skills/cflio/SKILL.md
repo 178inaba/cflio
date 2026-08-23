@@ -13,7 +13,8 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - The user asks you to change something on a page → `cflio read <url> -o <file>` (no `--markdown`), edit the downloaded file, then `cflio update -f <file>`.
 - The user asks you to rename a page → `cflio read <url> -o <file>`, then `cflio update -f <file> --title '<new title>'`. No body edit is needed; the file is resent as it was downloaded.
 - The user asks you to find something in Confluence → `cflio search '<CQL>'`.
-- You need to see how a page fits in the tree, or what people said on it → `cflio children <page>` and `cflio comments <page>`.
+- You need to see how a page fits in the tree, or what people said on it → `cflio children <page>` and `cflio comments list <page>`.
+- The user asks you to leave a note or a question on a page → write it to a file as storage XHTML, then `cflio comments create <page> -f <file>`.
 - The task needs the images a page shows → add `--attachments <dir>` to the `read --markdown` above; the body links the files it downloaded, so read those paths.
 - The task needs a file the body does not show as an image → `cflio attachments list <page>`, then `cflio attachments download <page> --pattern '<glob>' -o <dir>` and read the downloaded file.
 - The user asks you to change a PlantUML diagram on a page, or to put a new one on it → `cflio plantuml` (`list`, `get`, `set`, `add`) on the file `read` downloaded, then `cflio update`.
@@ -33,7 +34,8 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - **Leave macros alone unless the task is about them.** `<ac:structured-macro>` and `<ri:…>` elements are live Confluence features, not decoration.
 - **On a version conflict, re-read and re-apply.** If `update` reports the page changed since it was read, run `read` again and redo your edit on the fresh copy. There is no force flag, by design — someone else's edit is never overwritten silently.
 - **Never print a page body to stdout** (no `cat` of the downloaded file into your reply). Summarize or quote the relevant lines instead.
-- **Explore before editing.** `search`, `children` and `comments` are read-only and cheap; use them to find the right page rather than guessing at URLs.
+- **Explore before editing.** `search`, `children` and `comments list` are read-only and cheap; use them to find the right page rather than guessing at URLs.
+- **A comment body is storage XHTML, exactly like a page body.** `comments create` sends the file's bytes unchanged, so Markdown written into it posts as the literal `##` and `**` you typed. Write the macros you want (`<p>`, `<ac:structured-macro ac:name="info">`, …) the same way you would in a page body. `-f -` reads the body from stdin. Only top-level footer comments are posted: for a reply, or for a comment anchored to a span of the body, draft the text and let the user post it.
 - **Structured output**: add `--format json` when you want to parse a result rather than read it.
 - **Multiple sites**: a page URL selects the right profile automatically. For `search`, which has no URL, pass `--profile <name>` if the user has more than one site registered — check with `cflio profile list`.
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `cflio auth login` (they will need an Atlassian API token; see the repo README).
@@ -41,6 +43,6 @@ description: Read and edit Confluence Cloud pages from the CLI without the page 
 - **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` cflio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — neither of those is one of the codes above, since the process never exits normally. An interrupted `read` leaves no body file unless the signal lands during the write itself, so do not treat a missing file as a failed request.
 - **An image on a page is only readable as a file.** `read --markdown` on its own renders `<ac:image>` as the filename alone. `--attachments <dir>` downloads the ones the body references and links them, so the body tells you which path to read; it requires `--markdown`, and an image it could not fetch stays filename text and is counted in `Unchecked:`. A file already at the destination is kept rather than replaced or re-fetched, so re-reading a page is safe to repeat.
 - **`attachments download` is for the files the body does not reference.** `--pattern` is required and case-sensitive; scope it to what the task needs rather than reaching for `--pattern '*'`, since every file you pull you then have to read. A pattern matching nothing is an error, not an empty success, and — unlike the read path above — an existing file is refused rather than kept, failing the whole run: pick a different `-o` instead of deleting the user's files.
-- **Not supported**: creating, deleting or moving pages, posting comments, and uploading attachments. Draft replies for the user to post themselves.
+- **Not supported**: creating, deleting or moving pages, editing or deleting a comment, replying to one, posting an inline comment, and uploading attachments. Draft those for the user to post themselves.
 
 Run `cflio --help` or `cflio <command> --help` for the full flag reference; it is the source of truth for exact flags and defaults, so this document does not duplicate it.
