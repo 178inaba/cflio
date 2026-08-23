@@ -20,16 +20,11 @@ import (
 func diagramMacro(t *testing.T, attrs, filename, source, revision string) string {
 	t.Helper()
 
-	data, err := plantuml.Encode(source)
-	if err != nil {
-		t.Fatalf("plantuml.Encode() error = %v", err)
-	}
-
 	macro := `<ac:structured-macro ac:name="plantumlcloud"` + attrs + `>`
 	if filename != "" {
 		macro += `<ac:parameter ac:name="filename">` + filename + `</ac:parameter>`
 	}
-	macro += `<ac:parameter ac:name="data">` + data + `</ac:parameter>` +
+	macro += `<ac:parameter ac:name="data">` + mustEncode(t, source) + `</ac:parameter>` +
 		`<ac:parameter ac:name="compressed">true</ac:parameter>`
 	if revision != "" {
 		macro += `<ac:parameter ac:name="revision">` + revision + `</ac:parameter>`
@@ -45,6 +40,19 @@ func classicMeta() sidecar.Meta {
 	meta.Subtype = &classic
 	return meta
 }
+
+// liveMeta is classicMeta's counterpart: the sidecar of a page whose editor
+// rewrites the storage body behind cflio's back.
+func liveMeta() sidecar.Meta {
+	live := liveSubtypeValue
+	meta := currentMeta()
+	meta.Subtype = &live
+	return meta
+}
+
+// liveSubtypeValue is what the API reports for a live doc. Spelt out here
+// rather than imported so the tests pin the literal the sidecar has to carry.
+const liveSubtypeValue = "live"
 
 // seedDiagramPage writes a body holding the given macros, plus a sidecar.
 func seedDiagramPage(t *testing.T, meta sidecar.Meta, macros ...string) string {
@@ -244,10 +252,6 @@ func TestPlantUMLSetChangesOnlyTheDataAndRevisionNodes(t *testing.T) {
 	// Exactly two text nodes changed: the edited macro's data and revision.
 	// Rebuilding the expected body from the parts that must not have moved is
 	// what pins that -- anything else the command touched shows up here.
-	data, err := plantuml.Encode(edited)
-	if err != nil {
-		t.Fatalf("plantuml.Encode() error = %v", err)
-	}
 	want := "<p>before</p>" +
 		diagramMacro(t, ` ac:local-id="aaa"`, "first.svg", edited, "2") +
 		"<p>between</p>" +
@@ -255,9 +259,6 @@ func TestPlantUMLSetChangesOnlyTheDataAndRevisionNodes(t *testing.T) {
 		"<p>after</p>"
 	if after != want {
 		t.Errorf("body after set =\n%s\nwant\n%s", after, want)
-	}
-	if !strings.Contains(after, data) {
-		t.Errorf("body does not carry the new payload %q", data)
 	}
 }
 
@@ -475,21 +476,19 @@ func TestPlantUMLSetRefusesARevisionItCannotIncrement(t *testing.T) {
 // trap: without a local-id the change never reaches the rendered document,
 // and the next editor save throws it away.
 func TestPlantUMLSetGuardsAMacroAStorageEditCannotReach(t *testing.T) {
-	live, classic := "live", ""
+	unrecorded := currentMeta()
 
 	for _, tt := range []struct {
 		name    string
-		subtype *string
+		meta    sidecar.Meta
 		wantErr string
 	}{
-		{name: "live doc", subtype: &live, wantErr: "live doc"},
-		{name: "subtype not recorded", subtype: nil, wantErr: "cflio read"},
-		{name: "classic page", subtype: &classic},
+		{name: "live doc", meta: liveMeta(), wantErr: "live doc"},
+		{name: "subtype not recorded", meta: unrecorded, wantErr: "cflio read"},
+		{name: "classic page", meta: classicMeta()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			meta := currentMeta()
-			meta.Subtype = tt.subtype
-			file := seedDiagramPage(t, meta,
+			file := seedDiagramPage(t, tt.meta,
 				diagramMacro(t, "", "only.svg", "@startuml\nactor User\n@enduml", "1"))
 
 			const edited = "@startuml\nactor Admin\n@enduml"
@@ -527,10 +526,7 @@ func TestPlantUMLSetGuardsAMacroAStorageEditCannotReach(t *testing.T) {
 // the guard: the local-id is what the live doc's editor matches on, so a
 // macro that has one is edited like any other.
 func TestPlantUMLSetUpdatesAMacroWithALocalIDOnALiveDoc(t *testing.T) {
-	live := "live"
-	meta := currentMeta()
-	meta.Subtype = &live
-	file := seedDiagramPage(t, meta,
+	file := seedDiagramPage(t, liveMeta(),
 		diagramMacro(t, ` ac:local-id="aaa"`, "only.svg", "@startuml\nactor User\n@enduml", "1"))
 
 	const edited = "@startuml\nactor Admin\n@enduml"

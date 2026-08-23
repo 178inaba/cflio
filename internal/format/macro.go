@@ -57,20 +57,13 @@ type MacroParam struct {
 // exactly as the Markdown conversion does, and a second copy of that
 // configuration elsewhere would drift.
 func Macros(storage string) []Macro {
-	decoder := newStorageDecoder(storage)
-
-	var (
-		macros []Macro
-		// stack mirrors the open elements, so a parameter is attributed to the
-		// macro it is a direct child of rather than to an enclosing one.
-		stack []openElement
-	)
+	sc := macroScan{storage: storage, decoder: newStorageDecoder(storage)}
 	for {
 		// Captured before the token is read: after an end element this is the
 		// offset of its "<", which is where the content before it stops.
-		before := int(decoder.InputOffset())
+		before := int(sc.decoder.InputOffset())
 
-		token, err := decoder.Token()
+		token, err := sc.decoder.Token()
 		if err != nil {
 			// EOF, or a document too broken to recover from. Either way,
 			// report the macros found so far, the way parseStorage renders
@@ -80,68 +73,65 @@ func Macros(storage string) []Macro {
 
 		switch t := token.(type) {
 		case xml.CharData:
-			// An ac:parameter holds flat text, so the open one is always the
-			// innermost element.
-			if len(stack) > 0 && stack[len(stack)-1].param != nil {
-				stack[len(stack)-1].param.Value += string(t)
-			}
+			sc.charData(t)
 		case xml.StartElement:
-			stack = append(stack, openMacroElement(t, storage, decoder, stack, &macros))
+			sc.start(t)
 		case xml.EndElement:
-			if len(stack) == 0 {
-				// A close with nothing open: non-strict parsing recovering
-				// from stray markup. Nothing to attribute it to.
-				continue
-			}
-			el := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if el.param != nil {
-				closeParameter(el.param, before)
-			}
+			sc.end(before)
 		}
 	}
-	return macros
+	return sc.macros
 }
 
-// openElement is one entry of the scan's element stack. macro marks an
-// ac:structured-macro, which is what a parameter has to be a direct child of;
-// param points at the parameter this element opened, if it opened one.
+// macroScan is one run of the scan. It is a struct rather than a closure over
+// locals because the element stack, the macros found so far and the parameter
+// currently being read all have to be reachable from each token's handler.
+type macroScan struct {
+	storage string
+	decoder *xml.Decoder
+	macros  []Macro
+	// stack mirrors the open elements, so a parameter is attributed to the
+	// macro it is a direct child of rather than to an enclosing one.
+	stack []openElement
+	// text accumulates the parameter currently being read. It is held here
+	// rather than on the stack entry because only one parameter is ever open:
+	// an ac:parameter holds flat text.
+	text strings.Builder
+}
+
+// openElement is one entry of the scan's element stack: which macro it is, or
+// which of that macro's parameters it opened.
 type openElement struct {
 	macro bool
-	param *MacroParam
+	// param indexes macros[macroIndex].Params, or is -1 for an element that
+	// opened no parameter.
+	macroIndex int
+	param      int
 }
 
-// openMacroElement records a start element, appending a macro or a parameter
-// as the element calls for, and returns the stack entry to push for it.
-//
-// The returned entry points straight at the parameter it appended rather than
-// carrying indexes to look it up by later. The pointer survives the appends
-// that follow because only one parameter is ever open at a time — a
-// parameter is closed before the next one is appended — and because growing
-// the macro slice copies Macro headers, leaving the Params array a header
-// points into where it was.
-func openMacroElement(
-	t xml.StartElement, storage string, decoder *xml.Decoder, stack []openElement, macros *[]Macro,
-) openElement {
-	space, local := strings.ToLower(t.Name.Space), strings.ToLower(t.Name.Local)
-	if space != "ac" {
-		return openElement{}
-	}
+// start records a start element, appending a macro or a parameter as the
+// element calls for.
+func (sc *macroScan) start(t xml.StartElement) {
+	el := openElement{param: -1}
+	defer func() { sc.stack = append(sc.stack, el) }()
 
-	switch local {
+	if strings.ToLower(t.Name.Space) != "ac" {
+		return
+	}
+	switch strings.ToLower(t.Name.Local) {
 	case "structured-macro":
-		*macros = append(*macros, Macro{Name: attrValue(t, "name"), LocalID: attrValue(t, "local-id")})
-		return openElement{macro: true}
+		sc.macros = append(sc.macros, Macro{Name: attrValue(t, "name"), LocalID: attrValue(t, "local-id")})
+		el.macro = true
 	case "parameter":
 		// Only a direct child counts, matching what the Markdown converter
 		// reads: an ac:parameter deeper inside a macro's body belongs to
 		// whatever holds it, not to the macro.
-		if len(stack) == 0 || !stack[len(stack)-1].macro {
-			return openElement{}
+		if len(sc.stack) == 0 || !sc.stack[len(sc.stack)-1].macro {
+			return
 		}
 		// After the start element, InputOffset is the byte just past its ">".
-		start := int(decoder.InputOffset())
-		macro := &(*macros)[len(*macros)-1]
+		start := int(sc.decoder.InputOffset())
+		macro := &sc.macros[len(sc.macros)-1]
 		macro.Params = append(macro.Params, MacroParam{
 			Name:  attrValue(t, "name"),
 			Start: start,
@@ -150,26 +140,49 @@ func openMacroElement(
 			// above is not inside the element. XML spells an empty element
 			// tag exactly one way, which is what makes this readable off the
 			// two bytes behind the offset.
-			Empty: start >= 2 && storage[start-2:start] == "/>",
+			Empty: start >= 2 && sc.storage[start-2:start] == "/>",
 		})
-		return openElement{param: &macro.Params[len(macro.Params)-1]}
+
+		el.macroIndex = len(sc.macros) - 1
+		el.param = len(macro.Params) - 1
+		sc.text.Reset()
 	}
-	return openElement{}
 }
 
-// closeParameter finishes the parameter an end element closed.
-func closeParameter(p *MacroParam, end int) {
-	// A synthesized close — non-strict parsing recovering from an unclosed
-	// tag — can land before the content started. There is no range to splice
+// charData accumulates the run into the open parameter, if there is one. An
+// ac:parameter holds flat text, so the open one is always the innermost
+// element.
+func (sc *macroScan) charData(data xml.CharData) {
+	if len(sc.stack) > 0 && sc.stack[len(sc.stack)-1].param >= 0 {
+		sc.text.Write(data)
+	}
+}
+
+// end closes the innermost element, finishing the parameter it opened. end is
+// the offset the content stopped at.
+func (sc *macroScan) end(end int) {
+	if len(sc.stack) == 0 {
+		// A close with nothing open: non-strict parsing recovering from stray
+		// markup. Nothing to attribute it to.
+		return
+	}
+	el := sc.stack[len(sc.stack)-1]
+	sc.stack = sc.stack[:len(sc.stack)-1]
+	if el.param < 0 {
+		return
+	}
+
+	p := &sc.macros[el.macroIndex].Params[el.param]
+	// A synthesized close -- non-strict parsing recovering from an unclosed
+	// tag -- can land before the content started. There is no range to splice
 	// then, so the parameter is marked as having none rather than carrying an
 	// inverted one.
 	if end < p.Start {
 		p.Empty = true
-		p.Value = ""
 		return
 	}
 	p.End = end
-	p.Value = strings.TrimSpace(p.Value)
+	p.Value = strings.TrimSpace(sc.text.String())
 }
 
 // attrValue reads an attribute by local name, the way parseStorage does:

@@ -556,10 +556,7 @@ func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	live := "live"
-	meta := currentMeta()
-	meta.Subtype = &live
-	file := seedReadPage(t, "<p>body</p>", meta)
+	file := seedReadPage(t, "<p>body</p>", liveMeta())
 
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
@@ -572,7 +569,7 @@ func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sidecar.Load() error = %v", err)
 	}
-	if got.Subtype == nil || *got.Subtype != live {
-		t.Errorf("subtype after update = %v, want %q", got.Subtype, live)
+	if got.Subtype == nil || *got.Subtype != liveSubtypeValue {
+		t.Errorf("subtype after update = %v, want %q", got.Subtype, liveSubtypeValue)
 	}
 }

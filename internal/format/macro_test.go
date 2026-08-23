@@ -2,6 +2,7 @@ package format
 
 import (
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -71,14 +72,8 @@ func TestMacrosReportsEveryMacroInDocumentOrder(t *testing.T) {
 
 	macros := Macros(storage)
 	want := []string{"first", "outer", "inner"}
-	if got := macroNames(macros); len(got) != len(want) {
+	if got := macroNames(macros); !slices.Equal(got, want) {
 		t.Fatalf("Macros() = %v, want %v", got, want)
-	} else {
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("Macros() = %v, want %v", got, want)
-			}
-		}
 	}
 
 	// A parameter belongs to the macro it is a direct child of, so the outer

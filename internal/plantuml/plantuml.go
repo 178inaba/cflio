@@ -7,9 +7,10 @@
 // and live together for that reason — a decoder that drifts from the encoder
 // would let cflio write a diagram it cannot read back.
 //
-// The macro's compressed parameter is not this package's business. Whether a
-// payload is in this format at all is what that parameter answers, and the
-// callers check it before handing anything over.
+// Source is the entry point for a macro's parameters, Encode and Decode the
+// codec underneath. Whether a payload is in this format at all is what the
+// macro's compressed parameter answers, so the rule for reading it lives here
+// with the format it guards rather than being restated by every caller.
 package plantuml
 
 import (
@@ -49,6 +50,20 @@ func Encode(source string) (string, error) {
 	// padded value also renders, but emitting the app's shape keeps a page
 	// cflio wrote indistinguishable from one the app wrote.
 	return base64.RawStdEncoding.EncodeToString(deflated.Bytes()), nil
+}
+
+// Source decodes the diagram a macro carries, given its compressed and data
+// parameters exactly as the body writes them.
+//
+// A compressed value other than "true" is refused rather than guessed at: it
+// has never been seen on a real page, its payload format is unknown, and
+// decoding one anyway would be a way to show a diagram nobody wrote.
+func Source(compressed, data string) (string, error) {
+	if compressed != "true" {
+		return "", fmt.Errorf("compressed=%q rather than \"true\": "+
+			"cflio does not know that payload format and will not guess at it", compressed)
+	}
+	return Decode(data)
 }
 
 // Decode reads the diagram source back out of a data parameter's value.
@@ -96,19 +111,30 @@ func Decode(data string) (string, error) {
 // as a plus sign.
 func escape(source string) string {
 	var out strings.Builder
-	out.Grow(len(source))
+	// Half again the input: diagram source escapes a good fraction of its
+	// bytes -- every space, newline, > and : -- so sizing for the input alone
+	// would have the builder regrow, copying what it holds each time.
+	out.Grow(len(source) + len(source)/2)
 
 	// Ranged over as bytes, not runes: a non-ASCII character is escaped one
 	// UTF-8 byte at a time, which is what url.PathUnescape reassembles.
 	for i := range len(source) {
-		if c := source[i]; isUnreserved(c) {
+		c := source[i]
+		if isUnreserved(c) {
 			out.WriteByte(c)
-		} else {
-			fmt.Fprintf(&out, "%%%02X", c)
+			continue
 		}
+		// Written out rather than formatted: this runs once per escaped byte,
+		// which is most of them.
+		out.WriteByte('%')
+		out.WriteByte(hexDigits[c>>4])
+		out.WriteByte(hexDigits[c&0xF])
 	}
 	return out.String()
 }
+
+// hexDigits is upper-case, the case encodeURIComponent emits.
+const hexDigits = "0123456789ABCDEF"
 
 // isUnreserved reports whether encodeURIComponent leaves a byte bare.
 func isUnreserved(c byte) bool {

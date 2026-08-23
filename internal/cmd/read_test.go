@@ -994,13 +994,12 @@ func TestReadRecordsThePageSubtype(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		// field is what the page response carries, spliced in as JSON.
-		field   string
-		want    string
-		wantKey bool
+		field string
+		want  string
 	}{
-		{name: "live doc", field: `"subtype": "live",`, want: "live", wantKey: true},
-		{name: "classic page", field: `"subtype": "",`, want: "", wantKey: true},
-		{name: "field absent", field: "", want: "", wantKey: true},
+		{name: "live doc", field: `"subtype": "live",`, want: "live"},
+		{name: "classic page", field: `"subtype": "",`, want: ""},
+		{name: "field absent", field: "", want: ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
@@ -1019,10 +1018,13 @@ func TestReadRecordsThePageSubtype(t *testing.T) {
 			if err != nil {
 				t.Fatalf("sidecar.Load() error = %v", err)
 			}
-			if (meta.Subtype != nil) != tt.wantKey {
-				t.Fatalf("sidecar records a subtype = %v, want %v", meta.Subtype != nil, tt.wantKey)
+			// Recorded in every case, the absent field included: what the API
+			// reported is an answer, and only a sidecar written before cflio
+			// asked has none.
+			if meta.Subtype == nil {
+				t.Fatal("sidecar records no subtype")
 			}
-			if meta.Subtype != nil && *meta.Subtype != tt.want {
+			if *meta.Subtype != tt.want {
 				t.Errorf("subtype = %q, want %q", *meta.Subtype, tt.want)
 			}
 		})

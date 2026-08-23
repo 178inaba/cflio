@@ -36,6 +36,21 @@ type Meta struct {
 	Subtype *string `json:"subtype,omitempty"`
 }
 
+// liveSubtype is the subtype the v2 API reports for a live doc. Every other
+// page reports an empty one.
+const liveSubtype = "live"
+
+// LiveDoc reports whether the page is a live doc, and whether the sidecar
+// knows: a sidecar written before cflio recorded the subtype answers known =
+// false, which is a different thing from "not a live doc" and calls for a
+// different answer — ask for a fresh read rather than act on a guess.
+func (m Meta) LiveDoc() (live, known bool) {
+	if m.Subtype == nil {
+		return false, false
+	}
+	return *m.Subtype == liveSubtype, true
+}
+
 // Path returns the sidecar path for a body file.
 func Path(bodyPath string) string {
 	return bodyPath + Suffix

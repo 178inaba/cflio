@@ -622,21 +622,13 @@ func (n *node) childNodes() []*node {
 	return n.children
 }
 
-// plantUMLSource decodes the diagram source a plantumlcloud macro carries in
-// its data parameter, reporting false for anything it cannot get all the way
-// through. The decoding itself belongs to internal/plantuml, which owns the
-// encoder too, so the two directions cannot drift apart.
-//
-// The compressed parameter stays here because it is what says the payload is
-// in that format at all: a value other than "true" has never been seen on a
-// real page and its format is unknown, which makes guessing at it a way to
-// emit a diagram nobody wrote.
+// plantUMLSource decodes the diagram source a plantumlcloud macro carries,
+// reporting false for anything that will not come all the way through. Which
+// payloads are readable, and how, belongs to internal/plantuml, which owns the
+// encoder too, so the two directions cannot drift apart; all this does is read
+// the two parameters and degrade the failure into the placeholder path.
 func plantUMLSource(n *node) (string, bool) {
-	if macroParameter(n, "compressed") != "true" {
-		return "", false
-	}
-
-	source, err := plantuml.Decode(macroParameter(n, "data"))
+	source, err := plantuml.Source(macroParameter(n, "compressed"), macroParameter(n, "data"))
 	if err != nil {
 		return "", false
 	}
