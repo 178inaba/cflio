@@ -106,13 +106,16 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, er
 	}, err
 }
 
-// runLimitCmd runs one of the listing commands with an explicit --limit.
+// runLimitCmd runs one of the listing commands with an explicit --limit. The
+// name is split on spaces, so a subcommand of a group ("comments list") is
+// named the way it is typed.
 //
 // --limit=N rather than --limit N: the range check is tested with negative
 // values, which would otherwise be read as flags rather than as the value.
 func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
 
-	args := append([]string{name, fmt.Sprintf("--limit=%d", limit)}, extra...)
+	args := append(strings.Fields(name), fmt.Sprintf("--limit=%d", limit))
+	args = append(args, extra...)
 	return runCflio(t, append(args, arg)...)
 }

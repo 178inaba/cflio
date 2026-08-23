@@ -12,17 +12,9 @@ import (
 	"testing"
 )
 
-// runCommentsCmd runs `comments list` with an explicit --limit.
-//
-// runLimitCmd cannot express this: its name parameter becomes a single argv
-// token, and this command's name is two. --limit=N rather than --limit N for
-// the same reason it gives — the range check is tested with negative values,
-// which would otherwise be read as flags rather than as the value.
 func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (cflioRun, error) {
 	t.Helper()
-
-	args := append([]string{"comments", "list", fmt.Sprintf("--limit=%d", limit)}, extra...)
-	return runCflio(t, append(args, arg)...)
+	return runLimitCmd(t, "comments list", arg, limit, extra...)
 }
 
 // commentsAPI routes the four calls comments makes: the two root listings

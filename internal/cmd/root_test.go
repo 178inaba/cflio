@@ -308,9 +308,12 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
 		},
 		{
-			name: "comments",
-			args: []string{"comments", "bogus"},
-			wantStderr: "Error: unknown command \"bogus\" for \"cflio comments\"\n\n" +
+			// A hint and a suggestion together: the hint follows the
+			// candidate block, one blank line away either way.
+			name: "comments, close enough to suggest",
+			args: []string{"comments", "lsit"},
+			wantStderr: "Error: unknown command \"lsit\" for \"cflio comments\"\n\n" +
+				"Did you mean this?\n\tlist\n\n" +
 				"A page's comments are now read with `cflio comments list <page-url|page-id>`.\n",
 		},
 		{
