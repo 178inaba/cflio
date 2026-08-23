@@ -79,6 +79,10 @@ cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
 # ...edit diagram.puml, then put it back and update the page
 cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
 cflio update -f page.xml
+
+# ...or put a new diagram on the page
+cflio plantuml add -f page.xml --source diagram.puml --after 7c1d4e8a
+cflio update -f page.xml
 ```
 
 Commands that address a page accept both the URL as copied from the browser and a bare page ID.
@@ -214,10 +218,11 @@ cflio plantuml list -f page.xml
 cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
 # ...edit diagram.puml with your regular tools...
 cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
+cflio plantuml add -f page.xml --source new.puml --after 7c1d4e8a   # a diagram that is not there yet
 cflio update -f page.xml
 ```
 
-All three subcommands work on the file `read` downloaded and never talk to Confluence; the page
+All four subcommands work on the file `read` downloaded and never talk to Confluence; the page
 changes when you run `update`. A `--markdown` file is refused, with the guidance `update` gives.
 
 Do not edit the `data` parameter by hand. The encoding is the app's own, not PlantUML's public one
@@ -242,7 +247,25 @@ local-id — then read the page again. `read` records the page's subtype in the 
 be told offline; a sidecar written before it did says so and asks for a fresh read rather than
 guessing.
 
-Inserting a new diagram is not supported. Draw it in the Confluence editor, then edit it from here.
+`add` puts a diagram that is not on the page yet into the downloaded body, building the whole macro
+element out of a source file so that none of it has to be written by hand. One part of it cannot be
+left out and has no visible symptom: Confluence keeps the identifiers it is given and back-fills
+`ac:macro-id` when it is missing, but it does **not** back-fill `ac:local-id`. A macro inserted
+without one renders, and can then never be changed through the storage body again on a live doc —
+the same dead end `set` refuses above. `add` generates both ids for that reason, and prints the new
+`ac:local-id` so a follow-up `set` can address the diagram.
+
+Without `--after` the macro is appended at the end of the body. `--after <local-id>` puts it
+directly after the element carrying that identifier: Confluence stamps `local-id` on block elements
+and `ac:local-id` on macros, and either is accepted, so a diagram can be placed beside an existing
+one. An anchor that matches nothing — or more than one element — is refused rather than guessed at,
+and every other byte of the file is left untouched.
+
+The `filename` parameter defaults to the source file's name with its extension replaced by `.svg`
+(`d.puml` → `d.svg`); `--filename` overrides it. The app names the attachments it creates after it
+when someone later saves the diagram in the editor, and the viewer renders without it. A macro
+added this way stays updatable on both live docs and classic pages, so `add` has no live-doc
+refusal of its own.
 
 [puml-app]: https://marketplace.atlassian.com/apps/1215115/plantuml-diagrams-for-confluence-i-uml-flowchart-git?hosting=cloud&tab=overview
 
