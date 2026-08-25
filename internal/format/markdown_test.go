@@ -345,6 +345,24 @@ func TestToMarkdownReportsWhatItCouldNotRepresent(t *testing.T) {
 	}
 }
 
+// TestToMarkdownDegradesNeitherAnExpandNorAToc pins that the two macros
+// Markdown can carry stay out of the degrade count. A reader who sees
+// Degraded: is told to go and read the storage instead, which is a wasted
+// round trip when nothing was lost.
+func TestToMarkdownDegradesNeitherAnExpandNorAToc(t *testing.T) {
+	storage := `<ac:structured-macro ac:name="toc"><ac:parameter ac:name="maxLevel">3</ac:parameter></ac:structured-macro>` +
+		`<h2>Heading</h2>` +
+		`<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">Detail</ac:parameter>` +
+		`<ac:rich-text-body><p>Body.</p></ac:rich-text-body></ac:structured-macro>`
+
+	result := ToMarkdown(storage, Options{})
+
+	if result.UnsupportedCount != 0 || result.Unsupported != nil {
+		t.Errorf("Unsupported = %v (%d), want nothing reported for macros Markdown can carry",
+			result.Unsupported, result.UnsupportedCount)
+	}
+}
+
 func TestToMarkdownReportsNothingForAConversionItFullyRepresents(t *testing.T) {
 	result := ToMarkdown("<p>plain</p>", Options{})
 

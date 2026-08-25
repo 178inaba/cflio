@@ -574,6 +574,14 @@ func (r *renderer) macro(n *node) []block {
 		}
 	case "expand":
 		return r.expand(n)
+	case "toc":
+		// A table of contents carries no content of its own: Confluence builds
+		// it from the page's headings when the page is viewed, and those
+		// headings are already in this output. What storage holds is render
+		// configuration — levels, outline, style — so dropping the macro loses
+		// nothing. Returning no blocks at all is what keeps the surrounding
+		// ones joined as if it had never been there.
+		return nil
 	case "info", "note", "warning", "tip", "panel":
 		return r.panel(n, name)
 	}
