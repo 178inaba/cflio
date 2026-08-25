@@ -17,6 +17,12 @@ No title, so GitHub labels it itself.
 </details>
 
 <details>
+
+A whitespace-only title is no title either.
+
+</details>
+
+<details>
 <summary>Tags &lt;b&gt; &amp; entities</summary>
 
 The summary is raw HTML.
