@@ -3,6 +3,7 @@ package format
 import (
 	"cmp"
 	"encoding/xml"
+	"html"
 	"maps"
 	"slices"
 	"sort"
@@ -571,6 +572,16 @@ func (r *renderer) macro(n *node) []block {
 		if source, ok := plantUMLSource(n); ok {
 			return []block{{text: fence("plantuml", source)}}
 		}
+	case "expand":
+		return r.expand(n)
+	case "toc":
+		// A table of contents carries no content of its own: Confluence builds
+		// it from the page's headings when the page is viewed, and those
+		// headings are already in this output. What storage holds is render
+		// configuration — levels, outline, style — so dropping the macro loses
+		// nothing. Returning no blocks at all is what keeps the surrounding
+		// ones joined as if it had never been there.
+		return nil
 	case "info", "note", "warning", "tip", "panel":
 		return r.panel(n, name)
 	}
@@ -582,7 +593,7 @@ func (r *renderer) macro(n *node) []block {
 
 	// The placeholder marks the macro, but ac:rich-text-body is storage
 	// declaring "this part is body text" — dropping it would silently delete
-	// everything an expand or a section wraps. Parameters and plain-text
+	// everything an excerpt or a section wraps. Parameters and plain-text
 	// bodies are macro configuration, so they stay out.
 	return r.placeholder("[unsupported macro: "+name+"]", n.child("ac", "rich-text-body"))
 }
@@ -591,6 +602,22 @@ func (r *renderer) macro(n *node) []block {
 // whatever body text it wraps.
 func (r *renderer) placeholder(text string, body *node) []block {
 	return append([]block{{text: text}}, r.blocks(body.childNodes())...)
+}
+
+// expand renders a collapsible section as the <details> block GitHub-flavoured
+// Markdown understands. The opening tag, the body and the closing tag stay
+// separate blocks so the "\n\n" they are joined with leaves the blank lines
+// GitHub needs to read the body as Markdown rather than as literal text.
+func (r *renderer) expand(n *node) []block {
+	open := "<details>"
+	// <summary> is raw HTML, so the title needs HTML entities rather than the
+	// backslash escaping escapeText applies to paragraph text.
+	if title := macroParameter(n, "title"); title != "" {
+		open += "\n<summary>" + html.EscapeString(title) + "</summary>"
+	}
+
+	blocks := append([]block{{text: open}}, r.blocks(n.child("ac", "rich-text-body").childNodes())...)
+	return append(blocks, block{text: "</details>"})
 }
 
 func (r *renderer) panel(n *node, kind string) []block {
