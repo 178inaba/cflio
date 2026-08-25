@@ -1,4 +1,4 @@
-[unsupported macro: expand]
+[unsupported macro: excerpt]
 
 Text that must survive the placeholder.
 
