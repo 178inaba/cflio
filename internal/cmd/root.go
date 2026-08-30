@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -27,6 +28,36 @@ const timeoutExitCode = 124
 // a page id passed to a command that used to take one — gets nothing offered
 // for it.
 const unknownCommandHint = "cflio_unknown_command_hint"
+
+// version is the release version, set at link time by GoReleaser's
+// -X github.com/178inaba/cflio/internal/cmd.version={{.Version}} and empty in
+// a binary built any other way. It is package-level state because -X can reach
+// nothing else — the code convention that rules out package-level command and
+// flag variables is about the command tree, which this is not part of.
+var version string
+
+// resolveVersion returns the version --version reports, given whatever the
+// linker embedded. It takes that value as an argument rather than reading the
+// variable so a test can exercise the fallback, which is the branch every
+// binary but a released one takes.
+//
+// The fallback is the module version the toolchain records: the tag for a
+// `go install …@vX.Y.Z`, and `(devel)` or a VCS-stamped pseudo-version for a
+// local `go build`. Nothing records it for a binary built outside a module,
+// hence the last resort. The `v` is stripped throughout so the two sources
+// read alike — GoReleaser's {{.Version}} has none to begin with.
+//
+// The commit is deliberately left out: the version alone is what an agent
+// consumer and a bug report need.
+func resolveVersion(embedded string) string {
+	if embedded != "" {
+		return strings.TrimPrefix(embedded, "v")
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return strings.TrimPrefix(info.Main.Version, "v")
+	}
+	return "unknown"
+}
 
 // globalFlags holds the root's persistent flags. Every subcommand that reads
 // one takes this pointer, so the flag names stay type-checked instead of
@@ -60,6 +91,10 @@ func newRootCmd(g *globalFlags) (*cobra.Command, *runResult) {
 	cmd := &cobra.Command{
 		Use:   "cflio",
 		Short: "Confluence CLI for AI coding agents",
+		// Setting this is what makes cobra register --version at all, and
+		// print its default `cflio version X.Y.Z` for it. cobra takes the -v
+		// shorthand along with it, which nothing else on the root claims.
+		Version: resolveVersion(version),
 		Long: `cflio reads a Confluence page's storage-format body into a local file and
 writes the edited file back, so an AI coding agent can edit pages with its
 regular file-editing tools instead of regenerating the whole body as tokens.`,
