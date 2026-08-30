@@ -59,7 +59,9 @@ jobs:
           version: ${{ steps.version.outputs.version }}
       # The release workflow only reaches GoReleaser once a tag exists, so a
       # broken .goreleaser.yaml would otherwise surface after the release PR is
-      # merged, with the tag already pushed.
+      # merged, with the tag already pushed. The version has to be the one
+      # release.yml releases with, or this validates the config against a
+      # GoReleaser that never builds it — change the two together.
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'

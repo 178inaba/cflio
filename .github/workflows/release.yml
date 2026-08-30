@@ -50,7 +50,11 @@ jobs:
         id: tagpr
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # Gated on the same output as GoReleaser below, which is the only thing
+      # here that needs a toolchain: an ordinary push to main would otherwise
+      # install one and throw it away.
       - uses: actions/setup-go@v7
+        if: steps.tagpr.outputs.tag != ''
         with:
           go-version-file: go.mod
       # In this job rather than a workflow of its own, triggered by the tag: a
@@ -61,6 +65,8 @@ jobs:
       - uses: goreleaser/goreleaser-action@v7
         if: steps.tagpr.outputs.tag != ''
         with:
+          # Kept in step with the `goreleaser check` in ci.yml, which is only
+          # worth running against the version that builds the release.
           version: '~> v2'
           args: release --clean
         env:

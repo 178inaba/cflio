@@ -22,8 +22,9 @@ archives:
         formats: [zip]
 
 checksum:
-  # Named rather than left to the default so the README and the attestation
-  # can refer to it by name.
+  # The default carries the project name and version, so the asset would be
+  # called something different in every release. A fixed name is what lets
+  # documentation and verification tooling refer to it at all.
   name_template: checksums.txt
 
 homebrew_casks:
