@@ -23,9 +23,23 @@ the diff costs tokens.
 
 ## Install
 
+On macOS, with Homebrew:
+
+```sh
+brew install 178inaba/tap/cflio
+```
+
+On any platform, download the archive for your OS and architecture from the
+[Releases page](https://github.com/178inaba/cflio/releases) and put `cflio` somewhere on your
+`PATH`.
+
+Or, with a Go toolchain:
+
 ```sh
 go install github.com/178inaba/cflio@latest
 ```
+
+`cflio --version` prints the version you ended up with.
 
 ## Setup
 
