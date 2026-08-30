@@ -1,0 +1,10 @@
+[tagpr]
+	releaseBranch = main
+	# The version lives only in the linker flags GoReleaser passes, so there is
+	# no file for tagpr to rewrite.
+	versionFile = -
+	vPrefix = true
+	# GoReleaser creates the GitHub Release, from the tag merging the release
+	# PR produces. changelog is left at its default so the release PR still has
+	# a CHANGELOG.md diff to review.
+	release = false
