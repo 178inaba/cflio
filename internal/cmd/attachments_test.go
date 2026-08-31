@@ -193,9 +193,7 @@ func TestAttachmentsListRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("the API was called despite an invalid --limit")
-	})
+	startAPI(t, neverCalled(t, "despite an invalid --limit"))
 
 	if _, err := runAttachmentsListCmd(t, testPageURL, 0); err == nil {
 		t.Error("attachments list error = nil for --limit 0, want an error")
@@ -365,9 +363,7 @@ func TestAttachmentsDownloadRequiresThePatternFlag(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("the API was called despite a missing --pattern")
-	})
+	startAPI(t, neverCalled(t, "despite a missing --pattern"))
 
 	_, err := runCflio(t, "attachments", "download", testPageURL)
 	if err == nil {

@@ -1,3 +1,4 @@
+// Command cflio is a Confluence Cloud CLI built for AI coding agents.
 package main
 
 import (
