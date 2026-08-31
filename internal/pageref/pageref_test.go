@@ -54,15 +54,14 @@ func TestParse(t *testing.T) {
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
 		},
 		// The tokens below were encoded independently of the decoder under
-		// test, so a decoder that agrees with itself but not with Confluence
-		// still fails here. None of them names a real page.
+		// test — a round-trip would only confirm it agrees with itself — and
+		// none of them names a real page.
 		{
 			name: "short link",
 			arg:  "https://example.atlassian.net/wiki/x/OT",
 			want: Ref{PageID: "12345", Host: "example.atlassian.net"},
 		},
 		{
-			// Cloud page IDs outrun the 32 bits Atlassian's own snippet packs.
 			name: "short link whose page id does not fit in 32 bits",
 			arg:  "https://example.atlassian.net/wiki/x/ywT7cR8B",
 			want: Ref{PageID: "1234567890123", Host: "example.atlassian.net"},
@@ -73,8 +72,7 @@ func TestParse(t *testing.T) {
 			want: Ref{PageID: "99999999999", Host: "example.atlassian.net"},
 		},
 		{
-			// The longest a token gets: an ID whose top byte is set leaves
-			// nothing for the trailing-A trim to take.
+			// An ID whose top byte is set leaves the trim nothing to take.
 			name: "short link whose token is as long as they get",
 			arg:  "https://example.atlassian.net/wiki/x/FYHpffQQIhE",
 			want: Ref{PageID: "1234567890123456789", Host: "example.atlassian.net"},
@@ -117,15 +115,13 @@ func TestParseErrors(t *testing.T) {
 			wantContains: "short link",
 		},
 		{
-			// base64 skips a newline rather than rejecting it, so this token
-			// decodes to fewer bytes than a page ID is wide.
+			// base64 skips a newline rather than rejecting it, so this one
+			// decodes short of a page ID's width.
 			name:         "short link whose token carries an escaped newline",
 			arg:          "https://example.atlassian.net/wiki/x/A%0AB",
 			wantContains: "short link",
 		},
 		{
-			// No page is 0, so the short link's recovery advice is more use
-			// than the 404 the ID would earn.
 			name:         "short link whose token decodes to zero",
 			arg:          "https://example.atlassian.net/wiki/x/AAAA",
 			wantContains: "short link",

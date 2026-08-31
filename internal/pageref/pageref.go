@@ -34,24 +34,18 @@ var (
 	pageURLPattern = regexp.MustCompile(`^/wiki` + pagePath)
 	webUIPattern   = regexp.MustCompile(`^` + pagePath)
 
-	// tinyEncoding is base64 with Confluence's substitution folded into the
-	// alphabet — `/` written as `-` and `+` as `_`, which is the reverse of
-	// the RFC 4648 URL-safe pairing, so base64.URLEncoding decodes a token
-	// wrong rather than rejecting it.
+	// Confluence writes `/` as `-` and `+` as `_`, the reverse of the RFC
+	// 4648 URL-safe pairing — so base64.URLEncoding decodes a token to the
+	// wrong page rather than rejecting it.
 	tinyEncoding = base64.NewEncoding(
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-").WithPadding(base64.NoPadding)
 )
 
 const (
-	// A short link, as the Share dialog copies it. The token that follows
-	// encodes the page ID locally, so decodeTinyToken resolves it without a
-	// request; one that will not decode keeps its own message rather than
-	// falling through to "unrecognized".
+	// A short link, as the Share dialog copies it.
 	tinyURLPrefix = "/wiki/x/"
 
-	// tinyTokenPad is the run of `A` — the page ID's leading zero bytes —
-	// that Confluence trims off the end of a token. Its length is that of a
-	// whole token, which is what eight bytes encode to unpadded.
+	// The `A` run decodeTinyToken puts back, as long as a whole token.
 	tinyTokenPad = "AAAAAAAAAAA"
 )
 
@@ -69,8 +63,8 @@ func Parse(arg string) (Ref, error) {
 	}
 
 	path := strings.TrimSuffix(u.Path, "/")
-	// A bare prefix carries no token, so it falls through to the message
-	// that lists the forms Parse does accept.
+	// An empty token is left to fall through to unrecognizedError, which
+	// lists the forms Parse does accept.
 	if token, ok := strings.CutPrefix(path, tinyURLPrefix); ok && token != "" {
 		pageID, ok := decodeTinyToken(token)
 		if !ok {
@@ -93,29 +87,26 @@ func Parse(arg string) (Ref, error) {
 	return Ref{}, unrecognizedError(arg)
 }
 
-// decodeTinyToken turns the token of a short link back into the page ID it
-// was made from, reporting whether it decoded at all.
+// decodeTinyToken turns the token of a short link back into its page ID.
 //
-// Confluence builds the token by packing the page ID little-endian, encoding
-// it in tinyEncoding's alphabet, then trimming the padding and the trailing
-// run of `A` the ID's leading zero bytes produce. Putting that run back
-// leaves eight bytes to read as a uint64: Atlassian's own snippet packs 32
-// bits, but Cloud page IDs are not promised to fit in them, so the full
-// width is read back.
+// Confluence packs the ID little-endian, encodes it in tinyEncoding's
+// alphabet, then trims the padding and the trailing run of `A` the ID's
+// leading zero bytes produce; putting that run back leaves eight bytes.
+// Atlassian's own snippet packs 32 bits, but Cloud page IDs are not promised
+// to fit in them, so the full width is read back.
 func decodeTinyToken(token string) (string, bool) {
 	if len(token) > len(tinyTokenPad) {
 		return "", false
 	}
 
-	// base64 skips `\r` and `\n` instead of rejecting them, so a token
-	// carrying either decodes short of the eight bytes an ID needs.
+	// base64 skips `\r` and `\n` rather than rejecting them, which is what
+	// the width check catches.
 	packed, err := tinyEncoding.DecodeString(token + tinyTokenPad[len(token):])
 	if err != nil || len(packed) < 8 {
 		return "", false
 	}
 
-	// No page is 0, so a token that decodes to it is a token that did not
-	// decode: the short link's advice beats the 404 the ID would earn.
+	// No page is 0, and the short link's advice beats a guaranteed 404.
 	pageID := binary.LittleEndian.Uint64(packed)
 	if pageID == 0 {
 		return "", false
