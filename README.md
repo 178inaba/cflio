@@ -41,6 +41,15 @@ go install github.com/178inaba/cflio@latest
 
 `cflio --version` prints the version you ended up with.
 
+### Verify a download
+
+```sh
+gh attestation verify <downloaded archive> --repo 178inaba/cflio
+```
+
+A pass means the archive is exactly what this repository's release workflow built from the tagged
+commit — the checksum is checked as part of it.
+
 ## Setup
 
 `cflio` authenticates with an Atlassian API token (Basic auth with your account email).
