@@ -111,7 +111,8 @@ cflio plantuml add -f page.xml --source diagram.puml --after 7c1d4e8a
 cflio update -f page.xml
 ```
 
-Commands that address a page accept both the URL as copied from the browser and a bare page ID.
+Commands that address a page accept the URL as copied from the browser, the short link the Share
+dialog copies, and a bare page ID.
 Add `--format json` to any of them for structured output instead of Markdown. Run `cflio --help` or
 `cflio <command> --help` for the full flag reference.
 
@@ -386,7 +387,10 @@ docker compose run --rm lint --fix
   body are not resolved — only `read --markdown` resolves mentions and page links.
 - **Converted output never feeds an update.** Both converted outputs — comment bodies and
   `read --markdown` — are for reading only. A body that will be written back is never converted.
-- **Short links** (`/wiki/x/…`) are not resolved — open one in a browser and pass the full URL.
+- **Short links** (`/wiki/x/…`) are resolved locally: the token encodes the page ID, so no request
+  is made to expand one. A short link pointing at a blog post decodes just as well, but the page
+  API then answers 404 — cflio addresses pages only. A token that does not decode reports so and
+  asks for the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
   `read --markdown --attachments` links the images it downloads, but an image whose attachment
