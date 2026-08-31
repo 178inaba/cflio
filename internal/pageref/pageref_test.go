@@ -53,6 +53,30 @@ func TestParse(t *testing.T) {
 			arg:  "  https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title \n",
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
 		},
+		// The tokens below were encoded independently of the decoder under
+		// test, so a decoder that agrees with itself but not with Confluence
+		// still fails here. None of them names a real page.
+		{
+			name: "short link",
+			arg:  "https://example.atlassian.net/wiki/x/OT",
+			want: Ref{PageID: "12345", Host: "example.atlassian.net"},
+		},
+		{
+			// Cloud page IDs outrun the 32 bits Atlassian's own snippet packs.
+			name: "short link whose page id does not fit in 32 bits",
+			arg:  "https://example.atlassian.net/wiki/x/ywT7cR8B",
+			want: Ref{PageID: "1234567890123", Host: "example.atlassian.net"},
+		},
+		{
+			name: "short link using both substituted characters",
+			arg:  "https://example.atlassian.net/wiki/x/-_d2SBc",
+			want: Ref{PageID: "99999999999", Host: "example.atlassian.net"},
+		},
+		{
+			name: "short link with a trailing slash",
+			arg:  "https://example.atlassian.net/wiki/x/QOIB/",
+			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -75,9 +99,26 @@ func TestParseErrors(t *testing.T) {
 		wantContains string
 	}{
 		{
-			name:         "tiny link says so explicitly",
-			arg:          "https://example.atlassian.net/wiki/x/AbCdEf",
+			name:         "short link whose token is too long",
+			arg:          "https://example.atlassian.net/wiki/x/AbCdEfGhIjKlM",
 			wantContains: "short link",
+		},
+		{
+			name:         "short link whose token is outside the alphabet",
+			arg:          "https://example.atlassian.net/wiki/x/Ab!Cd",
+			wantContains: "short link",
+		},
+		{
+			// No page is 0, so the short link's recovery advice is more use
+			// than the 404 the ID would earn.
+			name:         "short link whose token decodes to zero",
+			arg:          "https://example.atlassian.net/wiki/x/AAAA",
+			wantContains: "short link",
+		},
+		{
+			name:         "short link with no token at all",
+			arg:          "https://example.atlassian.net/wiki/x/",
+			wantContains: "page URL or page ID",
 		},
 		{
 			name:         "empty argument",
