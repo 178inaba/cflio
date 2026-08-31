@@ -67,9 +67,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
       # One attestation over the checksum file covers every archive, and
-      # leaves the subject list to whatever GoReleaser built. Not the
-      # attest-build-provenance wrapper: its own README calls itself a wrapper
-      # on top of this action and points new uses here.
+      # leaves the subject list to whatever GoReleaser built.
       - uses: actions/attest@v4
         if: steps.tagpr.outputs.tag != ''
         with:
