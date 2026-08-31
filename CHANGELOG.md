@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.0.3](https://github.com/178inaba/cflio/compare/v1.0.2...v1.0.3) - 2026-08-31
+
+- Enable revive and adopt the newer standard-library forms Go 1.27 offers by @178inaba in https://github.com/178inaba/cflio/pull/74
+- Resolve Confluence short links by decoding the tiny-link token locally by @178inaba in https://github.com/178inaba/cflio/pull/78
+
 ## [v1.0.2](https://github.com/178inaba/cflio/compare/v1.0.1...v1.0.2) - 2026-08-31
 
 - Drop the wrapper rationale from the attest step's comment by @178inaba in https://github.com/178inaba/cflio/pull/71
