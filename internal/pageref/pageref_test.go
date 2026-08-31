@@ -73,6 +73,13 @@ func TestParse(t *testing.T) {
 			want: Ref{PageID: "99999999999", Host: "example.atlassian.net"},
 		},
 		{
+			// The longest a token gets: an ID whose top byte is set leaves
+			// nothing for the trailing-A trim to take.
+			name: "short link whose token is as long as they get",
+			arg:  "https://example.atlassian.net/wiki/x/FYHpffQQIhE",
+			want: Ref{PageID: "1234567890123456789", Host: "example.atlassian.net"},
+		},
+		{
 			name: "short link with a trailing slash",
 			arg:  "https://example.atlassian.net/wiki/x/QOIB/",
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
@@ -99,8 +106,9 @@ func TestParseErrors(t *testing.T) {
 		wantContains string
 	}{
 		{
+			// One character past the longest token TestParse decodes.
 			name:         "short link whose token is too long",
-			arg:          "https://example.atlassian.net/wiki/x/AbCdEfGhIjKlM",
+			arg:          "https://example.atlassian.net/wiki/x/FYHpffQQIhEA",
 			wantContains: "short link",
 		},
 		{
