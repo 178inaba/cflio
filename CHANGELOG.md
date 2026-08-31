@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.0.1](https://github.com/178inaba/cflio/compare/v1.0.0...v1.0.1) - 2026-08-31
+
+- Attest the release artifacts with build provenance and move off app-id by @178inaba in https://github.com/178inaba/cflio/pull/66
+
 ## [v0.0.1](https://github.com/178inaba/cflio/commits/v0.0.1) - 2026-08-31
 
 - Implement the initial Confluence read/write CLI (auth / profile / read / update / search / children / comments) by @178inaba in https://github.com/178inaba/cflio/pull/2
