@@ -34,21 +34,28 @@ var (
 	pageURLPattern = regexp.MustCompile(`^/wiki` + pagePath)
 	webUIPattern   = regexp.MustCompile(`^` + pagePath)
 
-	// A short link, as the Share dialog copies it. The token encodes the
-	// page ID locally, so decodeTinyToken resolves it without a request;
-	// one that will not decode keeps its own message rather than falling
-	// through to "unrecognized".
-	tinyURLPattern = regexp.MustCompile(`^/wiki/x/(.+)$`)
-
-	// The alphabet a token can be written in once Confluence's substitution
-	// is undone, and the length a decodable one cannot exceed: eleven
-	// characters carry the eight bytes of a page ID.
-	tinyTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,` + strconv.Itoa(tinyTokenLen) + `}$`)
+	// tinyEncoding is base64 with Confluence's substitution folded into the
+	// alphabet — `/` written as `-` and `+` as `_`, which is the reverse of
+	// the RFC 4648 URL-safe pairing, so base64.URLEncoding decodes a token
+	// wrong rather than rejecting it.
+	tinyEncoding = base64.NewEncoding(
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-").WithPadding(base64.NoPadding)
 )
 
-const tinyTokenLen = 11
+const (
+	// A short link, as the Share dialog copies it. The token that follows
+	// encodes the page ID locally, so decodeTinyToken resolves it without a
+	// request; one that will not decode keeps its own message rather than
+	// falling through to "unrecognized".
+	tinyURLPrefix = "/wiki/x/"
 
-// Parse accepts a page URL or a bare page ID.
+	// tinyTokenPad is the run of `A` — the page ID's leading zero bytes —
+	// that Confluence trims off the end of a token. Its length is that of a
+	// whole token, which is what eight bytes encode to unpadded.
+	tinyTokenPad = "AAAAAAAAAAA"
+)
+
+// Parse accepts a page URL, a short link, or a bare page ID.
 func Parse(arg string) (Ref, error) {
 	arg = strings.TrimSpace(arg)
 
@@ -62,8 +69,10 @@ func Parse(arg string) (Ref, error) {
 	}
 
 	path := strings.TrimSuffix(u.Path, "/")
-	if match := tinyURLPattern.FindStringSubmatch(path); match != nil {
-		pageID, ok := decodeTinyToken(match[1])
+	// A bare prefix carries no token, so it falls through to the message
+	// that lists the forms Parse does accept.
+	if token, ok := strings.CutPrefix(path, tinyURLPrefix); ok && token != "" {
+		pageID, ok := decodeTinyToken(token)
 		if !ok {
 			return Ref{}, fmt.Errorf("%q is a Confluence short link whose token does not decode to a page ID; "+
 				"open it in a browser and pass the full page URL instead", arg)
@@ -88,20 +97,20 @@ func Parse(arg string) (Ref, error) {
 // was made from, reporting whether it decoded at all.
 //
 // Confluence builds the token by packing the page ID little-endian, encoding
-// it as standard base64 and then substituting `/` and `+` — which is not the
-// RFC 4648 URL-safe alphabet, so base64.URLEncoding decodes it wrong — before
-// trimming the padding and the trailing run of `A` the leading zero bytes of
-// the ID produce. Undoing that leaves eight bytes to read as a uint64.
-// Atlassian's own snippet packs 32 bits, but Cloud page IDs are not promised
-// to fit in them, so the full width is read back.
+// it in tinyEncoding's alphabet, then trimming the padding and the trailing
+// run of `A` the ID's leading zero bytes produce. Putting that run back
+// leaves eight bytes to read as a uint64: Atlassian's own snippet packs 32
+// bits, but Cloud page IDs are not promised to fit in them, so the full
+// width is read back.
 func decodeTinyToken(token string) (string, bool) {
-	if !tinyTokenPattern.MatchString(token) {
+	if len(token) > len(tinyTokenPad) {
 		return "", false
 	}
 
-	std := strings.NewReplacer("-", "/", "_", "+").Replace(token)
-	packed, err := base64.StdEncoding.DecodeString(std + strings.Repeat("A", tinyTokenLen-len(std)) + "=")
-	if err != nil {
+	// base64 skips `\r` and `\n` instead of rejecting them, so a token
+	// carrying either decodes short of the eight bytes an ID needs.
+	packed, err := tinyEncoding.DecodeString(token + tinyTokenPad[len(token):])
+	if err != nil || len(packed) < 8 {
 		return "", false
 	}
 

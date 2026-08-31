@@ -109,6 +109,13 @@ func TestParseErrors(t *testing.T) {
 			wantContains: "short link",
 		},
 		{
+			// base64 skips a newline rather than rejecting it, so this token
+			// decodes to fewer bytes than a page ID is wide.
+			name:         "short link whose token carries an escaped newline",
+			arg:          "https://example.atlassian.net/wiki/x/A%0AB",
+			wantContains: "short link",
+		},
+		{
 			// No page is 0, so the short link's recovery advice is more use
 			// than the 404 the ID would earn.
 			name:         "short link whose token decodes to zero",
