@@ -573,3 +573,53 @@ func TestHelpTopicCompletion(t *testing.T) {
 		t.Errorf("cflio __complete help \"\" listed %v, want %v", got, want)
 	}
 }
+
+// TestResolveVersion covers the two sources --version reports from. The
+// fallback case asserts only that something non-empty came back without a `v`:
+// what debug.ReadBuildInfo reports for the main module differs between a
+// `go test` binary, a `go build` one and a `go install …@vX.Y.Z` one, so
+// pinning a literal would pin the toolchain rather than the behaviour.
+func TestResolveVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		embedded string
+		want     string
+	}{
+		{name: "the version GoReleaser embeds", embedded: "1.2.3", want: "1.2.3"},
+		{name: "an embedded version that kept its v", embedded: "v1.2.3", want: "1.2.3"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveVersion(tt.embedded); got != tt.want {
+				t.Errorf("resolveVersion(%q) = %q, want %q", tt.embedded, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("no embedded version falls back to the build info", func(t *testing.T) {
+		got := resolveVersion("")
+		if got == "" {
+			t.Fatal(`resolveVersion("") = "", want a version`)
+		}
+		if strings.HasPrefix(got, "v") {
+			t.Errorf(`resolveVersion("") = %q, want it without the "v" prefix`, got)
+		}
+	})
+}
+
+// TestVersionFlag pins that the resolved version reaches the root command:
+// resolveVersion could be correct and still be reported by nothing, since it is
+// the Version field being set that makes cobra register the flag at all.
+func TestVersionFlag(t *testing.T) {
+	run, err := runCflio(t, "--version")
+	if err != nil {
+		t.Fatalf("cflio --version error = %v, want nil", err)
+	}
+	if want := "cflio version " + resolveVersion(version) + "\n"; run.stdout != want {
+		t.Errorf("cflio --version stdout = %q, want %q", run.stdout, want)
+	}
+	if run.stderr != "" {
+		t.Errorf("cflio --version stderr = %q, want nothing", run.stderr)
+	}
+}

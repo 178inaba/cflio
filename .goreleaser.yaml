@@ -1,0 +1,47 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/178inaba/cflio/internal/cmd.version={{.Version}}
+
+archives:
+  # tar.gz everywhere else, which is the default.
+  - format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  # The default carries the project name and version, so the asset would be
+  # called something different in every release. A fixed name is what lets
+  # documentation and verification tooling refer to it at all.
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: cflio
+    repository:
+      owner: 178inaba
+      name: homebrew-tap
+      # The default token cannot push to another repository, so this is the
+      # GitHub App token the workflow puts in the environment.
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: https://github.com/178inaba/cflio
+    # Kept byte-identical with .claude-plugin/plugin.json and
+    # .claude-plugin/marketplace.json (see CLAUDE.md).
+    description: "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model."
+    hooks:
+      post:
+        # The binary is neither signed nor notarized, so without this Gatekeeper
+        # refuses to run what the cask just installed.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cflio"]
+          end

@@ -27,8 +27,9 @@ jobs:
       # main.go), so a compile failure there fails this step too.
       - run: go test -race ./...
       # That reasoning stops at the build-tagged re-raise, whose Windows half
-      # no linux run ever compiles. `go install` is cflio's only distribution
-      # channel, so a break here would stop Windows users installing it.
+      # no linux run ever compiles. Releases ship a Windows archive, so a break
+      # here would fail the release build — catching it on the pull request is
+      # what this step is for.
       - run: GOOS=windows go build ./...
 
   lint:
@@ -56,3 +57,12 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ steps.version.outputs.version }}
+      # The release workflow only reaches GoReleaser once a tag exists, so a
+      # broken .goreleaser.yaml would otherwise surface after the release PR is
+      # merged, with the tag already pushed. The version has to be the one
+      # release.yml releases with, or this validates the config against a
+      # GoReleaser that never builds it — change the two together.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: check

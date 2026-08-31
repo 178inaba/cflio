@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# No cancel-in-progress, unlike ci.yml: the point is to keep two tagpr runs
+# from racing on the release PR, and cancelling a GoReleaser run halfway
+# through publishing is worse than making the second push wait.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+# Every write goes out as the GitHub App below, so the workflow's own token
+# needs no more than the checkout.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    # No needs: on the CI job. The only commit this can release is the merge
+    # commit of a release PR, which CI already ran on as a pull request.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # tagpr authenticates its own push with the App token below. Without
+          # this, checkout leaves the workflow's GITHUB_TOKEN in .git/config as
+          # an http.extraheader and the push rides that instead — and a branch
+          # pushed with GITHUB_TOKEN gets no pull_request run, so the release
+          # PR would sit there with no CI until someone approved it by hand.
+          persist-credentials: false
+      # GITHUB_TOKEN cannot push to the tap repository, and a PR it opens gets
+      # no CI run until a maintainer approves it in the merge box.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: 178inaba
+          repositories: cflio,homebrew-tap
+      - uses: Songmu/tagpr@v1
+        id: tagpr
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # Gated on the same output: GoReleaser below is the only step needing Go.
+      - uses: actions/setup-go@v7
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          go-version-file: go.mod
+      # In this job rather than a workflow of its own, triggered by the tag: a
+      # tag pushed from a workflow does not reliably start another one, and
+      # gating on the output tagpr just set avoids the question.
+      - uses: goreleaser/goreleaser-action@v7
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          # Kept in step with the `goreleaser check` in ci.yml, which is only
+          # worth running against the version that builds the release.
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
