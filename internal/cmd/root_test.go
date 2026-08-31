@@ -29,7 +29,7 @@ func TestCommandContextTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
-			cmd.SetContext(context.Background())
+			cmd.SetContext(t.Context())
 
 			ctx, cancel := commandContext(cmd, tt.timeout)
 			defer cancel()
@@ -559,7 +559,7 @@ func TestHelpTopicCompletion(t *testing.T) {
 	}
 
 	var got []string
-	for _, line := range strings.Split(strings.TrimSuffix(run.stdout, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSuffix(run.stdout, "\n"), "\n") {
 		// The listing ends with cobra's ":<directive>" line.
 		if strings.HasPrefix(line, ":") {
 			continue
