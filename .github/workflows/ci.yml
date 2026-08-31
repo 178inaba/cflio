@@ -51,14 +51,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       # This failure class is silent by construction: a manifest that lost its
       # version, an entry that gained one, or a ref that drifted off stable goes
-      # red nowhere — plugin updates just stop arriving, later than either of
-      # this job's other two invariants would surface. jq is on the runner, so
-      # this needs nothing but the checkout either.
+      # red nowhere — plugin updates just stop arriving. Like the check above,
+      # this needs nothing but the checkout.
       #
-      # The two guards are load-bearing: without `// ""` a missing version makes
-      # jq throw rather than return false, and without the object check a source
-      # reverted to the string "./" throws on `.ref` — the likeliest regression
-      # of the three, since that is what the file said before.
+      # `// ""` and the object check only keep the failures legible: without
+      # them jq throws on the missing version and on a source reverted to the
+      # string "./" — still red, but reported as a jq error over the assertion
+      # that is actually the point.
       - name: Check the plugin distribution wiring
         run: |
           jq -e '(.version // "") | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' .claude-plugin/plugin.json >/dev/null \
@@ -66,7 +65,7 @@ jobs:
           jq -e '.plugins[0] | has("version") | not' .claude-plugin/marketplace.json >/dev/null \
             || { echo "::error::the marketplace entry must not carry a version; Claude Code always reads the manifest's"; exit 1; }
           jq -e '.plugins[0].source | type == "object" and .ref == "stable"' .claude-plugin/marketplace.json >/dev/null \
-            || { echo "::error::the marketplace entry's source must be a github object with ref stable"; exit 1; }
+            || { echo "::error::the marketplace entry's source must be an object resolving through ref stable"; exit 1; }
       # Required by golangci-lint-action, and the Go problem matcher it
       # registers is what turns findings into inline PR annotations.
       - uses: actions/setup-go@v7
