@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.0.2](https://github.com/178inaba/cflio/compare/v1.0.1...v1.0.2) - 2026-08-31
+
+- Drop the wrapper rationale from the attest step's comment by @178inaba in https://github.com/178inaba/cflio/pull/71
+- Tie the plugin to releases with a stable tag and a tagpr-bumped version by @178inaba in https://github.com/178inaba/cflio/pull/72
+
 ## [v1.0.1](https://github.com/178inaba/cflio/compare/v1.0.0...v1.0.1) - 2026-08-31
 
 - Attest the release artifacts with build provenance and move off app-id by @178inaba in https://github.com/178inaba/cflio/pull/66
