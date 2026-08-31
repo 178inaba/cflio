@@ -9,7 +9,11 @@
   "plugins": [
     {
       "name": "cflio",
-      "source": "./",
+      "source": {
+        "source": "github",
+        "repo": "178inaba/cflio",
+        "ref": "stable"
+      },
       "description": "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model."
     }
   ]

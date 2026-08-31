@@ -1,8 +1,9 @@
 [tagpr]
 	releaseBranch = main
-	# The version lives only in the linker flags GoReleaser passes, so there is
-	# no file for tagpr to rewrite.
-	versionFile = -
+	# The binary's version still comes from the tag — GoReleaser embeds it in the
+	# linker flags — but the plugin manifest carries a version of its own, which
+	# is what this keeps in sync; see the plugin-version rule in CLAUDE.md.
+	versionFile = .claude-plugin/plugin.json
 	vPrefix = true
 	# GoReleaser creates the GitHub Release, from the tag merging the release
 	# PR produces. changelog is left at its default so the release PR still has
