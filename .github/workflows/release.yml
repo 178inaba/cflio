@@ -11,10 +11,14 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
-# Every write goes out as the GitHub App below, so the workflow's own token
-# needs no more than the checkout.
+# Every write to a repository goes out as the GitHub App below. The workflow's
+# own token is here for the attestation, which is signed against this job's
+# OIDC identity and so cannot ride an App token.
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   release:
@@ -62,3 +66,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # One attestation over the checksum file covers all six archives, and
+      # leaves the subject list to whatever GoReleaser built. Not the
+      # attest-build-provenance wrapper: its own README calls itself a wrapper
+      # on top of this action and points new uses here.
+      - uses: actions/attest@v4
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          subject-checksums: dist/checksums.txt
