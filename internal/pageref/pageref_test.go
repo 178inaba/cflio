@@ -53,6 +53,35 @@ func TestParse(t *testing.T) {
 			arg:  "  https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title \n",
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
 		},
+		// The tokens below were encoded independently of the decoder under
+		// test — a round-trip would only confirm it agrees with itself — and
+		// none of them names a real page.
+		{
+			name: "short link",
+			arg:  "https://example.atlassian.net/wiki/x/OT",
+			want: Ref{PageID: "12345", Host: "example.atlassian.net"},
+		},
+		{
+			name: "short link whose page id does not fit in 32 bits",
+			arg:  "https://example.atlassian.net/wiki/x/ywT7cR8B",
+			want: Ref{PageID: "1234567890123", Host: "example.atlassian.net"},
+		},
+		{
+			name: "short link using both substituted characters",
+			arg:  "https://example.atlassian.net/wiki/x/-_d2SBc",
+			want: Ref{PageID: "99999999999", Host: "example.atlassian.net"},
+		},
+		{
+			// An ID whose top byte is set leaves the trim nothing to take.
+			name: "short link whose token is as long as they get",
+			arg:  "https://example.atlassian.net/wiki/x/FYHpffQQIhE",
+			want: Ref{PageID: "1234567890123456789", Host: "example.atlassian.net"},
+		},
+		{
+			name: "short link with a trailing slash",
+			arg:  "https://example.atlassian.net/wiki/x/QOIB/",
+			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -75,9 +104,32 @@ func TestParseErrors(t *testing.T) {
 		wantContains string
 	}{
 		{
-			name:         "tiny link says so explicitly",
-			arg:          "https://example.atlassian.net/wiki/x/AbCdEf",
+			// One character past the longest token TestParse decodes.
+			name:         "short link whose token is too long",
+			arg:          "https://example.atlassian.net/wiki/x/FYHpffQQIhEA",
 			wantContains: "short link",
+		},
+		{
+			name:         "short link whose token is outside the alphabet",
+			arg:          "https://example.atlassian.net/wiki/x/Ab!Cd",
+			wantContains: "short link",
+		},
+		{
+			// base64 skips a newline rather than rejecting it, so this one
+			// decodes short of a page ID's width.
+			name:         "short link whose token carries an escaped newline",
+			arg:          "https://example.atlassian.net/wiki/x/A%0AB",
+			wantContains: "short link",
+		},
+		{
+			name:         "short link whose token decodes to zero",
+			arg:          "https://example.atlassian.net/wiki/x/AAAA",
+			wantContains: "short link",
+		},
+		{
+			name:         "short link with no token at all",
+			arg:          "https://example.atlassian.net/wiki/x/",
+			wantContains: "page URL or page ID",
 		},
 		{
 			name:         "empty argument",

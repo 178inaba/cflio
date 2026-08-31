@@ -217,8 +217,30 @@ func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 
 	startAPI(t, neverCalled(t, "for an unparseable argument"))
 
-	if _, err := runRead(t, "https://example.atlassian.net/wiki/x/AbCdEf", ""); err == nil {
+	// A short link whose token is too long to decode; the ones that do are
+	// TestReadResolvesAShortLink's.
+	if _, err := runRead(t, "https://example.atlassian.net/wiki/x/AbCdEfGhIjKlM", ""); err == nil {
 		t.Fatal("read error = nil, want an error for a short link")
+	}
+}
+
+func TestReadResolvesAShortLink(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		// QOIB encodes 123456, so the decoded ID has to reach the request.
+		if want := "/api/v2/pages/123456"; !strings.HasSuffix(r.URL.Path, want) {
+			t.Errorf("request path = %q, want it to end with %q", r.URL.Path, want)
+		}
+		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
+	})
+
+	// Reaching the API at all means the host in the short link selected the
+	// profile, exactly as a full page URL's would.
+	path := filepath.Join(t.TempDir(), "page.xml")
+	if _, err := runRead(t, "https://example.atlassian.net/wiki/x/QOIB", path); err != nil {
+		t.Fatalf("read error = %v", err)
 	}
 }
 
