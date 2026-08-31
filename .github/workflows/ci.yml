@@ -51,13 +51,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       # This failure class is silent by construction: a manifest that lost its
       # version, an entry that gained one, or a ref that drifted off stable goes
-      # red nowhere — plugin updates just stop arriving. Like the check above,
-      # this needs nothing but the checkout.
-      #
-      # `// ""` and the object check only keep the failures legible: without
-      # them jq throws on the missing version and on a source reverted to the
-      # string "./" — still red, but reported as a jq error over the assertion
-      # that is actually the point.
+      # red nowhere — plugin updates just stop arriving. `// ""` and the object
+      # check keep a break reported as the assertion rather than as a jq throw.
       - name: Check the plugin distribution wiring
         run: |
           jq -e '(.version // "") | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' .claude-plugin/plugin.json >/dev/null \
