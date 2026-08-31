@@ -46,6 +46,16 @@ func seedProfile(t *testing.T, name, siteURL string) {
 	}
 }
 
+// neverCalled is the handler for the cases a command must reject before it
+// reaches the API. reason completes "the API was called ...".
+func neverCalled(t *testing.T, reason string) http.HandlerFunc {
+	t.Helper()
+
+	return func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("the API was called %s: %s %s", reason, r.Method, r.URL.Path)
+	}
+}
+
 // startAPI serves handler and redirects every client the commands build to
 // it, regardless of the site URL the resolved profile carries.
 func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {

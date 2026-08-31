@@ -261,9 +261,7 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called despite an invalid --limit")
-	})
+	startAPI(t, neverCalled(t, "despite an invalid --limit"))
 
 	if _, err := runCommentsCmd(t, testPageURL, maxLimit+1); err == nil {
 		t.Error("comments error = nil for an oversized --limit, want an error")
@@ -423,9 +421,7 @@ func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
-		t.Errorf("the API was called despite an unreadable body file: %s %s", r.Method, r.URL.Path)
-	})
+	startAPI(t, neverCalled(t, "despite an unreadable body file"))
 
 	missing := filepath.Join(t.TempDir(), "missing.xml")
 	if _, err := runCflio(t, "comments", "create", testPageURL, "-f", missing); err == nil {

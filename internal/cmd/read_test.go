@@ -215,9 +215,7 @@ func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called for an unparseable argument")
-	})
+	startAPI(t, neverCalled(t, "for an unparseable argument"))
 
 	if _, err := runRead(t, "https://example.atlassian.net/wiki/x/AbCdEf", ""); err == nil {
 		t.Fatal("read error = nil, want an error for a short link")
@@ -228,9 +226,7 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called for an unregistered site")
-	})
+	startAPI(t, neverCalled(t, "for an unregistered site"))
 
 	_, err := runRead(t, "https://unknown.atlassian.net/wiki/spaces/DEV/pages/1/T", "")
 	if err == nil {
@@ -781,9 +777,7 @@ func newReadAttachmentsAPI(t *testing.T, body string, attachments ...attachment)
 func TestReadAttachmentsWithoutMarkdownIsRejectedBeforeAnyRequest(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
-		t.Errorf("unexpected request to %s", r.URL.Path)
-	})
+	startAPI(t, neverCalled(t, "despite --attachments without --markdown"))
 
 	dir := t.TempDir()
 	_, err := runRead(t, testPageURL, filepath.Join(dir, "page.xml"), "--attachments", filepath.Join(dir, "assets"))

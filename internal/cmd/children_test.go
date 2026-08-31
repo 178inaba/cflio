@@ -203,9 +203,7 @@ func TestChildrenRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called despite an invalid --limit")
-	})
+	startAPI(t, neverCalled(t, "despite an invalid --limit"))
 
 	if _, err := runChildrenCmd(t, testPageURL, 0); err == nil {
 		t.Error("children error = nil for --limit 0, want an error")

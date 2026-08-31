@@ -102,9 +102,7 @@ func TestAuthLoginRejectsInvalidSiteURLs(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runLogin(t, input+"\n", func(_ http.ResponseWriter, _ *http.Request) {
-				t.Error("the API was called despite an invalid site url")
-			})
+			_, err := runLogin(t, input+"\n", neverCalled(t, "despite an invalid site url"))
 			if err == nil {
 				t.Fatalf("auth login error = nil for site %q, want an error", input)
 			}
@@ -146,9 +144,7 @@ func TestAuthLoginRequiresEmailAndToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runLogin(t, tt.answers, func(_ http.ResponseWriter, _ *http.Request) {
-				t.Error("the API was called despite missing credentials")
-			})
+			_, err := runLogin(t, tt.answers, neverCalled(t, "despite missing credentials"))
 			if err == nil {
 				t.Fatal("auth login error = nil, want an error")
 			}

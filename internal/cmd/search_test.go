@@ -222,9 +222,7 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called despite an invalid --limit")
-	})
+	startAPI(t, neverCalled(t, "despite an invalid --limit"))
 
 	for _, limit := range []int{0, -1, maxLimit + 1} {
 		if _, err := runSearchCmd(t, "type = page", limit); err == nil {
@@ -241,9 +239,7 @@ func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("the API was called despite an already-expired deadline")
-	})
+	startAPI(t, neverCalled(t, "despite an already-expired deadline"))
 
 	_, err := runSearchCmd(t, "type = page", 20, "--timeout=1ns")
 	if !errors.Is(err, context.DeadlineExceeded) {
