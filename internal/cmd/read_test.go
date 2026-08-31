@@ -87,7 +87,7 @@ func TestReadWritesTheSidecar(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
@@ -123,7 +123,7 @@ func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
@@ -147,7 +147,7 @@ func TestReadFallsBackWhenTheAPIReturnsNoWebLink(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", "")))
 	})
 
@@ -170,7 +170,7 @@ func TestReadDefaultsTheOutputPathToThePageID(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
@@ -189,7 +189,7 @@ func TestReadJSONOutputCarriesMetadataNotTheBody(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>secret body</p>", testPageWebUI)))
 	})
 
@@ -215,7 +215,7 @@ func TestReadRejectsUnrecognizedArguments(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called for an unparseable argument")
 	})
 
@@ -228,7 +228,7 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called for an unregistered site")
 	})
 
@@ -263,7 +263,7 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 		t.Fatalf("sidecar.Write() error = %v", err)
 	}
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>new</p>", testPageWebUI)))
 	})
 
@@ -590,7 +590,7 @@ func TestReadMarkdownDefaultsTheOutputPathToAMarkdownFile(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
@@ -629,7 +629,7 @@ func TestReadMarkdownDropsAStaleSidecar(t *testing.T) {
 		t.Fatalf("sidecar.Write() error = %v", err)
 	}
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>hi</p>", testPageWebUI)))
 	})
 
@@ -651,7 +651,7 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 		isolateConfig(t)
 		seedProfile(t, "example", testSite)
 
-		startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
@@ -670,7 +670,7 @@ func TestReadMarkdownReportsWhatItCouldNotConvert(t *testing.T) {
 		isolateConfig(t)
 		seedProfile(t, "example", testSite)
 
-		startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(pageResponse(t, body, testPageWebUI)))
 		})
 
@@ -700,7 +700,7 @@ func TestReadMarkdownReportsNothingWhenTheConversionIsClean(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(pageResponse(t, "<p>plain</p>", testPageWebUI)))
 	})
 
@@ -725,7 +725,7 @@ func TestReadWritesNothingWhenTheAPIFails(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"errors":[{"title":"Not Found"}]}`))
 	})
@@ -781,7 +781,7 @@ func newReadAttachmentsAPI(t *testing.T, body string, attachments ...attachment)
 func TestReadAttachmentsWithoutMarkdownIsRejectedBeforeAnyRequest(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request to %s", r.URL.Path)
 	})
 

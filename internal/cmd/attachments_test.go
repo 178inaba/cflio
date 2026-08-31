@@ -193,7 +193,7 @@ func TestAttachmentsListRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite an invalid --limit")
 	})
 
@@ -365,7 +365,7 @@ func TestAttachmentsDownloadRequiresThePatternFlag(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite a missing --pattern")
 	})
 

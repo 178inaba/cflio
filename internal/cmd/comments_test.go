@@ -261,7 +261,7 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite an invalid --limit")
 	})
 
@@ -423,7 +423,7 @@ func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("the API was called despite an unreadable body file: %s %s", r.Method, r.URL.Path)
 	})
 

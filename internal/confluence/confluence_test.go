@@ -102,7 +102,7 @@ func TestGetPageReturnsTheStorageBodyVerbatim(t *testing.T) {
 	// converting client would mangle.
 	body := `<p>a &amp; b &lt;c&gt;</p><ac:structured-macro ac:name="info"><ac:rich-text-body><p>hi</p></ac:rich-text-body></ac:structured-macro>`
 
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		payload, err := json.Marshal(map[string]any{
 			"id":     "123",
 			"body":   map[string]any{"storage": map[string]any{"representation": "storage", "value": body}},
@@ -407,7 +407,7 @@ func TestPageAttachmentsListsTitleMediaTypeSizeAndDownloadLink(t *testing.T) {
 }
 
 func TestPageAttachmentsReportsMoreBeyondTheLimit(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"results":[
 			{"title":"a.png"},{"title":"b.png"},{"title":"c.png"}
 		],"_links":{}}`)
@@ -461,7 +461,7 @@ func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
 }
 
 func TestDownloadAttachmentSurfacesANonSuccessStatus(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = fmt.Fprint(w, `{"errors":[{"title":"Not Found","detail":"No attachment"}]}`)
 	})
@@ -716,7 +716,7 @@ func TestSearchPagesByOffset(t *testing.T) {
 
 func TestSearchStopsWhenAPageComesBackEmpty(t *testing.T) {
 	calls := 0
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		if calls > 5 {
 			t.Fatal("Search() kept paging past an empty page")
@@ -741,7 +741,7 @@ func TestSearchStopsWhenAPageComesBackEmpty(t *testing.T) {
 // to discover there is nothing more.
 func TestSearchStopsOnceItHasEveryReportedMatch(t *testing.T) {
 	calls := 0
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		_, _ = fmt.Fprint(w, `{"results":[{"content":{"id":"1","type":"page","title":"P"}}],"totalSize":1}`)
 	})
@@ -881,7 +881,7 @@ func TestPagesByTitleEscapesTitlesAndSpaceKeys(t *testing.T) {
 }
 
 func TestPagesByTitleSkipsResultsCarryingNoContent(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"results":[{"title":"Runbook","url":"/x"},`+
 			`{"content":{"id":"1","type":"page","title":"Runbook"}}],"totalSize":2}`)
 	})
@@ -902,7 +902,7 @@ func TestPagesByTitleChunksLongTitleLists(t *testing.T) {
 	}
 
 	queries := 0
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		queries++
 		_, _ = fmt.Fprint(w, `{"results":[],"totalSize":0}`)
 	})
@@ -958,7 +958,7 @@ func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				_, _ = fmt.Fprint(w, tt.body)
 			})
@@ -997,7 +997,7 @@ func TestAPIErrorTruncatesLongRawBodies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = fmt.Fprint(w, tt.body)
 			})
@@ -1017,7 +1017,7 @@ func TestAPIErrorTruncatesLongRawBodies(t *testing.T) {
 }
 
 func TestRequestsHonorContextCancellation(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	})
 

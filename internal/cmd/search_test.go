@@ -45,7 +45,7 @@ func TestSearchReportsHowManyResultsWereLeftOut(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":[{"content":{"id":"1","type":"page","title":"A"},"url":"/x"}],` +
 			`"totalSize":5}`))
 	})
@@ -91,7 +91,7 @@ func TestSearchOmitsTheNoticeWhenEverythingFits(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":[{"content":{"id":"1","type":"page","title":"A"},"url":"/x"}],` +
 			`"totalSize":1}`))
 	})
@@ -109,7 +109,7 @@ func TestSearchStripsHighlightMarkersAndHandlesNonContentHits(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":[
 			{"content":{"id":"1","type":"page","title":"The @@@hl@@@Release@@@endhl@@@ Notes"},"url":"/p"},
 			{"title":"@@@hl@@@Dev@@@endhl@@@ Space","entityType":"space","url":"/spaces/DEV"}
@@ -137,7 +137,7 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":[{"content":{"id":"1","type":"page","title":"A"},` +
 			`"url":"https://elsewhere.example/p/1"}],"totalSize":1}`))
 	})
@@ -158,7 +158,7 @@ func TestSearchJSONOutput(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":[{"content":{"id":"1","type":"page","title":"A"},"url":"/p"}],` +
 			`"totalSize":3}`))
 	})
@@ -203,7 +203,7 @@ func TestSearchEmptyResults(t *testing.T) {
 			isolateConfig(t)
 			seedProfile(t, "example", testSite)
 
-			startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+			startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(`{"results":[],"totalSize":0}`))
 			})
 
@@ -222,7 +222,7 @@ func TestSearchRejectsAnOutOfRangeLimit(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite an invalid --limit")
 	})
 
@@ -241,7 +241,7 @@ func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite an already-expired deadline")
 	})
 

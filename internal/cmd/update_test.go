@@ -307,7 +307,7 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 	if err := os.WriteFile(path, []byte("<p>hi</p>"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called without a sidecar")
 	})
 
@@ -352,7 +352,7 @@ func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
 	path := seedReadPage(t, "<p>hi</p>", currentMeta())
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called despite a profile/site conflict")
 	})
 
@@ -375,7 +375,7 @@ func TestUpdateFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	meta.PageURL = "https://unknown.atlassian.net/wiki/spaces/DEV/pages/123456/T"
 	path := seedReadPage(t, "<p>hi</p>", meta)
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called for an unregistered site")
 	})
 
@@ -498,7 +498,7 @@ func TestUpdateRejectsAnEmptyTitle(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	path := seedReadPage(t, "<p>hi</p>", currentMeta())
 
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("the API was called for an empty --title")
 	})
 

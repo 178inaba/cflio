@@ -34,7 +34,7 @@ func newProfileUseCmd() *cobra.Command {
 	}
 }
 
-func runProfileList(cmd *cobra.Command, args []string) error {
+func runProfileList(cmd *cobra.Command, _ []string) error {
 	file, err := config.Load()
 	if err != nil {
 		return err

@@ -26,7 +26,7 @@ func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cflioRun,
 	return runCflioWithStdin(t, answers, "auth", "login")
 }
 
-func okCurrentUser(w http.ResponseWriter, r *http.Request) {
+func okCurrentUser(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"accountId":"acc-1","displayName":"Ada Lovelace","email":"a@example.com"}`))
 }
 
@@ -102,7 +102,7 @@ func TestAuthLoginRejectsInvalidSiteURLs(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runLogin(t, input+"\n", func(w http.ResponseWriter, r *http.Request) {
+			_, err := runLogin(t, input+"\n", func(_ http.ResponseWriter, _ *http.Request) {
 				t.Error("the API was called despite an invalid site url")
 			})
 			if err == nil {
@@ -117,7 +117,7 @@ func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	isolateConfig(t)
 
 	run, err := runLogin(t, "https://example.atlassian.net\na@example.com\nbad-token\n\n",
-		func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"message":"Basic auth with password is not allowed"}`))
 		})
@@ -146,7 +146,7 @@ func TestAuthLoginRequiresEmailAndToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runLogin(t, tt.answers, func(w http.ResponseWriter, r *http.Request) {
+			_, err := runLogin(t, tt.answers, func(_ http.ResponseWriter, _ *http.Request) {
 				t.Error("the API was called despite missing credentials")
 			})
 			if err == nil {
