@@ -10,8 +10,6 @@ builds:
     goarch:
       - amd64
       - arm64
-    # -X fills in internal/cmd.version, which is what `cflio --version`
-    # reports. GoReleaser's .Version has no `v` prefix.
     ldflags:
       - -s -w -X github.com/178inaba/cflio/internal/cmd.version={{.Version}}
 

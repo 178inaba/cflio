@@ -11,9 +11,8 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
-# Everything that writes — the release PR, the tag, the Release, the cask —
-# goes out as the GitHub App below, so the workflow's own token needs no more
-# than the checkout.
+# Every write goes out as the GitHub App below, so the workflow's own token
+# needs no more than the checkout.
 permissions:
   contents: read
 
@@ -26,8 +25,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # tagpr compares against the last tag, and GoReleaser builds its
-          # changelog from the history.
           fetch-depth: 0
           # tagpr authenticates its own push with the App token below. Without
           # this, checkout leaves the workflow's GITHUB_TOKEN in .git/config as
@@ -44,24 +41,18 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: 178inaba
           repositories: cflio,homebrew-tap
-      # Keeps the release PR up to date on every push, and creates the tag on
-      # the push that merges it.
       - uses: Songmu/tagpr@v1
         id: tagpr
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-      # Gated on the same output as GoReleaser below, which is the only thing
-      # here that needs a toolchain: an ordinary push to main would otherwise
-      # install one and throw it away.
+      # Gated on the same output: GoReleaser below is the only step needing Go.
       - uses: actions/setup-go@v7
         if: steps.tagpr.outputs.tag != ''
         with:
           go-version-file: go.mod
       # In this job rather than a workflow of its own, triggered by the tag: a
       # tag pushed from a workflow does not reliably start another one, and
-      # gating on the output tagpr just set avoids the question. The step is
-      # skipped on every push that did not create a tag, which is all of them
-      # but the release PR's merge.
+      # gating on the output tagpr just set avoids the question.
       - uses: goreleaser/goreleaser-action@v7
         if: steps.tagpr.outputs.tag != ''
         with:
