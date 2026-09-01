@@ -134,7 +134,10 @@ func Remove(bodyPath string) error {
 func Write(bodyPath string, meta Meta) error {
 	path := Path(bodyPath)
 
-	data, err := json.Marshal(meta, jsontext.WithIndent("  "))
+	// Deterministic does nothing for a struct, and is here so that the day
+	// Meta grows a map field nobody has to notice: v2 leaves map members in
+	// runtime order, and a reshuffling sidecar would fail no test.
+	data, err := json.Marshal(meta, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("encode sidecar: %w", err)
 	}

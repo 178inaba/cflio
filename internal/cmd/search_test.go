@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -258,34 +259,25 @@ func TestSearchReportsADeadlineThatExpiresMidResponse(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	// Released by Cleanup rather than after a sleep: the handler has to
-	// outlive the deadline without the test guessing how long that takes.
-	release := make(chan struct{})
-	served := make(chan struct{})
-
-	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	var served atomic.Bool
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		// A prefix of a valid response: enough for the decoder to start and
 		// not enough for it to finish, so the deadline lands inside the read.
 		if _, err := w.Write([]byte(`{"results": [`)); err != nil {
 			return
 		}
 		w.(http.Flusher).Flush()
-		close(served)
-		<-release
+		served.Store(true)
+		// Stalls until the client gives up, rather than for a fixed time the
+		// test would have to guess.
+		<-r.Context().Done()
 	})
-	// Registered after startAPI so it runs before the server's own Close:
-	// Cleanup is LIFO, and Close waits for outstanding handlers, so the two
-	// in the other order deadlock on this handler.
-	t.Cleanup(func() { close(release) })
 
 	_, err := runSearchCmd(t, "type = page", 20, "--timeout=200ms")
 
 	// Without this the test would also pass on a deadline too short to reach
 	// the server at all, which is the case above and proves nothing here.
-	select {
-	case <-served:
-	default:
+	if !served.Load() {
 		t.Fatal("the API was never answered, so the decode path was not exercised")
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {

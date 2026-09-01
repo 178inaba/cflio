@@ -76,6 +76,13 @@ type readResult struct {
 	// Unsupported and UnsupportedCount describe what the Markdown conversion
 	// could not represent, so the caller can tell a lossy rendering from a
 	// faithful one without opening the file.
+	//
+	// The counts say omitzero where the slice above says omitempty, and the
+	// two are not interchangeable: omitempty omits what encodes as an empty
+	// JSON value, which covers an empty array but not a 0. Spelling these
+	// omitempty would put "unsupported_count": 0 on every faithful read,
+	// where the whole point of the field is to be absent when there is
+	// nothing to report.
 	Unsupported      []string `json:"unsupported,omitempty"`
 	UnsupportedCount int      `json:"unsupported_count,omitzero"`
 	// UncheckedCount counts the references whose lookup produced no answer:

@@ -6,12 +6,29 @@ version: "2"
 linters:
   default: none
   enable:
+    - depguard
     - errcheck
     - govet
     - ineffassign
     - revive
     - staticcheck
     - unused
+
+  settings:
+    # encoding/json v1 and v2 compile side by side and differ silently: v1
+    # escapes HTML, sorts map keys and reads omitempty as "zero value", where
+    # v2 does none of those. Nothing in the test suite compares JSON bytes, so
+    # a v1 import reintroduced by habit would pass every test and change what
+    # the CLI prints. This is the guard that the module stays on v2.
+    depguard:
+      rules:
+        json:
+          deny:
+            # The $ anchors the match: depguard matches by prefix otherwise,
+            # and a bare encoding/json would take encoding/json/v2 and
+            # encoding/json/jsontext down with it.
+            - pkg: encoding/json$
+              desc: use encoding/json/v2 (with encoding/json/jsontext for encode options)
 
 formatters:
   enable:

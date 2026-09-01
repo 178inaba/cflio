@@ -667,12 +667,22 @@ func (c *Client) send(ctx context.Context, method, path string, payload, out any
 // one to \uXXXX triples its size in the request — exactly the wrong trade for
 // the large pages this tool exists to handle. v1 needed SetEscapeHTML(false)
 // to reach the same place.
+//
+// The bytes.Buffer is what keeps a multi-megabyte body down to one copy:
+// MarshalWrite appends straight into a bytes.Buffer instead of filling an
+// intermediate buffer and copying out of it. net/http reads Content-Length
+// off the body's concrete type, and *bytes.Buffer is one of the types it
+// knows, so that type has to survive the io.Reader this returns.
+//
+// This is the one marshal site that does not ask for Deterministic. Nothing
+// diffs a request body: the payload types carry no maps, and the server reads
+// members by name.
 func encodeJSON(payload any) (io.Reader, error) {
-	data, err := json.Marshal(payload)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := json.MarshalWrite(&buf, payload); err != nil {
 		return nil, fmt.Errorf("encode request body: %w", err)
 	}
-	return bytes.NewReader(data), nil
+	return &buf, nil
 }
 
 // responseError turns a non-2xx response into an *APIError.
