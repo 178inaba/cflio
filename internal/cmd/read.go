@@ -77,14 +77,14 @@ type readResult struct {
 	// could not represent, so the caller can tell a lossy rendering from a
 	// faithful one without opening the file.
 	Unsupported      []string `json:"unsupported,omitempty"`
-	UnsupportedCount int      `json:"unsupported_count,omitempty"`
+	UnsupportedCount int      `json:"unsupported_count,omitzero"`
 	// UncheckedCount counts the references whose lookup produced no answer:
 	// the request failed, or it was never attempted for want of a space key.
 	// A lookup that ran and matched nothing is not counted — that reference is
 	// genuinely unresolvable, and the fallback is the final answer. Both render
 	// identically, so without this count a caller cannot tell a rendering that
 	// is missing names and links that do exist from one that is complete.
-	UncheckedCount int `json:"unchecked_count,omitempty"`
+	UncheckedCount int `json:"unchecked_count,omitzero"`
 }
 
 func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath string, markdown bool, attachmentsDir string, outFormat format.Format) error {

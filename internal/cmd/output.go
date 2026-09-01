@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
 
@@ -38,8 +39,13 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 // writeJSON renders payload as the --format json output. Every command's
 // JSON branch goes through here so indentation and framing stay identical
 // across them.
+//
+// Deterministic is not decoration: listPayload and writeComments both build
+// map payloads, and v2 emits map members in whatever order the runtime hands
+// them over. Without it two identical invocations disagree, which is exactly
+// what an agent consumer diffing this output cannot have.
 func writeJSON(cmd *cobra.Command, payload any) error {
-	encoded, err := json.MarshalIndent(payload, "", "  ")
+	encoded, err := json.Marshal(payload, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -83,12 +89,10 @@ func writeList[T markdownItem](cmd *cobra.Command, outFormat format.Format, name
 }
 
 // listPayload builds {"<name>": [...], "notice": "..."} with the array
-// always present, so a consumer can index it without a nil check.
+// always present, so a consumer can index it without a nil check. That
+// holds without help here: v2 encodes a nil slice as [], where v1 needed the
+// empty slice substituting in.
 func listPayload[T any](name string, items []T, notice string) map[string]any {
-	if items == nil {
-		items = []T{}
-	}
-
 	payload := map[string]any{jsonKey(name): items}
 	if notice != "" {
 		payload["notice"] = notice
