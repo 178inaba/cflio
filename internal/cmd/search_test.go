@@ -247,6 +247,52 @@ func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
 	}
 }
 
+// TestSearchReportsADeadlineThatExpiresMidResponse covers the other half of
+// the deadline: the one above expires before the request is sent, so the
+// error never travels through the JSON decoder. Here the server answers, then
+// stalls with the body half-written, which is the case exit code 124 depends
+// on — describeFailure reads errors.Is(err, context.DeadlineExceeded), and a
+// decoder that wrapped the read failure opaquely would silently downgrade
+// every mid-transfer timeout to a plain 1.
+func TestSearchReportsADeadlineThatExpiresMidResponse(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	// Released by Cleanup rather than after a sleep: the handler has to
+	// outlive the deadline without the test guessing how long that takes.
+	release := make(chan struct{})
+	served := make(chan struct{})
+
+	startAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A prefix of a valid response: enough for the decoder to start and
+		// not enough for it to finish, so the deadline lands inside the read.
+		if _, err := w.Write([]byte(`{"results": [`)); err != nil {
+			return
+		}
+		w.(http.Flusher).Flush()
+		close(served)
+		<-release
+	})
+	// Registered after startAPI so it runs before the server's own Close:
+	// Cleanup is LIFO, and Close waits for outstanding handlers, so the two
+	// in the other order deadlock on this handler.
+	t.Cleanup(func() { close(release) })
+
+	_, err := runSearchCmd(t, "type = page", 20, "--timeout=200ms")
+
+	// Without this the test would also pass on a deadline too short to reach
+	// the server at all, which is the case above and proves nothing here.
+	select {
+	case <-served:
+	default:
+		t.Fatal("the API was never answered, so the decode path was not exercised")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
+	}
+}
+
 func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
