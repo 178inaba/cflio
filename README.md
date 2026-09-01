@@ -362,9 +362,8 @@ For other agents, use a skill installer that consumes GitHub repos directly, e.g
 [`npx skills`](https://www.npmjs.com/package/skills):
 
 ```sh
-# The URL form, not the 178inaba/cflio@stable shorthand: both resolve the tag at
-# install time, but only the URL form is recorded in the lockfile, so only it
-# survives `npx skills update` — the shorthand falls back to the default branch.
+# The URL form, not the 178inaba/cflio@stable shorthand: both resolve the tag
+# at install time, but only this one lands in the lockfile and survives updates.
 npx skills add https://github.com/178inaba/cflio/tree/stable
 ```
 
