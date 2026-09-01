@@ -4,7 +4,8 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"os"
@@ -101,7 +102,10 @@ func (f *File) Save() error {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(f, "", "  ")
+	// Deterministic because Profiles is a map and v2 emits map members in
+	// whatever order the runtime hands them over: without it, every save
+	// reshuffles a file people read and hand-edit.
+	data, err := json.Marshal(f, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
