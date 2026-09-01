@@ -40,16 +40,21 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 // JSON branch goes through here so indentation and framing stay identical
 // across them.
 //
-// Deterministic is not decoration: listPayload and writeComments both build
-// map payloads, and v2 emits map members in whatever order the runtime hands
-// them over. Without it two identical invocations disagree, which is exactly
-// what an agent consumer diffing this output cannot have.
+// Deterministic is not decoration: listPayload names its array from a
+// caller-supplied label, so its payload has to be a map, and v2 emits map
+// members in whatever order the runtime hands them over. Without it two
+// identical invocations disagree, which is exactly what an agent consumer
+// diffing this output cannot have. Note the guarantee is per binary — the
+// option's own documentation declines to promise the same order across
+// builds — so nothing may depend on the ordering surviving an upgrade.
 func writeJSON(cmd *cobra.Command, payload any) error {
-	encoded, err := json.Marshal(payload, jsontext.WithIndent("  "), json.Deterministic(true))
-	if err != nil {
+	out := cmd.OutOrStdout()
+	if err := json.MarshalWrite(out, payload, jsontext.WithIndent("  "), json.Deterministic(true)); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
+	// MarshalWrite stops at the closing brace; the trailing newline is what
+	// makes the output a well-formed line for a terminal or a pipe.
+	_, err := fmt.Fprintln(out)
 	return err
 }
 
