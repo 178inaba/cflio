@@ -198,9 +198,24 @@ type commentItem struct {
 // commentSection is one of the two comment families on a page.
 type commentSection struct {
 	Title    string        `json:"-"`
-	Key      string        `json:"-"`
 	Comments []commentItem `json:"comments"`
 	Notice   string        `json:"notice,omitempty"`
+}
+
+// commentsPayload is the document `comments list --format json` prints. The
+// two families are named fields rather than members of a map keyed at run
+// time: the set is fixed, so the shape belongs in the type — which is also
+// what settles member order, with no encoder option standing in for it.
+type commentsPayload struct {
+	Footer commentSection `json:"footer_comments"`
+	Inline commentSection `json:"inline_comments"`
+}
+
+// sections returns the families in print order. The Markdown output walks
+// this; the JSON output is the struct itself, and the two agree because the
+// field order and this slice are written together.
+func (p commentsPayload) sections() []commentSection {
+	return []commentSection{p.Footer, p.Inline}
 }
 
 func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat format.Format) error {
@@ -221,24 +236,24 @@ func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	sections := make([]commentSection, 0, 2)
-	for _, kind := range []struct {
+	var payload commentsPayload
+	for _, family := range []struct {
 		kind  confluence.CommentKind
 		title string
-		key   string
+		into  *commentSection
 	}{
-		{confluence.FooterComments, "Footer comments", "footer_comments"},
-		{confluence.InlineComments, "Inline comments", "inline_comments"},
+		{confluence.FooterComments, "Footer comments", &payload.Footer},
+		{confluence.InlineComments, "Inline comments", &payload.Inline},
 	} {
-		section, err := collectComments(ctx, client, kind.kind, ref.PageID, limit)
+		section, err := collectComments(ctx, client, family.kind, ref.PageID, limit)
 		if err != nil {
 			return err
 		}
-		section.Title, section.Key = kind.title, kind.key
-		sections = append(sections, section)
+		section.Title = family.title
+		*family.into = section
 	}
 
-	return writeComments(cmd, outFormat, sections)
+	return writeComments(cmd, outFormat, payload)
 }
 
 func collectComments(ctx context.Context, client *confluence.Client, kind confluence.CommentKind, pageID string, limit int) (commentSection, error) {
@@ -288,20 +303,16 @@ func commentItemFrom(c confluence.Comment) commentItem {
 	}
 }
 
-func writeComments(cmd *cobra.Command, outFormat format.Format, sections []commentSection) error {
+func writeComments(cmd *cobra.Command, outFormat format.Format, payload commentsPayload) error {
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
 	if outFormat == format.JSON {
-		payload := make(map[string]any, len(sections))
-		for _, section := range sections {
-			payload[section.Key] = section
-		}
 		return writeJSON(cmd, payload)
 	}
 
 	out := cmd.OutOrStdout()
-	for i, section := range sections {
+	for i, section := range payload.sections() {
 		if i > 0 {
 			if _, err := fmt.Fprintln(out); err != nil {
 				return err

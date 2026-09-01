@@ -194,7 +194,7 @@ func TestWritersRejectAFormatThatBypassedSet(t *testing.T) {
 		},
 		{
 			name:  "writeComments",
-			write: func(cmd *cobra.Command) error { return writeComments(cmd, bogus, nil) },
+			write: func(cmd *cobra.Command) error { return writeComments(cmd, bogus, commentsPayload{}) },
 		},
 		{
 			name:  "writeReadResult",

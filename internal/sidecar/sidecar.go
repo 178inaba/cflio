@@ -6,7 +6,8 @@
 package sidecar
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"os"
@@ -33,7 +34,11 @@ type Meta struct {
 	// reason to ask for a fresh read, the other is a settled "not a live
 	// doc". Nothing requires it: a sidecar already on disk has to keep
 	// working with `update`.
-	Subtype *string `json:"subtype,omitempty"`
+	//
+	// omitzero, not omitempty: v2 reads omitempty as "omit what encodes as an
+	// empty JSON value", which covers a pointer to "" and would collapse the
+	// very two states the pointer is here to keep apart.
+	Subtype *string `json:"subtype,omitzero"`
 }
 
 // liveSubtype is the subtype the v2 API reports for a live doc. Every other
@@ -129,7 +134,10 @@ func Remove(bodyPath string) error {
 func Write(bodyPath string, meta Meta) error {
 	path := Path(bodyPath)
 
-	data, err := json.MarshalIndent(meta, "", "  ")
+	// Deterministic does nothing for a struct, and is here so that the day
+	// Meta grows a map field nobody has to notice: v2 leaves map members in
+	// runtime order, and a reshuffling sidecar would fail no test.
+	data, err := json.Marshal(meta, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("encode sidecar: %w", err)
 	}

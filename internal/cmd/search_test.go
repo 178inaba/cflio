@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -242,6 +243,43 @@ func TestSearchHonoursTheTimeoutFlag(t *testing.T) {
 	startAPI(t, neverCalled(t, "despite an already-expired deadline"))
 
 	_, err := runSearchCmd(t, "type = page", 20, "--timeout=1ns")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
+	}
+}
+
+// TestSearchReportsADeadlineThatExpiresMidResponse covers the other half of
+// the deadline: the one above expires before the request is sent, so the
+// error never travels through the JSON decoder. Here the server answers, then
+// stalls with the body half-written, which is the case exit code 124 depends
+// on — describeFailure reads errors.Is(err, context.DeadlineExceeded), and a
+// decoder that wrapped the read failure opaquely would silently downgrade
+// every mid-transfer timeout to a plain 1.
+func TestSearchReportsADeadlineThatExpiresMidResponse(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	var served atomic.Bool
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		// A prefix of a valid response: enough for the decoder to start and
+		// not enough for it to finish, so the deadline lands inside the read.
+		if _, err := w.Write([]byte(`{"results": [`)); err != nil {
+			return
+		}
+		w.(http.Flusher).Flush()
+		served.Store(true)
+		// Stalls until the client gives up, rather than for a fixed time the
+		// test would have to guess.
+		<-r.Context().Done()
+	})
+
+	_, err := runSearchCmd(t, "type = page", 20, "--timeout=200ms")
+
+	// Without this the test would also pass on a deadline too short to reach
+	// the server at all, which is the case above and proves nothing here.
+	if !served.Load() {
+		t.Fatal("the API was never answered, so the decode path was not exercised")
+	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
 	}

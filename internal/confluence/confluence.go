@@ -10,8 +10,9 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"maps"
@@ -661,18 +662,27 @@ func (c *Client) send(ctx context.Context, method, path string, payload, out any
 	return c.do(req, path, out)
 }
 
-// encodeJSON disables Go's default HTML escaping. Storage XHTML is mostly
-// angle brackets and ampersands, and escaping each one to \uXXXX triples
-// its size in the request — exactly the wrong trade for the large pages
-// this tool exists to handle.
+// encodeJSON renders a request body. It relies on v2 leaving HTML alone:
+// storage XHTML is mostly angle brackets and ampersands, and escaping each
+// one to \uXXXX triples its size in the request — exactly the wrong trade for
+// the large pages this tool exists to handle. v1 needed SetEscapeHTML(false)
+// to reach the same place.
+//
+// The bytes.Buffer is what keeps a multi-megabyte body down to one copy:
+// MarshalWrite appends straight into a bytes.Buffer instead of filling an
+// intermediate buffer and copying out of it. net/http reads Content-Length
+// off the body's concrete type, and *bytes.Buffer is one of the types it
+// knows, so that type has to survive the io.Reader this returns.
+//
+// This is the one marshal site that does not ask for Deterministic. Nothing
+// diffs a request body: the payload types carry no maps, and the server reads
+// members by name.
 func encodeJSON(payload any) (io.Reader, error) {
-	var buf strings.Builder
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(payload); err != nil {
+	var buf bytes.Buffer
+	if err := json.MarshalWrite(&buf, payload); err != nil {
 		return nil, fmt.Errorf("encode request body: %w", err)
 	}
-	return strings.NewReader(buf.String()), nil
+	return &buf, nil
 }
 
 // responseError turns a non-2xx response into an *APIError.
@@ -712,7 +722,9 @@ func (c *Client) do(req *http.Request, path string, out any) error {
 	// Decoded straight from the stream rather than buffered first: a page
 	// response carries the whole body, and reading it into a []byte before
 	// unmarshalling would hold a second full copy of a multi-megabyte page.
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	// UnmarshalRead reads to EOF and rejects anything after the value, which
+	// is what every endpoint here returns: exactly one JSON document.
+	if err := json.UnmarshalRead(resp.Body, out); err != nil {
 		return fmt.Errorf("parse response from %s %s: %w", req.Method, path, err)
 	}
 	return nil
