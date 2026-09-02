@@ -25,6 +25,12 @@ checksum:
   # documentation and verification tooling refer to it at all.
   name_template: checksums.txt
 
+changelog:
+  # The default builds the body from the commit log, one line per commit. This
+  # takes GitHub's own generated notes instead, so the body is one line per
+  # merged PR and .github/release.yml is what decides its contents.
+  use: github-native
+
 homebrew_casks:
   - name: cflio
     repository:

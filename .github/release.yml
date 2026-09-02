@@ -2,3 +2,16 @@ changelog:
   exclude:
     labels:
       - tagpr
+  categories:
+    # A PR lands in the first category that matches, so excluding dependencies
+    # from the catch-all is what keeps those PRs for the category below it.
+    # This file feeds both the release body and the CHANGELOG.md tagpr writes.
+    - title: Changes
+      labels:
+        - "*"
+      exclude:
+        labels:
+          - dependencies
+    - title: Dependency updates
+      labels:
+        - dependencies
