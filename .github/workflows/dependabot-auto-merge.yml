@@ -41,8 +41,11 @@ jobs:
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      # The job checks nothing out, so nothing from the pull request head
-      # executes here. The merge commit is the only method the ruleset allows.
+      # The job checks nothing out, so none of the bumped dependency runs here.
+      # This file itself does: a pull_request run takes the workflow definition
+      # from the merge ref, so a github-actions bump to the step above runs at
+      # its new version, holding the App key. The required checks are the gate
+      # for that too. The merge commit is the only method the ruleset allows.
       #
       # Approving first is safe even though it can leave auto-merge nothing to
       # wait on: gh merges an already mergeable pull request outright rather
