@@ -49,22 +49,24 @@ jobs:
           version=${image##*:}
           [[ "$version" == v* ]] || { echo "::error::could not read the golangci-lint version from compose.yaml (got '$version')"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      # This failure class is silent by construction: a manifest that lost its
-      # version, an entry that gained one, a ref that drifted off stable, or a
-      # README install command that stopped naming stable all go red nowhere —
-      # the plugin facts stop updates arriving, the README one serves the skill
-      # ahead of the binary it describes. `// ""` and the object check keep a
-      # break reported as the assertion rather than as a jq throw.
+      # This failure class is silent by construction: every fact asserted below
+      # can break without turning anything red, and the first signal is a user
+      # whose skill has drifted from the binary it describes. `// ""`, the
+      # object check, and running every assertion as `... || { ...; exit 1; }`
+      # keep a break reported as the assertion rather than as a jq or shell error.
       - name: Check the plugin distribution wiring
         run: |
           jq -e '(.version // "") | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' .claude-plugin/plugin.json >/dev/null \
-            || { echo "::error::.claude-plugin/plugin.json needs a bare semver version, the form tagpr writes"; exit 1; }
+            || { echo "::error::.claude-plugin/plugin.json needs a bare semver version, the form tagpr writes through versionFile"; exit 1; }
           jq -e '.plugins[0] | has("version") | not' .claude-plugin/marketplace.json >/dev/null \
-            || { echo "::error::the marketplace entry must not carry a version; Claude Code always reads the manifest's"; exit 1; }
+            || { echo "::error::the .claude-plugin/marketplace.json plugins entry must not carry a version; Claude Code always reads the manifest's, so a stale manifest would mask it"; exit 1; }
           jq -e '.plugins[0].source | type == "object" and .ref == "stable"' .claude-plugin/marketplace.json >/dev/null \
-            || { echo "::error::the marketplace entry's source must be an object resolving through ref stable"; exit 1; }
-          grep -q '^npx skills add https://github.com/178inaba/cflio/tree/stable$' README.md \
-            || { echo "::error::README.md must carry the line 'npx skills add https://github.com/178inaba/cflio/tree/stable', so the npx install path resolves through the stable tag"; exit 1; }
+            || { echo "::error::the .claude-plugin/marketplace.json plugins entry's source must be an object resolving through ref \"stable\""; exit 1; }
+          [[ "$(git config -f .tagpr tagpr.versionFile)" == .claude-plugin/plugin.json ]] \
+            || { echo "::error::.tagpr must set versionFile to .claude-plugin/plugin.json, or tagpr stops bumping the version that stable ships"; exit 1; }
+          install_url="https://github.com/$(jq -r '.plugins[0].source.repo' .claude-plugin/marketplace.json)/tree/$(jq -r '.plugins[0].source.ref' .claude-plugin/marketplace.json)"
+          grep -qxF "npx skills add $install_url" README.md \
+            || { echo "::error::README.md must carry the line 'npx skills add $install_url', the URL form of the install command; the comment beside it in README.md records why"; exit 1; }
       # Required by golangci-lint-action, and the Go problem matcher it
       # registers is what turns findings into inline PR annotations.
       - uses: actions/setup-go@v7
