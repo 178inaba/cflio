@@ -1,0 +1,52 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Auto-merge
+    runs-on: ubuntu-latest
+    # The actor, not the pull request author: a commit a person pushes onto a
+    # Dependabot branch fires synchronize with that person as the actor, and
+    # approving there would be approving on their behalf.
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      # GITHUB_TOKEN can do neither write below. The ruleset requires an
+      # approving review and "Allow GitHub Actions to create and approve pull
+      # requests" is off, so it cannot approve; and a merge that auto-merge
+      # performs on its behalf emits no push event, which would leave
+      # release.yml unrun and tagpr's release PR stale until the next push.
+      #
+      # A workflow Dependabot triggers sees only Dependabot secrets, so the App
+      # private key has to be registered there as well as in Actions:
+      # gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/cflio < key.pem
+      # The App also needs the Workflows permission, or enabling auto-merge is
+      # refused on every github-actions bump — those edit .github/workflows.
+      #
+      # Nothing is checked out, but a pull_request run takes this file from the
+      # merge ref, so a bump to this step already runs at its new version here,
+      # holding the App key.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      # Approving first cannot strand the merge: gh merges an already mergeable
+      # pull request outright rather than calling enablePullRequestAutoMerge,
+      # which is what would refuse it. The merge commit is the only method the
+      # ruleset allows.
+      - name: Approve and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --merge "$PR_URL"
