@@ -1,0 +1,60 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Auto-merge
+    runs-on: ubuntu-latest
+    # Gated on the actor rather than the pull request author: a commit a person
+    # pushes onto a Dependabot branch fires synchronize with that person as the
+    # actor, and the author check would approve it on their behalf. An approval
+    # and auto-merge from an earlier run survive that push, so whoever takes a
+    # Dependabot pull request over disables auto-merge themselves.
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      # GITHUB_TOKEN can do neither write below. The ruleset requires an
+      # approving review and "Allow GitHub Actions to create and approve pull
+      # requests" is off, so it cannot approve; and a merge that auto-merge
+      # performs on its behalf emits no push event, which would leave
+      # release.yml unrun and tagpr's release PR stale until the next push.
+      #
+      # A workflow Dependabot triggers sees only Dependabot secrets, so the App
+      # private key has to be registered there as well as in Actions:
+      # gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/cflio < key.pem
+      # vars.APP_CLIENT_ID is readable from such a run as is. The App also needs
+      # the Workflows permission, or enabling auto-merge is refused on every
+      # github-actions bump — those pull requests edit .github/workflows.
+      #
+      # No owner / repositories, unlike release.yml: the action defaults to the
+      # current repository, and this job touches nothing else.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      # The job checks nothing out, so nothing from the pull request head
+      # executes here. The merge commit is the only method the ruleset allows.
+      #
+      # Approving first is safe even though it can leave auto-merge nothing to
+      # wait on: gh merges an already mergeable pull request outright rather
+      # than calling enablePullRequestAutoMerge, which is what would refuse it.
+      # Enabling first would gain nothing — the ruleset's review requirement
+      # keeps every unapproved Dependabot pull request unmergeable — and would
+      # approve an already merged pull request whenever a rerun found the
+      # checks green.
+      - name: Approve and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --merge "$PR_URL"
