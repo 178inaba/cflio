@@ -14,11 +14,9 @@ jobs:
   auto-merge:
     name: Auto-merge
     runs-on: ubuntu-latest
-    # Gated on the actor rather than the pull request author: a commit a person
-    # pushes onto a Dependabot branch fires synchronize with that person as the
-    # actor, and the author check would approve it on their behalf. An approval
-    # and auto-merge from an earlier run survive that push, so whoever takes a
-    # Dependabot pull request over disables auto-merge themselves.
+    # The actor, not the pull request author: a commit a person pushes onto a
+    # Dependabot branch fires synchronize with that person as the actor, and
+    # approving there would be approving on their behalf.
     if: github.actor == 'dependabot[bot]'
     steps:
       # GITHUB_TOKEN can do neither write below. The ruleset requires an
@@ -30,30 +28,21 @@ jobs:
       # A workflow Dependabot triggers sees only Dependabot secrets, so the App
       # private key has to be registered there as well as in Actions:
       # gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/cflio < key.pem
-      # vars.APP_CLIENT_ID is readable from such a run as is. The App also needs
-      # the Workflows permission, or enabling auto-merge is refused on every
-      # github-actions bump — those pull requests edit .github/workflows.
+      # The App also needs the Workflows permission, or enabling auto-merge is
+      # refused on every github-actions bump — those edit .github/workflows.
       #
-      # No owner / repositories, unlike release.yml: the action defaults to the
-      # current repository, and this job touches nothing else.
+      # Nothing is checked out, but a pull_request run takes this file from the
+      # merge ref, so a bump to this step already runs at its new version here,
+      # holding the App key.
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      # The job checks nothing out, so none of the bumped dependency runs here.
-      # This file itself does: a pull_request run takes the workflow definition
-      # from the merge ref, so a github-actions bump to the step above runs at
-      # its new version, holding the App key. The required checks are the gate
-      # for that too. The merge commit is the only method the ruleset allows.
-      #
-      # Approving first is safe even though it can leave auto-merge nothing to
-      # wait on: gh merges an already mergeable pull request outright rather
-      # than calling enablePullRequestAutoMerge, which is what would refuse it.
-      # Enabling first would gain nothing — the ruleset's review requirement
-      # keeps every unapproved Dependabot pull request unmergeable — and would
-      # approve an already merged pull request whenever a rerun found the
-      # checks green.
+      # Approving first cannot strand the merge: gh merges an already mergeable
+      # pull request outright rather than calling enablePullRequestAutoMerge,
+      # which is what would refuse it. The merge commit is the only method the
+      # ruleset allows.
       - name: Approve and enable auto-merge
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
