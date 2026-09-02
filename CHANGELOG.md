@@ -1,5 +1,14 @@
 # Changelog
 
+## [v1.0.4](https://github.com/178inaba/cflio/compare/v1.0.3...v1.0.4) - 2026-09-02
+
+### Changes
+- Pin the npx skills install command to the stable tag by @178inaba in https://github.com/178inaba/cflio/pull/79
+- Correct what the 178inaba/cflio@stable shorthand actually does by @178inaba in https://github.com/178inaba/cflio/pull/83
+- Port the JSON handling to encoding/json/v2 by @178inaba in https://github.com/178inaba/cflio/pull/82
+- Generate release notes from GitHub's What's Changed by @178inaba in https://github.com/178inaba/cflio/pull/87
+- Derive the README install URL from the marketplace entry by @178inaba in https://github.com/178inaba/cflio/pull/86
+
 ## [v1.0.3](https://github.com/178inaba/cflio/compare/v1.0.2...v1.0.3) - 2026-08-31
 
 - Enable revive and adopt the newer standard-library forms Go 1.27 offers by @178inaba in https://github.com/178inaba/cflio/pull/74
