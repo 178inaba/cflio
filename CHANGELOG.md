@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.0.5](https://github.com/178inaba/cflio/compare/v1.0.4...v1.0.5) - 2026-09-03
+
+### Changes
+- Approve and auto-merge Dependabot pull requests by @178inaba in https://github.com/178inaba/cflio/pull/89
+### Dependency updates
+- Bump golangci/golangci-lint from v2.13.1 to v2.13.2 by @dependabot[bot] in https://github.com/178inaba/cflio/pull/91
+
 ## [v1.0.4](https://github.com/178inaba/cflio/compare/v1.0.3...v1.0.4) - 2026-09-02
 
 ### Changes
