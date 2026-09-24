@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.0.6](https://github.com/178inaba/cflio/compare/v1.0.5...v1.0.6) - 2026-09-24
+
+### Dependency updates
+- Bump golang.org/x/term from 0.45.0 to 0.46.0 by @dependabot[bot] in https://github.com/178inaba/cflio/pull/92
+
 ## [v1.0.5](https://github.com/178inaba/cflio/compare/v1.0.4...v1.0.5) - 2026-09-03
 
 ### Changes
