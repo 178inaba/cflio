@@ -1,9 +1,5 @@
 version: 2
 
-# Inferred from the repository name otherwise, which would put that name on
-# the binary, the archives and the cask.
-project_name: atlio
-
 builds:
   - env:
       - CGO_ENABLED=0
