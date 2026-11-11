@@ -1,6 +1,6 @@
 ---
 name: atlio
-description: Read Jira issues, and read, edit and create Confluence Cloud pages, from the CLI without the body passing through your context. Use whenever the user shares a Jira link or an issue key (e.g. KAN-1) or asks what an issue says, shares a Confluence link, asks you to read, search or summarize a Confluence page, asks you to edit, update or fix wording on one, or asks you to create a new Confluence page.
+description: Read Jira issues, and read, edit and create Confluence Cloud pages, from the CLI without the body passing through your context. Use whenever the user shares a Jira link or an issue key (e.g. KAN-1) or asks what an issue says, shares a Confluence link, asks you to read, search or summarize a Confluence page, asks you to edit, update or fix wording on one, asks you to create a new Confluence page, or asks you to put a screenshot, image or file on one.
 ---
 
 # atlio
@@ -19,6 +19,7 @@ description: Read Jira issues, and read, edit and create Confluence Cloud pages,
 - The user asks you to leave a note or a question on a page → write it to a file as storage XHTML, then `atlio confluence comments create <page> -f <file>`.
 - The task needs the images a page shows → add `--attachments <dir>` to the `confluence read --markdown` above; the body links the files it downloaded, so read those paths.
 - The task needs a file the body does not show as an image → `atlio confluence attachments list <page>`, then `atlio confluence attachments download <page> --pattern '<glob>' -o <dir>` and read the downloaded file.
+- The task needs to put an image on a page (a screenshot you took, a chart you rendered) → `atlio confluence attachments upload <page> <image>`, then `atlio confluence read <url> -o <file>`, add `<ac:image><ri:attachment ri:filename="<image's base name>" /></ac:image>` to the file where it belongs, and `atlio confluence update -f <file>`.
 - The user asks you to change a PlantUML diagram on a page, or to put a new one on it → `atlio confluence plantuml` (`list`, `get`, `set`, `add`) on the file `confluence read` downloaded, then `atlio confluence update`.
 
 ## Operating contract
@@ -50,6 +51,7 @@ description: Read Jira issues, and read, edit and create Confluence Cloud pages,
 - **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` atlio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — neither of those is one of the codes above, since the process never exits normally. An interrupted `confluence read` leaves no body file unless the signal lands during the write itself, so do not treat a missing file as a failed request.
 - **An image on a page is only readable as a file.** `confluence read --markdown` on its own renders `<ac:image>` as the filename alone. `--attachments <dir>` downloads the ones the body references and links them, so the body tells you which path to read; it requires `--markdown`, and an image it could not fetch stays filename text and is counted in `Unchecked:`. A file already at the destination is kept rather than replaced or re-fetched, so re-reading a page is safe to repeat.
 - **`confluence attachments download` is for the files the body does not reference.** `--pattern` is required and case-sensitive; scope it to what the task needs rather than reaching for `--pattern '*'`, since every file you pull you then have to read. A pattern matching nothing is an error, not an empty success, and — unlike the read path above — an existing file is refused rather than kept, failing the whole run: pick a different `-o` instead of deleting the user's files.
-- **Not supported**: deleting or moving pages, editing or deleting a comment, replying to one, posting an inline comment, and uploading attachments. Draft those for the user to post themselves.
+- **Uploading attaches a file; it does not show it.** The body is untouched until you add the `<ac:image>` element and run `confluence update`. A name the page already has an attachment under is refused, and the whole upload with it — re-run with `--replace` only when replacing that attachment is what the task wants, since it adds a new version of the existing file. After `--replace` the page already shows the new version, so updating a screenshot that is already embedded needs no `confluence update`.
+- **Not supported**: deleting or moving pages, editing or deleting a comment, replying to one, posting an inline comment, and deleting attachments. Draft those for the user to post themselves.
 
 Run `atlio --help` or `atlio <command> --help` for the full flag reference; it is the source of truth for exact flags and defaults, so this document does not duplicate it.
