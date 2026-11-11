@@ -142,7 +142,7 @@ func TestUpdatePageSendsTheRequiredFieldsUnescaped(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"id":"123","version":{"number":8}}`)
 	})
 
-	req := NewUpdatePageRequest("123", "current", "Title", body, 8, "Updated via cflio")
+	req := NewUpdatePageRequest("123", "current", "Title", body, 8, "Updated via atlio")
 	page, err := client.UpdatePage(t.Context(), req)
 	if err != nil {
 		t.Fatalf("UpdatePage() error = %v", err)

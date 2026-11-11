@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/178inaba/cflio/internal/format"
+	"github.com/178inaba/atlio/internal/format"
 	"github.com/spf13/cobra"
 )
 

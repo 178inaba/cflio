@@ -5,7 +5,7 @@
 // public one: the public encoding uses a custom base64 alphabet over deflate,
 // which this app does not accept. Encode and Decode are each other's inverse
 // and live together for that reason — a decoder that drifts from the encoder
-// would let cflio write a diagram it cannot read back.
+// would let atlio write a diagram it cannot read back.
 //
 // Source is the entry point for a macro's parameters, Encode and Decode the
 // codec underneath. Whether a payload is in this format at all is what the
@@ -48,7 +48,7 @@ func Encode(source string) (string, error) {
 
 	// Standard alphabet with no padding, which is what the app writes. A
 	// padded value also renders, but emitting the app's shape keeps a page
-	// cflio wrote indistinguishable from one the app wrote.
+	// atlio wrote indistinguishable from one the app wrote.
 	return base64.RawStdEncoding.EncodeToString(deflated.Bytes()), nil
 }
 
@@ -61,7 +61,7 @@ func Encode(source string) (string, error) {
 func Source(compressed, data string) (string, error) {
 	if compressed != "true" {
 		return "", fmt.Errorf("compressed=%q rather than \"true\": "+
-			"cflio does not know that payload format and will not guess at it", compressed)
+			"atlio does not know that payload format and will not guess at it", compressed)
 	}
 	return Decode(data)
 }

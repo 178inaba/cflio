@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/178inaba/cflio/internal/config"
+	"github.com/178inaba/atlio/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -156,7 +156,7 @@ func chooseProfileName(out io.Writer, in *bufio.Reader, file *config.File, site 
 
 // normalizeSiteURL reduces anything pasted from a browser to the site's
 // Confluence base URL. Only the scheme and host are kept and /wiki is
-// appended: cflio targets Confluence Cloud, where that path is fixed, so
+// appended: atlio targets Confluence Cloud, where that path is fixed, so
 // deriving it beats asking the user to get it right.
 func normalizeSiteURL(input string) (string, error) {
 	input = strings.TrimSpace(input)
@@ -220,7 +220,7 @@ func interruptSignals() []os.Signal {
 // during the masked token read ends the process by the signal the user sent
 // rather than through an error report.
 //
-// Nothing else in cflio needs the signal caught: dying immediately is
+// Nothing else in atlio needs the signal caught: dying immediately is
 // already the wanted behaviour everywhere else, and the modified terminal
 // is the only thing that would outlive the process badly.
 //

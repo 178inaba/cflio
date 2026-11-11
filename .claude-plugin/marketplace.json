@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "cflio",
+  "name": "atlio",
   "description": "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model.",
   "owner": {
     "name": "Masahiro Furudate",
@@ -8,10 +8,10 @@
   },
   "plugins": [
     {
-      "name": "cflio",
+      "name": "atlio",
       "source": {
         "source": "github",
-        "repo": "178inaba/cflio",
+        "repo": "178inaba/atlio",
         "ref": "stable"
       },
       "description": "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model."

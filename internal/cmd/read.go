@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/pageref"
-	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/pageref"
+	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func newReadCmd(g *globalFlags) *cobra.Command {
 representation, to a local file plus a metadata sidecar.
 
 The body is never printed: edit the downloaded file with your regular file
-editing tools and write it back with ` + "`cflio update`" + `.
+editing tools and write it back with ` + "`atlio update`" + `.
 
 ` + "`--markdown`" + ` converts the body to Markdown for reading instead. That file
 carries no sidecar and cannot be written back, so use it when the page is
@@ -175,7 +175,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		PageURL: pageref.PageURL(creds.SiteURL, page.Links.WebUI, page.ID),
 		// Always recorded, empty subtype and all: what the API reported is an
 		// answer, and a caller has to be able to tell it from a sidecar
-		// written before cflio asked the question at all.
+		// written before atlio asked the question at all.
 		Subtype: &page.Subtype,
 	}
 
@@ -316,7 +316,7 @@ func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (groups map[string
 // keyed by filename, plus how many references it could not answer.
 //
 // Only the referenced filenames are fetched. The page's other attachments are
-// `cflio attachments download`'s job, and pulling a 4 MB PDF because it
+// `atlio attachments download`'s job, and pulling a 4 MB PDF because it
 // happens to be attached is exactly the cost its --pattern exists to make
 // deliberate.
 //

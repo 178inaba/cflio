@@ -266,7 +266,7 @@ func TestChildPageURL(t *testing.T) {
 			}
 
 			// children prints these URLs, and an agent is expected to feed
-			// them straight back into `cflio read`.
+			// them straight back into `atlio read`.
 			ref, err := Parse(got)
 			if err != nil {
 				t.Fatalf("Parse(%q) error = %v", got, err)

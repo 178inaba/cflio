@@ -1,4 +1,4 @@
-// Package cmd wires up cflio's cobra command tree.
+// Package cmd wires up atlio's cobra command tree.
 package cmd
 
 import (
@@ -22,7 +22,7 @@ const defaultTimeout = 90 * time.Second
 const timeoutExitCode = 124
 
 // version is the release version, set at link time by GoReleaser's
-// -X github.com/178inaba/cflio/internal/cmd.version={{.Version}} and empty in
+// -X github.com/178inaba/atlio/internal/cmd.version={{.Version}} and empty in
 // a binary built any other way. It is package-level state because -X can reach
 // nothing else — the code convention that rules out package-level command and
 // flag variables is about the command tree, which this is not part of.
@@ -81,13 +81,13 @@ type runResult struct {
 func newRootCmd(g *globalFlags) (*cobra.Command, *runResult) {
 	res := &runResult{}
 	cmd := &cobra.Command{
-		Use:   "cflio",
+		Use:   "atlio",
 		Short: "Confluence CLI for AI coding agents",
 		// Setting this is what makes cobra register --version at all, and
-		// print its default `cflio version X.Y.Z` for it. cobra takes the -v
+		// print its default `atlio version X.Y.Z` for it. cobra takes the -v
 		// shorthand along with it, which nothing else on the root claims.
 		Version: resolveVersion(version),
-		Long: `cflio reads a Confluence page's storage-format body into a local file and
+		Long: `atlio reads a Confluence page's storage-format body into a local file and
 writes the edited file back, so an AI coding agent can edit pages with its
 regular file-editing tools instead of regenerating the whole body as tokens.`,
 		SilenceUsage:  true,
@@ -95,7 +95,7 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 	}
 
 	cmd.PersistentFlags().StringVar(&g.profile, "profile", "",
-		"profile to use, overriding URL-based auto-selection and CFLIO_PROFILE")
+		"profile to use, overriding URL-based auto-selection and ATLIO_PROFILE")
 	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
@@ -148,13 +148,13 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 
 // newHelpCmd replaces the help command cobra installs itself. cobra's runs
 // through Run, which cannot fail, so a topic that does not resolve exits 0 —
-// and `cflio help auth bogus` reports nothing at all, because Find resolves
+// and `atlio help auth bogus` reports nothing at all, because Find resolves
 // `auth` and the leftover `bogus` goes to the blank identifier. RunE lets the
 // same failure come back as an error, which the root's SilenceErrors hands to
 // Execute to print and end the run non-zero for.
 //
-// Everything else is cobra's own, kept as it is so `cflio help <TAB>` still
-// completes subcommand names. GroupID is the one field dropped: cflio has no
+// Everything else is cobra's own, kept as it is so `atlio help <TAB>` still
+// completes subcommand names. GroupID is the one field dropped: atlio has no
 // command groups, so cobra's would be empty here anyway. The substitution is
 // in ValidArgsFunction, where cobra keeps `help` in the candidate list by
 // comparing against the unexported helpCommand field that IsAvailableCommand
@@ -182,8 +182,8 @@ Simply type ` + root.DisplayName() + ` help [path to command] for full details.`
 			// Flow the context down to be used in help text. cobra assigns
 			// it only when the target has none; assigning it unconditionally
 			// is the same thing here, since the two targets that already
-			// carry one — this command, for `cflio help help`, and the root,
-			// for `cflio help` — both carry this very context.
+			// carry one — this command, for `atlio help help`, and the root,
+			// for `atlio help` — both carry this very context.
 			target.SetContext(c.Context())
 			target.InitDefaultHelpFlag()    // make possible 'help' flag to be shown
 			target.InitDefaultVersionFlag() // make possible 'version' flag to be shown

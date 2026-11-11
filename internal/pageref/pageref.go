@@ -76,7 +76,7 @@ func Parse(arg string) (Ref, error) {
 	if match := pageURLPattern.FindStringSubmatch(path); match != nil {
 		return Ref{PageID: match[2], Host: u.Host}, nil
 	}
-	// The page-ID query form, which is what `cflio read` records in a
+	// The page-ID query form, which is what `atlio read` records in a
 	// sidecar when the API returns no web link.
 	if strings.HasSuffix(path, "/pages/viewpage.action") {
 		if id := u.Query().Get("pageId"); pageIDPattern.MatchString(id) {
@@ -161,7 +161,7 @@ func SpaceKeyOf(webui string) string {
 
 // SpacePageURL builds a page's URL from its space key. The result is in the
 // form Parse accepts, so a link built with it can be fed straight back to
-// `cflio read`.
+// `atlio read`.
 func SpacePageURL(site, spaceKey, pageID string) string {
 	return strings.TrimSuffix(site, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
 }

@@ -55,7 +55,7 @@ func TestSaveUsesRestrictivePermissions(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 
-	dir := filepath.Join(root, "cflio")
+	dir := filepath.Join(root, "atlio")
 	dirInfo, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("Stat(%s) error = %v", dir, err)
@@ -122,7 +122,7 @@ func TestResolvePrecedence(t *testing.T) {
 		{
 			name:        "explicit --profile wins",
 			flagProfile: "other",
-			getenv:      env(map[string]string{"CFLIO_PROFILE": "example"}),
+			getenv:      env(map[string]string{"ATLIO_PROFILE": "example"}),
 			want: Credentials{
 				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
 				Email: "b@other.com", Token: "tok-other",
@@ -138,17 +138,17 @@ func TestResolvePrecedence(t *testing.T) {
 			},
 		},
 		{
-			name:    "url host beats CFLIO_PROFILE",
+			name:    "url host beats ATLIO_PROFILE",
 			urlHost: "other.atlassian.net",
-			getenv:  env(map[string]string{"CFLIO_PROFILE": "example"}),
+			getenv:  env(map[string]string{"ATLIO_PROFILE": "example"}),
 			want: Credentials{
 				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
 				Email: "b@other.com", Token: "tok-other",
 			},
 		},
 		{
-			name:   "CFLIO_PROFILE replaces the default profile",
-			getenv: env(map[string]string{"CFLIO_PROFILE": "other"}),
+			name:   "ATLIO_PROFILE replaces the default profile",
+			getenv: env(map[string]string{"ATLIO_PROFILE": "other"}),
 			want: Credentials{
 				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
 				Email: "b@other.com", Token: "tok-other",
@@ -163,17 +163,17 @@ func TestResolvePrecedence(t *testing.T) {
 			},
 		},
 		{
-			name:   "CFLIO_TOKEN replaces only the token",
-			getenv: env(map[string]string{"CFLIO_TOKEN": "env-token"}),
+			name:   "ATLIO_TOKEN replaces only the token",
+			getenv: env(map[string]string{"ATLIO_TOKEN": "env-token"}),
 			want: Credentials{
 				Profile: "example", SiteURL: "https://example.atlassian.net/wiki",
 				Email: "a@example.com", Token: "env-token",
 			},
 		},
 		{
-			name:    "CFLIO_TOKEN does not bypass url-host selection",
+			name:    "ATLIO_TOKEN does not bypass url-host selection",
 			urlHost: "other.atlassian.net",
-			getenv:  env(map[string]string{"CFLIO_TOKEN": "env-token"}),
+			getenv:  env(map[string]string{"ATLIO_TOKEN": "env-token"}),
 			want: Credentials{
 				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
 				Email: "b@other.com", Token: "env-token",
@@ -223,26 +223,26 @@ func TestResolveErrors(t *testing.T) {
 			file:         testFile(),
 			urlHost:      "unknown.atlassian.net",
 			getenv:       noEnv,
-			wantContains: []string{"unknown.atlassian.net", "example, other", "cflio auth login"},
+			wantContains: []string{"unknown.atlassian.net", "example, other", "atlio auth login"},
 		},
 		{
 			name:         "unregistered url host does not fall back to the default profile",
 			file:         testFile(),
 			urlHost:      "unknown.atlassian.net",
-			getenv:       env(map[string]string{"CFLIO_PROFILE": "example"}),
+			getenv:       env(map[string]string{"ATLIO_PROFILE": "example"}),
 			wantContains: []string{"unknown.atlassian.net"},
 		},
 		{
-			name:         "unknown CFLIO_PROFILE",
+			name:         "unknown ATLIO_PROFILE",
 			file:         testFile(),
-			getenv:       env(map[string]string{"CFLIO_PROFILE": "nope"}),
-			wantContains: []string{"CFLIO_PROFILE", "nope", "example, other"},
+			getenv:       env(map[string]string{"ATLIO_PROFILE": "nope"}),
+			wantContains: []string{"ATLIO_PROFILE", "nope", "example, other"},
 		},
 		{
 			name:         "no profiles registered",
 			file:         &File{Profiles: map[string]Profile{}},
 			getenv:       noEnv,
-			wantContains: []string{"cflio auth login"},
+			wantContains: []string{"atlio auth login"},
 		},
 		{
 			name: "default profile points at a missing entry",
@@ -269,14 +269,14 @@ func TestResolveErrors(t *testing.T) {
 	}
 }
 
-func TestResolveCFLIOTokenDoesNotCreateAProfile(t *testing.T) {
-	// CFLIO_TOKEN overrides a resolved profile's token; it is not a way to
+func TestResolveATLIOTokenDoesNotCreateAProfile(t *testing.T) {
+	// ATLIO_TOKEN overrides a resolved profile's token; it is not a way to
 	// run without any profile at all, since the site and email still have
 	// to come from somewhere.
 	_, err := Resolve(&File{Profiles: map[string]Profile{}}, "", "",
-		env(map[string]string{"CFLIO_TOKEN": "env-token"}))
+		env(map[string]string{"ATLIO_TOKEN": "env-token"}))
 	if err == nil {
-		t.Fatal("Resolve() error = nil, want an error when only CFLIO_TOKEN is set")
+		t.Fatal("Resolve() error = nil, want an error when only ATLIO_TOKEN is set")
 	}
 }
 
@@ -284,7 +284,7 @@ func TestLoadReportsCorruptConfig(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
 
-	dir := filepath.Join(root, "cflio")
+	dir := filepath.Join(root, "atlio")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

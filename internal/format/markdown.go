@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/178inaba/cflio/internal/plantuml"
+	"github.com/178inaba/atlio/internal/plantuml"
 )
 
 // PageRef names a page the way storage links to one: by space key and title,
@@ -751,7 +751,7 @@ func (r *renderer) anchor(n *node) string {
 // link renders <ac:link>. Storage names its targets rather than addressing
 // them, so an unresolved target renders as text: a URL built here from a
 // space key and a title is not a form pageref.Parse accepts, which would make
-// it a link cflio itself cannot follow.
+// it a link atlio itself cannot follow.
 //
 // The target kinds resolved from Options are the ones collectTarget gathers;
 // the two are kept in step by hand.
@@ -828,7 +828,7 @@ func (r *renderer) linkBody(n *node) string {
 // image renders <ac:image>. An attachment has no URL the converter could put
 // here — it is fetched, not linked — so unless the caller downloaded it and
 // said where to, the filename is what is kept, and it is also what
-// `cflio attachments download --pattern` selects the file by.
+// `atlio attachments download --pattern` selects the file by.
 func (r *renderer) image(n *node) string {
 	source := riChild(n)
 

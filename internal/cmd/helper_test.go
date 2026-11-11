@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/178inaba/cflio/internal/config"
-	"github.com/178inaba/cflio/internal/confluence"
+	"github.com/178inaba/atlio/internal/config"
+	"github.com/178inaba/atlio/internal/confluence"
 )
 
 const (
@@ -25,8 +25,8 @@ const (
 func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("CFLIO_PROFILE", "")
-	t.Setenv("CFLIO_TOKEN", "")
+	t.Setenv("ATLIO_PROFILE", "")
+	t.Setenv("ATLIO_TOKEN", "")
 }
 
 // seedProfile registers a default profile for the given site.
@@ -73,22 +73,22 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
-// cflioRun is what one invocation of the command tree produced. The two
+// atlioRun is what one invocation of the command tree produced. The two
 // streams are kept apart so a test can assert which one a message reached.
-type cflioRun struct {
+type atlioRun struct {
 	stdout, stderr string
 }
 
-// runCflio builds a fresh command tree and runs args through it, returning
+// runAtlio builds a fresh command tree and runs args through it, returning
 // what it wrote. Every case gets its own tree, so no flag value survives
 // into the next test.
-func runCflio(t *testing.T, args ...string) (cflioRun, error) {
+func runAtlio(t *testing.T, args ...string) (atlioRun, error) {
 	t.Helper()
-	return runCflioWithStdin(t, "", args...)
+	return runAtlioWithStdin(t, "", args...)
 }
 
-// runCflioWithStdin is runCflio for the commands that prompt.
-func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, error) {
+// runAtlioWithStdin is runAtlio for the commands that prompt.
+func runAtlioWithStdin(t *testing.T, stdin string, args ...string) (atlioRun, error) {
 	t.Helper()
 
 	root, res := newRootCmd(&globalFlags{})
@@ -98,7 +98,7 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, er
 	root.SetIn(strings.NewReader(stdin))
 	// Never nil: cobra falls back to os.Args[1:] for a nil argument list,
 	// which under `go test` means the -test.* flags. A caller that passes
-	// no arguments at all — to exercise bare `cflio` — would hit exactly
+	// no arguments at all — to exercise bare `atlio` — would hit exactly
 	// that, so the variadic's nil is normalised here.
 	if args == nil {
 		args = []string{}
@@ -112,7 +112,7 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, er
 		// error rather than out of band (see runResult.unknownCommand).
 		err = res.unknownCommand
 	}
-	return cflioRun{stdout: out.String(), stderr: errOut.String()}, err
+	return atlioRun{stdout: out.String(), stderr: errOut.String()}, err
 }
 
 // runLimitCmd runs one of the listing commands with an explicit --limit. The
@@ -121,10 +121,10 @@ func runCflioWithStdin(t *testing.T, stdin string, args ...string) (cflioRun, er
 //
 // --limit=N rather than --limit N: the range check is tested with negative
 // values, which would otherwise be read as flags rather than as the value.
-func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (cflioRun, error) {
+func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (atlioRun, error) {
 	t.Helper()
 
 	args := append(strings.Fields(name), fmt.Sprintf("--limit=%d", limit))
 	args = append(args, extra...)
-	return runCflio(t, append(args, arg)...)
+	return runAtlio(t, append(args, arg)...)
 }

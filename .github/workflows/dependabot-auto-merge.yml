@@ -27,7 +27,7 @@ jobs:
       #
       # A workflow Dependabot triggers sees only Dependabot secrets, so the App
       # private key has to be registered there as well as in Actions:
-      # gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/cflio < key.pem
+      # gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/atlio < key.pem
       # The App also needs the Workflows permission, or enabling auto-merge is
       # refused on every github-actions bump — those edit .github/workflows.
       #

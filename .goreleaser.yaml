@@ -1,5 +1,9 @@
 version: 2
 
+# Inferred from the repository name otherwise, which would put that name on
+# the binary, the archives and the cask.
+project_name: atlio
+
 builds:
   - env:
       - CGO_ENABLED=0
@@ -11,7 +15,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/178inaba/cflio/internal/cmd.version={{.Version}}
+      - -s -w -X github.com/178inaba/atlio/internal/cmd.version={{.Version}}
 
 archives:
   # tar.gz everywhere else, which is the default.
@@ -32,14 +36,14 @@ changelog:
   use: github-native
 
 homebrew_casks:
-  - name: cflio
+  - name: atlio
     repository:
       owner: 178inaba
       name: homebrew-tap
       # The default token cannot push to another repository, so this is the
       # GitHub App token the workflow puts in the environment.
       token: "{{ .Env.GITHUB_TOKEN }}"
-    homepage: https://github.com/178inaba/cflio
+    homepage: https://github.com/178inaba/atlio
     # Kept byte-identical with .claude-plugin/plugin.json and
     # .claude-plugin/marketplace.json (see CLAUDE.md).
     description: "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model."
@@ -49,5 +53,5 @@ homebrew_casks:
         # refuses to run what the cask just installed.
         install_steps: |
           on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/cflio"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/atlio"]
           end

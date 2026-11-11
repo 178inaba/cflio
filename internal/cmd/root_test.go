@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/178inaba/cflio/internal/format"
+	"github.com/178inaba/atlio/internal/format"
 	"github.com/spf13/cobra"
 )
 
@@ -167,7 +167,7 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runCflio(t, tt.args...)
+			_, err := runAtlio(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -281,52 +281,52 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 		{
 			name:    "auth",
 			args:    []string{"auth", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio auth"`,
+			wantErr: `unknown command "bogus" for "atlio auth"`,
 		},
 		{
 			// bogus is too far from any subcommand to be suggested, so a
 			// table built only on it would never exercise the candidates.
 			name:    "auth, close enough to suggest",
 			args:    []string{"auth", "loign"},
-			wantErr: "unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n",
+			wantErr: "unknown command \"loign\" for \"atlio auth\"\n\nDid you mean this?\n\tlogin\n",
 		},
 		{
 			name:    "attachments",
 			args:    []string{"attachments", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio attachments"`,
+			wantErr: `unknown command "bogus" for "atlio attachments"`,
 		},
 		{
 			name:    "profile",
 			args:    []string{"profile", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio profile"`,
+			wantErr: `unknown command "bogus" for "atlio profile"`,
 		},
 		{
 			// completion is cobra's own command, added inside ExecuteC, so
-			// nothing cflio's constructors set could reach it.
+			// nothing atlio's constructors set could reach it.
 			name:    "completion",
 			args:    []string{"completion", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio completion"`,
+			wantErr: `unknown command "bogus" for "atlio completion"`,
 		},
 		{
 			name:    "auth help",
 			args:    []string{"auth", "help"},
-			wantErr: "unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n",
+			wantErr: "unknown command \"help\" for \"atlio auth\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
 			name:    "profile help",
 			args:    []string{"profile", "help"},
-			wantErr: "unknown command \"help\" for \"cflio profile\"\n\nDid you mean this?\n\t--help\n",
+			wantErr: "unknown command \"help\" for \"atlio profile\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
 			name:    "completion help",
 			args:    []string{"completion", "help"},
-			wantErr: "unknown command \"help\" for \"cflio completion\"\n\nDid you mean this?\n\t--help\n",
+			wantErr: "unknown command \"help\" for \"atlio completion\"\n\nDid you mean this?\n\t--help\n",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			run, err := runCflio(t, tt.args...)
+			run, err := runAtlio(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -344,16 +344,16 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 // TestGroupCommandWithoutArgumentsPrintsHelp pins the invocations the report
 // above must leave alone: a group command with nothing after it is a request
 // for help, not a typo. A run that ends without an error is one the help
-// function recorded nothing for, since runCflio merges the two.
+// function recorded nothing for, since runAtlio merges the two.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	for _, name := range []string{"", "attachments", "comments", "auth", "profile", "completion"} {
-		t.Run("cflio "+name, func(t *testing.T) {
+		t.Run("atlio "+name, func(t *testing.T) {
 			var args []string
 			if name != "" {
 				args = append(args, name)
 			}
 
-			run, err := runCflio(t, args...)
+			run, err := runAtlio(t, args...)
 			if err != nil {
 				t.Fatalf("%v error = %v, want nil", args, err)
 			}
@@ -366,7 +366,7 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 
 			// Both spellings render the same help, so pinning them together
 			// keeps a change to either from passing unnoticed.
-			withFlag, err := runCflio(t, append(args, "--help")...)
+			withFlag, err := runAtlio(t, append(args, "--help")...)
 			if err != nil {
 				t.Fatalf("%v --help error = %v, want nil", args, err)
 			}
@@ -385,15 +385,15 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 // argument check decides them either way. Asking for help is a request for
 // help even when the arguments carry a typo alongside it.
 func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
-	run, err := runCflio(t, "auth", "bogus", "--help")
+	run, err := runAtlio(t, "auth", "bogus", "--help")
 	if err != nil {
-		t.Fatalf("cflio auth bogus --help error = %v, want nil", err)
+		t.Fatalf("atlio auth bogus --help error = %v, want nil", err)
 	}
 	if run.stderr != "" {
-		t.Errorf("cflio auth bogus --help stderr = %q, want nothing", run.stderr)
+		t.Errorf("atlio auth bogus --help stderr = %q, want nothing", run.stderr)
 	}
 	if !strings.Contains(run.stdout, "Usage:") {
-		t.Errorf("cflio auth bogus --help stdout = %q, want the help text", run.stdout)
+		t.Errorf("atlio auth bogus --help stdout = %q, want the help text", run.stdout)
 	}
 }
 
@@ -401,22 +401,22 @@ func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
 // root, Find fails before the help function is ever reached, so the error
 // comes back from Execute itself rather than travelling beside it.
 func TestRootRejectsAnUnknownCommand(t *testing.T) {
-	run, err := runCflio(t, "bogus")
+	run, err := runAtlio(t, "bogus")
 	if err == nil {
-		t.Fatal("cflio bogus error = nil, want an error")
+		t.Fatal("atlio bogus error = nil, want an error")
 	}
-	if want := `unknown command "bogus" for "cflio"`; !strings.Contains(err.Error(), want) {
+	if want := `unknown command "bogus" for "atlio"`; !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
 	}
 	if run.stdout != "" || run.stderr != "" {
-		t.Errorf("cflio bogus wrote stdout = %q, stderr = %q, want nothing from the tree itself",
+		t.Errorf("atlio bogus wrote stdout = %q, stderr = %q, want nothing from the tree itself",
 			run.stdout, run.stderr)
 	}
 }
 
 // TestHelpRejectsAnUnresolvableTopic covers what cobra's own help command
 // does not: its Run cannot fail, so a topic that does not resolve exits 0 —
-// and `cflio help auth bogus` reports nothing at all, since Find resolves
+// and `atlio help auth bogus` reports nothing at all, since Find resolves
 // `auth` and discards the leftover argument. The assertions are on the
 // returned error rather than on an exit code, which does not exist at this
 // level, and the message is matched whole so a usage listing sneaking back
@@ -430,57 +430,57 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 		{
 			name:    "topic the root cannot resolve",
 			args:    []string{"help", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio"`,
+			wantErr: `unknown command "bogus" for "atlio"`,
 		},
 		{
 			// bogus is too far from any command to be suggested, so a table
 			// built only on it would never exercise the candidates.
 			name:    "topic close enough to suggest",
 			args:    []string{"help", "raed"},
-			wantErr: "unknown command \"raed\" for \"cflio\"\n\nDid you mean this?\n\tread\n",
+			wantErr: "unknown command \"raed\" for \"atlio\"\n\nDid you mean this?\n\tread\n",
 		},
 		{
 			name:    "topic a group command cannot resolve",
 			args:    []string{"help", "auth", "bogus"},
-			wantErr: `unknown command "bogus" for "cflio auth"`,
+			wantErr: `unknown command "bogus" for "atlio auth"`,
 		},
 		{
 			name:    "topic under a group close enough to suggest",
 			args:    []string{"help", "auth", "loign"},
-			wantErr: "unknown command \"loign\" for \"cflio auth\"\n\nDid you mean this?\n\tlogin\n",
+			wantErr: "unknown command \"loign\" for \"atlio auth\"\n\nDid you mean this?\n\tlogin\n",
 		},
 		{
 			name:    "several leftovers report the first",
 			args:    []string{"help", "bogus1", "bogus2"},
-			wantErr: `unknown command "bogus1" for "cflio"`,
+			wantErr: `unknown command "bogus1" for "atlio"`,
 		},
 		{
 			name:    "several leftovers under a group report the first",
 			args:    []string{"help", "auth", "bogus", "extra"},
-			wantErr: `unknown command "bogus" for "cflio auth"`,
+			wantErr: `unknown command "bogus" for "atlio auth"`,
 		},
 		{
 			// `help` is not a subcommand of a group command, so nothing but
 			// unknownCommandCandidates' own case offers anything for it.
 			name:    "help under a group points at the flag",
 			args:    []string{"help", "auth", "help"},
-			wantErr: "unknown command \"help\" for \"cflio auth\"\n\nDid you mean this?\n\t--help\n",
+			wantErr: "unknown command \"help\" for \"atlio auth\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
 			// The third shape: a command that resolves and has no
 			// subcommands at all, with an argument left over anyway. Neither
 			// Find's error nor the target having subcommands separates it
-			// from `cflio help read`, so a condition built on either would
+			// from `atlio help read`, so a condition built on either would
 			// still render the help here and exit 0, as this did before.
 			name:    "leftover after a command that takes arguments",
 			args:    []string{"help", "read", "123456"},
-			wantErr: `unknown command "123456" for "cflio read"`,
+			wantErr: `unknown command "123456" for "atlio read"`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			run, err := runCflio(t, tt.args...)
+			run, err := runAtlio(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -501,8 +501,8 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 // fail here rather than pass on a substring match.
 func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 	for _, topic := range [][]string{nil, {"auth"}, {"auth", "login"}, {"read"}} {
-		t.Run("cflio help "+strings.Join(topic, " "), func(t *testing.T) {
-			run, err := runCflio(t, append([]string{"help"}, topic...)...)
+		t.Run("atlio help "+strings.Join(topic, " "), func(t *testing.T) {
+			run, err := runAtlio(t, append([]string{"help"}, topic...)...)
 			if err != nil {
 				t.Fatalf("help %v error = %v, want nil", topic, err)
 			}
@@ -510,7 +510,7 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 				t.Errorf("help %v stderr = %q, want nothing", topic, run.stderr)
 			}
 
-			withFlag, err := runCflio(t, append(topic, "--help")...)
+			withFlag, err := runAtlio(t, append(topic, "--help")...)
 			if err != nil {
 				t.Fatalf("%v --help error = %v, want nil", topic, err)
 			}
@@ -535,9 +535,9 @@ func TestHelpTopicCompletion(t *testing.T) {
 		"help", "plantuml", "profile", "read", "search", "update",
 	}
 
-	run, err := runCflio(t, "__complete", "help", "")
+	run, err := runAtlio(t, "__complete", "help", "")
 	if err != nil {
-		t.Fatalf("cflio __complete help \"\" error = %v, want nil", err)
+		t.Fatalf("atlio __complete help \"\" error = %v, want nil", err)
 	}
 
 	var got []string
@@ -552,7 +552,7 @@ func TestHelpTopicCompletion(t *testing.T) {
 
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
-		t.Errorf("cflio __complete help \"\" listed %v, want %v", got, want)
+		t.Errorf("atlio __complete help \"\" listed %v, want %v", got, want)
 	}
 }
 
@@ -594,14 +594,14 @@ func TestResolveVersion(t *testing.T) {
 // resolveVersion could be correct and still be reported by nothing, since it is
 // the Version field being set that makes cobra register the flag at all.
 func TestVersionFlag(t *testing.T) {
-	run, err := runCflio(t, "--version")
+	run, err := runAtlio(t, "--version")
 	if err != nil {
-		t.Fatalf("cflio --version error = %v, want nil", err)
+		t.Fatalf("atlio --version error = %v, want nil", err)
 	}
-	if want := "cflio version " + resolveVersion(version) + "\n"; run.stdout != want {
-		t.Errorf("cflio --version stdout = %q, want %q", run.stdout, want)
+	if want := "atlio version " + resolveVersion(version) + "\n"; run.stdout != want {
+		t.Errorf("atlio --version stdout = %q, want %q", run.stdout, want)
 	}
 	if run.stderr != "" {
-		t.Errorf("cflio --version stderr = %q, want nothing", run.stderr)
+		t.Errorf("atlio --version stderr = %q, want nothing", run.stderr)
 	}
 }

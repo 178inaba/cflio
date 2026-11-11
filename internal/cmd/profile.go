@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/178inaba/cflio/internal/config"
+	"github.com/178inaba/atlio/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +42,7 @@ func runProfileList(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 
 	if len(file.Profiles) == 0 {
-		_, err := fmt.Fprintln(out, "No profiles registered. Run `cflio auth login` to add one.")
+		_, err := fmt.Fprintln(out, "No profiles registered. Run `atlio auth login` to add one.")
 		return err
 	}
 
