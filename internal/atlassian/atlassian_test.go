@@ -1,0 +1,377 @@
+package atlassian
+
+import (
+	"bytes"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
+
+// wantAuth is the Authorization header every test client's credentials
+// produce.
+var wantAuth = "Basic " + base64.StdEncoding.EncodeToString([]byte("a@example.com:api-token"))
+
+// newTestClient starts an httptest server with the given handler and returns
+// a Client whose base URL is the server's plus /api, so a test can tell the
+// base path was kept.
+func newTestClient(t *testing.T, messages MessageFunc, handler http.HandlerFunc) *Client {
+	t.Helper()
+
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	client, err := New(srv.URL+"/api", "a@example.com", "api-token", messages)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return client
+}
+
+func TestNewRejectsARelativeBaseURL(t *testing.T) {
+	for _, base := range []string{"example.atlassian.net/wiki", "/wiki", ""} {
+		if _, err := New(base, "a@example.com", "t", nil); err == nil {
+			t.Errorf("New(%q) error = nil, want an error for a non-absolute base url", base)
+		}
+	}
+}
+
+func TestGetSendsCredentialsAndAcceptsJSON(t *testing.T) {
+	var gotPath, gotQuery, gotAuth, gotAccept string
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		gotAuth, gotAccept = r.Header.Get("Authorization"), r.Header.Get("Accept")
+		_, _ = fmt.Fprint(w, `{"name":"x"}`)
+	})
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := client.Get(t.Context(), "/rest/thing", map[string][]string{"q": {"a b"}}, &out); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if gotPath != "/api/rest/thing" {
+		t.Errorf("path = %q, want the path joined onto the base", gotPath)
+	}
+	if gotQuery != "q=a+b" {
+		t.Errorf("query = %q, want q=a+b", gotQuery)
+	}
+	if gotAuth != wantAuth {
+		t.Errorf("Authorization = %q, want %q", gotAuth, wantAuth)
+	}
+	if gotAccept != "application/json" {
+		t.Errorf("Accept = %q, want application/json", gotAccept)
+	}
+	if out.Name != "x" {
+		t.Errorf("decoded name = %q, want x", out.Name)
+	}
+}
+
+func TestSendEncodesTheBodyAsJSONWithoutEscapingHTML(t *testing.T) {
+	var gotMethod, gotAuth, gotContentType, gotBody string
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotAuth = r.Method, r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_, _ = fmt.Fprint(w, `{}`)
+	})
+
+	payload := struct {
+		Value string `json:"value"`
+	}{Value: "<p>a &amp; b</p>"}
+	if err := client.Send(t.Context(), http.MethodPut, "/rest/thing", payload, nil); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	if gotMethod != http.MethodPut {
+		t.Errorf("method = %q, want PUT", gotMethod)
+	}
+	if gotAuth != wantAuth {
+		t.Errorf("Authorization = %q, want %q", gotAuth, wantAuth)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotContentType)
+	}
+	if want := `{"value":"<p>a &amp; b</p>"}`; gotBody != want {
+		t.Errorf("body = %s, want %s", gotBody, want)
+	}
+}
+
+func TestAFailedResponseBecomesAnAPIError(t *testing.T) {
+	tests := []struct {
+		name         string
+		messages     MessageFunc
+		body         string
+		wantMessages []string
+		wantError    string
+	}{
+		{
+			name:         "the product's messages are used when it recognises the body",
+			messages:     func([]byte) []string { return []string{"one", "two"} },
+			body:         `{"whatever":true}`,
+			wantMessages: []string{"one", "two"},
+			wantError:    "GET /rest/thing: HTTP 409: one; two",
+		},
+		{
+			name:      "the raw body is used when it does not",
+			messages:  func([]byte) []string { return nil },
+			body:      "<html>gateway said no</html>",
+			wantError: "GET /rest/thing: HTTP 409: <html>gateway said no</html>",
+		},
+		{
+			name:      "the raw body is used when no message function was supplied",
+			body:      "gateway said no",
+			wantError: "GET /rest/thing: HTTP 409: gateway said no",
+		},
+		{
+			name:      "an empty body leaves just the status",
+			wantError: "GET /rest/thing: HTTP 409",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, tt.messages, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = fmt.Fprint(w, tt.body)
+			})
+
+			err := client.Get(t.Context(), "/rest/thing", nil, nil)
+			apiErr, ok := errors.AsType[*APIError](err)
+			if !ok {
+				t.Fatalf("Get() error = %v, want an *APIError", err)
+			}
+			// The path is the one the caller named, not the base-joined URL.
+			if apiErr.Method != http.MethodGet || apiErr.Path != "/rest/thing" || apiErr.Status != http.StatusConflict {
+				t.Errorf("APIError = %s %s %d, want GET /rest/thing 409", apiErr.Method, apiErr.Path, apiErr.Status)
+			}
+			if !slices.Equal(apiErr.Messages, tt.wantMessages) {
+				t.Errorf("Messages = %q, want %q", apiErr.Messages, tt.wantMessages)
+			}
+			if err.Error() != tt.wantError {
+				t.Errorf("Error() = %q, want %q", err.Error(), tt.wantError)
+			}
+		})
+	}
+}
+
+func TestAFailedResponseBodyIsBounded(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "ascii", body: strings.Repeat("x", maxErrorBody+5000)},
+		// Multi-byte runes must not be cut in half: an invalid UTF-8 tail
+		// would render as a replacement character in the user's terminal.
+		{name: "multibyte", body: strings.Repeat("あ", maxErrorBody)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = fmt.Fprint(w, tt.body)
+			})
+
+			err := client.Get(t.Context(), "/rest/thing", nil, nil)
+			apiErr, ok := errors.AsType[*APIError](err)
+			if !ok {
+				t.Fatalf("Get() error = %v, want an *APIError", err)
+			}
+			if len(apiErr.Body) != maxErrorBody {
+				t.Errorf("len(Body) = %d, want the read stopped at %d", len(apiErr.Body), maxErrorBody)
+			}
+			if len(err.Error()) > maxRawBodyInError+200 {
+				t.Errorf("error length = %d, want the raw body truncated", len(err.Error()))
+			}
+			if !utf8.ValidString(err.Error()) {
+				t.Errorf("error = %q, want valid UTF-8 after truncation", err.Error())
+			}
+		})
+	}
+}
+
+// fileBytes is a real PNG signature plus a byte that is not valid UTF-8 on its
+// own, so a download that decoded or re-encoded the body would corrupt it
+// visibly rather than passing the assertion by luck.
+var fileBytes = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x42}
+
+func TestDownloadStreamsTheBodyUnchangedWithoutAskingForJSON(t *testing.T) {
+	var gotAccept string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccept = r.Header.Get("Accept")
+		_, _ = w.Write(fileBytes)
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := New(srv.URL+"/api", "a@example.com", "api-token", nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	n, err := client.Download(t.Context(), srv.URL+"/api/file", "/file", &buf)
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+
+	if gotAccept != "" {
+		t.Errorf("Accept = %q, want none: the response is the file, not JSON", gotAccept)
+	}
+	if !bytes.Equal(buf.Bytes(), fileBytes) || n != int64(len(fileBytes)) {
+		t.Errorf("body = %v (n %d), want the served bytes verbatim %v", buf.Bytes(), n, fileBytes)
+	}
+}
+
+func TestDownloadReportsAFailureUnderTheCallersPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := New(srv.URL+"/api", "a@example.com", "api-token", nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, err = client.Download(t.Context(), srv.URL+"/api/file", "/file", &buf)
+	apiErr, ok := errors.AsType[*APIError](err)
+	if !ok {
+		t.Fatalf("Download() error = %v, want an *APIError", err)
+	}
+	if apiErr.Path != "/file" || apiErr.Status != http.StatusNotFound {
+		t.Errorf("APIError path %q status %d, want /file 404", apiErr.Path, apiErr.Status)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("body = %q, want nothing written for a failed download", buf.Bytes())
+	}
+}
+
+// recordingTransport answers every request from responses, keyed by host, and
+// records the request that reached each one.
+//
+// A RoundTripper rather than two httptest servers: these tests are about which
+// host receives the Authorization header, and httptest servers all listen on
+// 127.0.0.1 — Go compares hostnames with the port stripped, so two of them
+// count as the same host and the header would be copied either way.
+type recordingTransport struct {
+	responses map[string]*http.Response
+	seen      []*http.Request
+}
+
+func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.seen = append(t.seen, req)
+	resp, ok := t.responses[req.URL.Host]
+	if !ok {
+		return nil, fmt.Errorf("no canned response for host %q", req.URL.Host)
+	}
+	resp.Request = req
+	return resp, nil
+}
+
+const (
+	siteHost  = "example.atlassian.net"
+	mediaHost = "media-cdn.example.com"
+)
+
+func newRecordingClient(t *testing.T, transport *recordingTransport) *Client {
+	t.Helper()
+
+	client, err := New("https://"+siteHost+"/wiki", "a@example.com", "api-token", nil,
+		WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return client
+}
+
+func okResponse() *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(fileBytes))}
+}
+
+func TestDownloadSendsCredentialsOnlyToTheSite(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		wantAuth bool
+	}{
+		{
+			name:     "a URL on the site's host",
+			url:      "https://" + siteHost + "/wiki/rest/api/content/10/child/attachment/att1/download",
+			wantAuth: true,
+		},
+		{
+			// A signed URL like a redirect target: it needs no auth header,
+			// and the media host rejects a request that carries the site's.
+			// http.Client only strips what it did not set, so a first request
+			// straight to another host is on Download to get right.
+			name:     "a URL on another host",
+			url:      "https://" + mediaHost + "/signed/blob?token=abc",
+			wantAuth: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &recordingTransport{responses: map[string]*http.Response{
+				siteHost:  okResponse(),
+				mediaHost: okResponse(),
+			}}
+			client := newRecordingClient(t, transport)
+
+			var buf bytes.Buffer
+			if _, err := client.Download(t.Context(), tt.url, "/download", &buf); err != nil {
+				t.Fatalf("Download() error = %v", err)
+			}
+
+			if len(transport.seen) != 1 {
+				t.Fatalf("requests = %d, want 1", len(transport.seen))
+			}
+			if got := transport.seen[0].Header.Get("Authorization"); (got == wantAuth) != tt.wantAuth {
+				t.Errorf("Authorization = %q, want sent = %v (host %s)", got, tt.wantAuth, transport.seen[0].URL.Host)
+			}
+		})
+	}
+}
+
+func TestDownloadDropsTheAuthHeaderOnARedirectToAnotherHost(t *testing.T) {
+	transport := &recordingTransport{responses: map[string]*http.Response{
+		siteHost: {
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": {"https://" + mediaHost + "/signed/blob?token=abc"}},
+			Body:       io.NopCloser(strings.NewReader("")),
+		},
+		mediaHost: okResponse(),
+	}}
+	client := newRecordingClient(t, transport)
+
+	var buf bytes.Buffer
+	if _, err := client.Download(t.Context(),
+		"https://"+siteHost+"/wiki/rest/api/content/10/child/attachment/att1/download", "/download", &buf); err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+
+	if len(transport.seen) != 2 {
+		t.Fatalf("requests = %d, want 2 (the site and the redirect target)", len(transport.seen))
+	}
+	if got := transport.seen[0].Header.Get("Authorization"); transport.seen[0].URL.Host != siteHost || got != wantAuth {
+		t.Errorf("first request = %s (auth %q), want the site with credentials", transport.seen[0].URL, got)
+	}
+	// The redirect target is a signed URL. Forwarding the site's credentials
+	// to a host that did not ask for them is what the media service rejects.
+	if got := transport.seen[1].Header.Get("Authorization"); got != "" {
+		t.Errorf("Authorization on the redirect = %q, want it dropped across hosts", got)
+	}
+	if !bytes.Equal(buf.Bytes(), fileBytes) {
+		t.Errorf("body = %v, want the redirect target's bytes %v", buf.Bytes(), fileBytes)
+	}
+}
