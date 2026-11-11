@@ -1,7 +1,8 @@
 // Package atlassian is the HTTP transport shared by atlio's product clients:
 // it builds requests against one product's base URL on a site, authenticates them with
-// Atlassian Basic auth (account email + API token), encodes and decodes JSON,
-// and turns a non-2xx response into an *APIError.
+// Atlassian Basic auth (account email + API token), encodes JSON and
+// multipart/form-data bodies, decodes JSON, and turns a non-2xx response into
+// an *APIError.
 //
 // What differs between products — endpoint paths, payload types, and the
 // shape of an error body — stays in the product package, which supplies the
@@ -12,8 +13,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 )
@@ -106,6 +109,61 @@ func (c *Client) Send(ctx context.Context, method, path string, payload, out any
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return c.doJSON(req, path, out)
+}
+
+// SendMultipart issues a request whose body is the multipart/form-data write
+// produces, with header added to it, and decodes the JSON response into out.
+//
+// The body is streamed through a pipe rather than built first: what it carries
+// is files, and a buffered body would hold a second full copy of each. With no
+// length known up front the request goes out chunked. The Content-Type is set
+// after header is applied, since only it carries the boundary the parts are
+// actually written with.
+//
+// The writer's goroutine is waited for before returning, so nothing it reads
+// is touched once this returns. Closing the pipe first is what makes that wait
+// finite when the server answered without reading the whole body: the writer
+// is then blocked on a pipe nobody drains.
+//
+// When the request fails, the writer's own error is reported in its place
+// only when it is the cause — the transport echoes a failed body read
+// without promising to wrap it. A writer that failed because the pipe was
+// closed under it, or because the context ended, is a consequence instead:
+// the request's error is the one that says what happened, and with an
+// expired deadline it is also the one that carries context.DeadlineExceeded.
+func (c *Client) SendMultipart(ctx context.Context, method, path string, header http.Header, write func(*multipart.Writer) error, out any) error {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+
+	req, err := http.NewRequestWithContext(ctx, method, c.base.JoinPath(path).String(), pr)
+	if err != nil {
+		return fmt.Errorf("build request for %s: %w", path, err)
+	}
+	for key, values := range header {
+		for _, v := range values {
+			req.Header.Add(key, v)
+		}
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	writeErr := make(chan error, 1)
+	go func() {
+		err := write(mw)
+		if err == nil {
+			err = mw.Close()
+		}
+		// A nil err closes the pipe with io.EOF, ending the body.
+		pw.CloseWithError(err)
+		writeErr <- err
+	}()
+
+	err = c.doJSON(req, path, out)
+	_ = pr.Close()
+	werr := <-writeErr
+	if err != nil && werr != nil && ctx.Err() == nil && !errors.Is(werr, io.ErrClosedPipe) {
+		return fmt.Errorf("%s %s: write request body: %w", method, path, werr)
+	}
+	return err
 }
 
 // Download streams the body behind rawURL, an absolute URL, to w and returns
