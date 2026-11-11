@@ -176,6 +176,9 @@ type Page struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 	Title  string `json:"title"`
+	// SpaceID is what a new page is created in: the create request needs the
+	// space's ID, and `confluence create` reads it off the parent.
+	SpaceID string `json:"spaceId"`
 	// Subtype is "live" for a live doc and absent for a classic page. It is
 	// what tells the two apart offline, once `confluence read` has recorded it
 	// in the sidecar: a live doc's editor rewrites the storage body behind
@@ -248,6 +251,44 @@ func NewUpdatePageRequest(id, status, title, body string, version int, message s
 func (c *Client) UpdatePage(ctx context.Context, req UpdatePageRequest) (*Page, error) {
 	var page Page
 	if err := c.put(ctx, "/api/v2/pages/"+url.PathEscape(req.ID), req, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// CreatePageRequest is the v2 page-create payload.
+//
+// It has no subtype field, and CreatePage sends no query parameters: a live
+// doc, a draft or a private page could not be written by `confluence update`
+// afterwards, so there is no way to ask for one here.
+type CreatePageRequest struct {
+	SpaceID  string `json:"spaceId"`
+	Status   string `json:"status"`
+	Title    string `json:"title"`
+	ParentID string `json:"parentId"`
+	Body     struct {
+		Representation string `json:"representation"`
+		Value          string `json:"value"`
+	} `json:"body"`
+}
+
+// NewCreatePageRequest builds a create payload for a storage-format body.
+func NewCreatePageRequest(spaceID, parentID, status, title, body string) CreatePageRequest {
+	var req CreatePageRequest
+	req.SpaceID = spaceID
+	req.Status = status
+	req.Title = title
+	req.ParentID = parentID
+	req.Body.Representation = "storage"
+	req.Body.Value = body
+	return req
+}
+
+// CreatePage creates a page and returns it as the server created it, which is
+// where its ID, version and web link come from.
+func (c *Client) CreatePage(ctx context.Context, req CreatePageRequest) (*Page, error) {
+	var page Page
+	if err := c.post(ctx, "/api/v2/pages", req, &page); err != nil {
 		return nil, err
 	}
 	return &page, nil
