@@ -74,7 +74,7 @@ func TestPlantUMLListReportsEveryDiagramInDocumentOrder(t *testing.T) {
 			`</ac:structured-macro>`,
 	)
 
-	run, err := runCLI(t, "plantuml", "list", "-f", file)
+	run, err := runCLI(t, "confluence", "plantuml", "list", "-f", file)
 	if err != nil {
 		t.Fatalf("plantuml list error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestPlantUMLListJSONCarriesTheSameDiagrams(t *testing.T) {
 		diagramMacro(t, ` ac:local-id="aaa"`, "first.svg", "@startuml\nAlice -> Bob\n@enduml", "3"),
 	)
 
-	run, err := runCLI(t, "plantuml", "list", "-f", file, "--format", "json")
+	run, err := runCLI(t, "confluence", "plantuml", "list", "-f", file, "--format", "json")
 	if err != nil {
 		t.Fatalf("plantuml list error = %v", err)
 	}
@@ -132,7 +132,7 @@ func TestPlantUMLListJSONCarriesTheSameDiagrams(t *testing.T) {
 func TestPlantUMLListReportsAFileWithNoDiagram(t *testing.T) {
 	file := seedReadPage(t, "<p>no macros here</p>", classicMeta())
 
-	run, err := runCLI(t, "plantuml", "list", "-f", file)
+	run, err := runCLI(t, "confluence", "plantuml", "list", "-f", file)
 	if err != nil {
 		t.Fatalf("plantuml list error = %v", err)
 	}
@@ -143,8 +143,9 @@ func TestPlantUMLListReportsAFileWithNoDiagram(t *testing.T) {
 
 func TestPlantUMLGetWritesTheSourceTheMarkdownReadRenders(t *testing.T) {
 	// Taken from the fixture the Markdown converter is pinned against, so
-	// what `get` writes is compared with what a `read --markdown` fence holds
-	// for the same payload rather than with this test's own idea of it.
+	// what `get` writes is compared with what a `confluence read --markdown`
+	// fence holds for the same payload rather than with this test's own idea of
+	// it.
 	raw, err := os.ReadFile("../format/testdata/plantumlcloud_macro.xml")
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -159,7 +160,7 @@ func TestPlantUMLGetWritesTheSourceTheMarkdownReadRenders(t *testing.T) {
 	file := seedReadPage(t, string(raw), classicMeta())
 	out := filepath.Join(t.TempDir(), "diagram.puml")
 
-	run, err := runCLI(t, "plantuml", "get", "-f", file, "--id", "7c1d4e8a", "-o", out)
+	run, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--id", "7c1d4e8a", "-o", out)
 	if err != nil {
 		t.Fatalf("plantuml get error = %v", err)
 	}
@@ -206,7 +207,7 @@ func TestPlantUMLGetDefaultsItsOutputName(t *testing.T) {
 			dir := t.TempDir()
 			t.Chdir(dir)
 
-			args := append([]string{"plantuml", "get", "-f", file}, tt.selector...)
+			args := append([]string{"confluence", "plantuml", "get", "-f", file}, tt.selector...)
 			if _, err := runCLI(t, args...); err != nil {
 				t.Fatalf("plantuml get error = %v", err)
 			}
@@ -236,7 +237,7 @@ func TestPlantUMLSetChangesOnlyTheDataAndRevisionNodes(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	run, err := runCLI(t, "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
+	run, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
 	if err != nil {
 		t.Fatalf("plantuml set error = %v", err)
 	}
@@ -265,8 +266,8 @@ func TestPlantUMLSetChangesOnlyTheDataAndRevisionNodes(t *testing.T) {
 
 // TestPlantUMLSetRoundTripsBackThroughBothReaders closes the loop the
 // commands exist for: what `set` writes has to come back out of `get` and to
-// render as the new diagram in `read --markdown`, whose converter decodes the
-// payload by a path of its own.
+// render as the new diagram in `confluence read --markdown`, whose converter
+// decodes the payload by a path of its own.
 func TestPlantUMLSetRoundTripsBackThroughBothReaders(t *testing.T) {
 	file := seedDiagramPage(t, classicMeta(),
 		diagramMacro(t, ` ac:local-id="aaa"`, "first.svg", "@startuml\nAlice -> Bob\n@enduml", "1"))
@@ -276,12 +277,12 @@ func TestPlantUMLSetRoundTripsBackThroughBothReaders(t *testing.T) {
 	if err := os.WriteFile(source, []byte(edited), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if _, err := runCLI(t, "plantuml", "set", "-f", file, "--id", "aaa", "--source", source); err != nil {
+	if _, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source); err != nil {
 		t.Fatalf("plantuml set error = %v", err)
 	}
 
 	out := filepath.Join(t.TempDir(), "back.puml")
-	if _, err := runCLI(t, "plantuml", "get", "-f", file, "--id", "aaa", "-o", out); err != nil {
+	if _, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--id", "aaa", "-o", out); err != nil {
 		t.Fatalf("plantuml get error = %v", err)
 	}
 	got, err := os.ReadFile(out)
@@ -317,7 +318,7 @@ func TestPlantUMLSetLeavesAMacroWithNoRevisionParameterWithoutOne(t *testing.T) 
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	run, err := runCLI(t, "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
+	run, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
 	if err != nil {
 		t.Fatalf("plantuml set error = %v", err)
 	}
@@ -366,7 +367,7 @@ func TestPlantUMLSelectionFailsWithTheCandidatesListed(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			args := append([]string{"plantuml", "get", "-f", file}, tt.selector...)
+			args := append([]string{"confluence", "plantuml", "get", "-f", file}, tt.selector...)
 			_, err := runCLI(t, args...)
 			if err == nil {
 				t.Fatal("plantuml get error = nil, want a failure")
@@ -385,7 +386,7 @@ func TestPlantUMLSelectsAMacroWithNoLocalIDByName(t *testing.T) {
 		diagramMacro(t, "", "only.svg", "@startuml\nactor User\n@enduml", "1"))
 
 	out := filepath.Join(t.TempDir(), "diagram.puml")
-	if _, err := runCLI(t, "plantuml", "get", "-f", file, "--name", "only.svg", "-o", out); err != nil {
+	if _, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--name", "only.svg", "-o", out); err != nil {
 		t.Fatalf("plantuml get error = %v", err)
 	}
 	if _, err := os.Stat(out); err != nil {
@@ -405,7 +406,7 @@ func TestPlantUMLRequiresExactlyOneSelector(t *testing.T) {
 		{name: "both", selector: []string{"--id", "aaa", "--name", "only.svg"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			args := append([]string{"plantuml", "get", "-f", file}, tt.selector...)
+			args := append([]string{"confluence", "plantuml", "get", "-f", file}, tt.selector...)
 			if _, err := runCLI(t, args...); err == nil {
 				t.Error("plantuml get error = nil, want a failure")
 			}
@@ -429,9 +430,9 @@ func TestPlantUMLRefusesAPayloadItCannotRead(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "get", args: []string{"plantuml", "get", "-f", file, "--id", "aaa",
+		{name: "get", args: []string{"confluence", "plantuml", "get", "-f", file, "--id", "aaa",
 			"-o", filepath.Join(t.TempDir(), "out.puml")}},
-		{name: "set", args: []string{"plantuml", "set", "-f", file, "--id", "aaa", "--source", source}},
+		{name: "set", args: []string{"confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := runCLI(t, tt.args...)
@@ -464,7 +465,7 @@ func TestPlantUMLSetRefusesARevisionItCannotIncrement(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := runCLI(t, "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
+	_, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source)
 	if err == nil {
 		t.Fatal("plantuml set error = nil, want a failure")
 	}
@@ -485,7 +486,7 @@ func TestPlantUMLSetGuardsAMacroAStorageEditCannotReach(t *testing.T) {
 		wantErr string
 	}{
 		{name: "live doc", meta: liveMeta(), wantErr: "live doc"},
-		{name: "subtype not recorded", meta: unrecorded, wantErr: "atlio read"},
+		{name: "subtype not recorded", meta: unrecorded, wantErr: "atlio confluence read"},
 		{name: "classic page", meta: classicMeta()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -498,7 +499,7 @@ func TestPlantUMLSetGuardsAMacroAStorageEditCannotReach(t *testing.T) {
 				t.Fatalf("WriteFile() error = %v", err)
 			}
 
-			_, err := runCLI(t, "plantuml", "set", "-f", file, "--name", "only.svg", "--source", source)
+			_, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--name", "only.svg", "--source", source)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("plantuml set error = %v, want it to succeed", err)
@@ -536,7 +537,7 @@ func TestPlantUMLSetUpdatesAMacroWithALocalIDOnALiveDoc(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if _, err := runCLI(t, "plantuml", "set", "-f", file, "--id", "aaa", "--source", source); err != nil {
+	if _, err := runCLI(t, "confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source); err != nil {
 		t.Fatalf("plantuml set error = %v", err)
 	}
 
@@ -560,8 +561,8 @@ func mustEncode(t *testing.T, source string) string {
 }
 
 // TestPlantUMLRefusesAFileWithNoSidecar pins that every subcommand sends a
-// --markdown file back the way `update` does, rather than each inventing its
-// own answer.
+// --markdown file back the way `confluence update` does, rather than each
+// inventing its own answer.
 func TestPlantUMLRefusesAFileWithNoSidecar(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "page.md")
 	if err := os.WriteFile(file, []byte("# a page\n"), 0o644); err != nil {
@@ -573,10 +574,10 @@ func TestPlantUMLRefusesAFileWithNoSidecar(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"plantuml", "list", "-f", file},
-		{"plantuml", "get", "-f", file, "--id", "aaa"},
-		{"plantuml", "set", "-f", file, "--id", "aaa", "--source", source},
-		{"plantuml", "add", "-f", file, "--source", source},
+		{"confluence", "plantuml", "list", "-f", file},
+		{"confluence", "plantuml", "get", "-f", file, "--id", "aaa"},
+		{"confluence", "plantuml", "set", "-f", file, "--id", "aaa", "--source", source},
+		{"confluence", "plantuml", "add", "-f", file, "--source", source},
 	} {
 		t.Run(args[1], func(t *testing.T) {
 			_, err := runCLI(t, args...)
@@ -584,7 +585,7 @@ func TestPlantUMLRefusesAFileWithNoSidecar(t *testing.T) {
 				t.Fatal("error = nil, want a failure")
 			}
 			if !strings.Contains(err.Error(), "--markdown") {
-				t.Errorf("error = %q, want the guidance `update` gives", err)
+				t.Errorf("error = %q, want the guidance `confluence update` gives", err)
 			}
 		})
 	}
@@ -593,7 +594,7 @@ func TestPlantUMLRefusesAFileWithNoSidecar(t *testing.T) {
 func TestPlantUMLReportsAFileWithNoDiagramToSelectFrom(t *testing.T) {
 	file := seedReadPage(t, "<p>no macros here</p>", classicMeta())
 
-	_, err := runCLI(t, "plantuml", "get", "-f", file, "--id", "aaa")
+	_, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--id", "aaa")
 	if err == nil {
 		t.Fatal("plantuml get error = nil, want a failure")
 	}
@@ -627,7 +628,7 @@ func TestPlantUMLRefusesAnEmptySelector(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, verb := range []string{"get", "set"} {
-				args := append([]string{"plantuml", verb, "-f", file}, tt.selector...)
+				args := append([]string{"confluence", "plantuml", verb, "-f", file}, tt.selector...)
 				if verb == "set" {
 					args = append(args, "--source", source)
 				} else {
@@ -658,7 +659,7 @@ func TestPlantUMLGetRefusesAFilenameThatIsNotAPlainName(t *testing.T) {
 	t.Chdir(dir)
 
 	// -o is left off, so the filename parameter is what would name the file.
-	_, err := runCLI(t, "plantuml", "get", "-f", file, "--id", "aaa")
+	_, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--id", "aaa")
 	if err == nil {
 		t.Fatal("plantuml get error = nil, want a failure")
 	}
@@ -712,7 +713,7 @@ func splicedAt(t *testing.T, before, after string, off int) string {
 func addedMacro(t *testing.T, file, before string, off int, args ...string) (format.Macro, string) {
 	t.Helper()
 
-	if _, err := runCLI(t, append([]string{"plantuml", "add", "-f", file}, args...)...); err != nil {
+	if _, err := runCLI(t, append([]string{"confluence", "plantuml", "add", "-f", file}, args...)...); err != nil {
 		t.Fatalf("plantuml add error = %v", err)
 	}
 
@@ -782,7 +783,7 @@ func TestPlantUMLAddAppendsAMacroTheOtherSubcommandsCanRead(t *testing.T) {
 		t.Errorf("ac:local-id and ac:macro-id are both %q, want two distinct ids", macro.LocalID)
 	}
 	// The editor writes the element without whitespace between its children,
-	// and `update` sends the file back byte for byte.
+	// and `confluence update` sends the file back byte for byte.
 	if strings.ContainsAny(element, "\n\t") {
 		t.Errorf("the element carries whitespace the editor does not write: %s", element)
 	}
@@ -813,7 +814,7 @@ func TestPlantUMLAddPutsTheMacroAfterTheAnchor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			file := seedReadPage(t, tt.before, classicMeta())
 
-			if _, err := runCLI(t, "plantuml", "add", "-f", file,
+			if _, err := runCLI(t, "confluence", "plantuml", "add", "-f", file,
 				"--source", seedDiagramSource(t, "d.puml", "@startuml\n@enduml"),
 				"--after", tt.anchor); err != nil {
 				t.Fatalf("plantuml add error = %v", err)
@@ -902,9 +903,9 @@ func TestPlantUMLAddRefusesWhatItCannotResolve(t *testing.T) {
 			want:   "--filename cannot be empty",
 		},
 		{
-			// `plantuml get` derives its default output path from this
-			// parameter, so a value carrying a path would be written here and
-			// refused there.
+			// `confluence plantuml get` derives its default output path from
+			// this parameter, so a value carrying a path would be written here
+			// and refused there.
 			name:   "a filename that is not a plain name",
 			before: `<p>one</p>`,
 			args:   []string{"--source", source, "--filename", "../evil.svg"},
@@ -928,7 +929,7 @@ func TestPlantUMLAddRefusesWhatItCannotResolve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			file := seedReadPage(t, tt.before, classicMeta())
 
-			_, err := runCLI(t, append([]string{"plantuml", "add", "-f", file}, tt.args...)...)
+			_, err := runCLI(t, append([]string{"confluence", "plantuml", "add", "-f", file}, tt.args...)...)
 			if err == nil {
 				t.Fatal("plantuml add error = nil, want a failure")
 			}
@@ -953,7 +954,7 @@ func TestPlantUMLAddRefusesWhatItCannotResolve(t *testing.T) {
 func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 	file := seedReadPage(t, "<p>before</p>", classicMeta())
 
-	run, err := runCLI(t, "plantuml", "add", "-f", file, "--format", "json",
+	run, err := runCLI(t, "confluence", "plantuml", "add", "-f", file, "--format", "json",
 		"--source", seedDiagramSource(t, "d.puml", "@startuml\nactor User\n@enduml"))
 	if err != nil {
 		t.Fatalf("plantuml add error = %v", err)
@@ -975,13 +976,13 @@ func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 
 	// The reported id has to select the new macro, not merely resemble one.
 	replacement := seedDiagramSource(t, "next.puml", "@startuml\nactor Admin\n@enduml")
-	if _, err := runCLI(t, "plantuml", "set", "-f", file,
+	if _, err := runCLI(t, "confluence", "plantuml", "set", "-f", file,
 		"--id", added.LocalID, "--source", replacement); err != nil {
 		t.Fatalf("plantuml set error = %v", err)
 	}
 
 	out := filepath.Join(t.TempDir(), "roundtrip.puml")
-	if _, err := runCLI(t, "plantuml", "get", "-f", file, "--id", added.LocalID, "-o", out); err != nil {
+	if _, err := runCLI(t, "confluence", "plantuml", "get", "-f", file, "--id", added.LocalID, "-o", out); err != nil {
 		t.Fatalf("plantuml get error = %v", err)
 	}
 	got, err := os.ReadFile(out)

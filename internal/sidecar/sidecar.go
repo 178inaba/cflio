@@ -1,8 +1,8 @@
-// Package sidecar reads and writes the metadata file that `atlio read`
-// leaves next to a downloaded page body. The sidecar is what makes `update`
-// self-describing: the page it targets, the profile it authenticates with
-// and the version it locks against all come from here, so there is no way
-// to write to a page that was never read.
+// Package sidecar reads and writes the metadata file that
+// `atlio confluence read` leaves next to a downloaded page body. The sidecar is
+// what makes `confluence update` self-describing: the page it targets, the
+// profile it authenticates with and the version it locks against all come from
+// here, so there is no way to write to a page that was never read.
 package sidecar
 
 import (
@@ -33,7 +33,7 @@ type Meta struct {
 	// collapse the first two, and they call for opposite answers — one is a
 	// reason to ask for a fresh read, the other is a settled "not a live
 	// doc". Nothing requires it: a sidecar already on disk has to keep
-	// working with `update`.
+	// working with `confluence update`.
 	//
 	// omitzero, not omitempty: v2 reads omitempty as "omit what encodes as an
 	// empty JSON value", which covers a pointer to "" and would collapse the
@@ -69,11 +69,11 @@ func Load(bodyPath string) (Meta, error) {
 	if os.IsNotExist(err) {
 		// --markdown is named because it is the reachable way to end up
 		// here: that mode writes no sidecar by design, and an instruction to
-		// just "run `atlio read`" is satisfied by re-running the same
-		// Markdown read, which lands the caller back in this error.
-		return Meta{}, fmt.Errorf("no sidecar at %s: the file was not produced by `atlio read`, "+
+		// just "run `atlio confluence read`" is satisfied by re-running the
+		// same Markdown read, which lands the caller back in this error.
+		return Meta{}, fmt.Errorf("no sidecar at %s: the file was not produced by `atlio confluence read`, "+
 			"or it was read with --markdown, whose output carries no sidecar and cannot be written "+
-			"back; run `atlio read` on the page without --markdown, edit that file, and update it", path)
+			"back; run `atlio confluence read` on the page without --markdown, edit that file, and update it", path)
 	}
 	if err != nil {
 		return Meta{}, fmt.Errorf("read sidecar %s: %w", path, err)
@@ -113,7 +113,7 @@ func (m Meta) validate(path string) error {
 		missing = append(missing, "page_url")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("sidecar %s is missing or has an unusable %v; re-run `atlio read` to regenerate it",
+		return fmt.Errorf("sidecar %s is missing or has an unusable %v; re-run `atlio confluence read` to regenerate it",
 			path, missing)
 	}
 	return nil

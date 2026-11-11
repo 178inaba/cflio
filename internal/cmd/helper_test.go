@@ -116,8 +116,8 @@ func runCLIWithStdin(t *testing.T, stdin string, args ...string) (cliRun, error)
 }
 
 // runLimitCmd runs one of the listing commands with an explicit --limit. The
-// name is split on spaces, so a subcommand of a group ("comments list") is
-// named the way it is typed.
+// name is split on spaces, so a subcommand of a group ("confluence comments
+// list") is named the way it is typed.
 //
 // --limit=N rather than --limit N: the range check is tested with negative
 // values, which would otherwise be read as flags rather than as the value.

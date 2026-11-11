@@ -99,17 +99,10 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
-	// `plantuml` and `profile` take no globalFlags: neither issues a request
-	// nor resolves a profile to talk to. `plantuml` works entirely on the
-	// file `read` already downloaded.
+	// `profile` takes no globalFlags: it issues no request and resolves no
+	// profile to talk to.
 	cmd.AddCommand(
-		newReadCmd(g),
-		newUpdateCmd(g),
-		newSearchCmd(g),
-		newChildrenCmd(g),
-		newCommentsCmd(g),
-		newAttachmentsCmd(g),
-		newPlantUMLCmd(),
+		newConfluenceCmd(g),
 		newAuthCmd(g),
 		newProfileCmd(),
 	)

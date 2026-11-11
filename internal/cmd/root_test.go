@@ -42,11 +42,11 @@ func TestCommandContextTimeout(t *testing.T) {
 }
 
 // walkCommands calls fn for every command in the tree below the root, keyed by
-// its path with the root's own name dropped ("attachments list").
+// its path with the root's own name dropped ("confluence attachments list").
 //
 // The whole tree rather than root.Commands(): a group command carries no
-// --format of its own, so a walk one level deep would pin `attachments` as a
-// command without the flag and never look at the two subcommands that have it.
+// --format of its own, so a walk one level deep would pin `confluence` as a
+// command without the flag and never look at the subcommands that have it.
 // The prefix is taken from Root() rather than from the argument, which is the
 // current parent once the recursion is under way.
 func walkCommands(parent *cobra.Command, fn func(name string, cmd *cobra.Command)) {
@@ -63,26 +63,27 @@ func walkCommands(parent *cobra.Command, fn func(name string, cmd *cobra.Command
 // runnable and so take none either; their subcommands are listed on their own.
 func TestFormatFlagRegistration(t *testing.T) {
 	want := map[string]bool{
-		"read":                 true,
-		"update":               true,
-		"search":               true,
-		"children":             true,
-		"comments":             false,
-		"comments list":        true,
-		"comments create":      true,
-		"attachments":          false,
-		"attachments list":     true,
-		"attachments download": true,
-		"plantuml":             false,
-		"plantuml list":        true,
-		"plantuml get":         true,
-		"plantuml set":         true,
-		"plantuml add":         true,
-		"auth":                 false,
-		"auth login":           false,
-		"profile":              false,
-		"profile list":         false,
-		"profile use":          false,
+		"confluence":                      false,
+		"confluence read":                 true,
+		"confluence update":               true,
+		"confluence search":               true,
+		"confluence children":             true,
+		"confluence comments":             false,
+		"confluence comments list":        true,
+		"confluence comments create":      true,
+		"confluence attachments":          false,
+		"confluence attachments list":     true,
+		"confluence attachments download": true,
+		"confluence plantuml":             false,
+		"confluence plantuml list":        true,
+		"confluence plantuml get":         true,
+		"confluence plantuml set":         true,
+		"confluence plantuml add":         true,
+		"auth":                            false,
+		"auth login":                      false,
+		"profile":                         false,
+		"profile list":                    false,
+		"profile use":                     false,
 	}
 
 	root, _ := newRootCmd(&globalFlags{})
@@ -122,44 +123,44 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "read", args: []string{"read", "--format", "bogus", "123456"}},
-		{name: "search", args: []string{"search", "--format", "bogus", "text ~ x"}},
-		{name: "children", args: []string{"children", "--format", "bogus", "123456"}},
-		{name: "comments list", args: []string{"comments", "list", "--format", "bogus", "123456"}},
+		{name: "read", args: []string{"confluence", "read", "--format", "bogus", "123456"}},
+		{name: "search", args: []string{"confluence", "search", "--format", "bogus", "text ~ x"}},
+		{name: "children", args: []string{"confluence", "children", "--format", "bogus", "123456"}},
+		{name: "comments list", args: []string{"confluence", "comments", "list", "--format", "bogus", "123456"}},
 		{
 			// -f is left off on purpose, for the same reason it is left off
-			// `update` below.
+			// `confluence update` below.
 			name: "comments create, before cobra reports a missing required flag",
-			args: []string{"comments", "create", "--format", "bogus", "123456"},
+			args: []string{"confluence", "comments", "create", "--format", "bogus", "123456"},
 		},
 		{
 			name: "attachments list",
-			args: []string{"attachments", "list", "--format", "bogus", "123456"},
+			args: []string{"confluence", "attachments", "list", "--format", "bogus", "123456"},
 		},
 		{
 			// --pattern is left off on purpose, for the same reason -f is
-			// left off `update` below.
+			// left off `confluence update` below.
 			name: "attachments download, before cobra reports a missing required flag",
-			args: []string{"attachments", "download", "--format", "bogus", "123456"},
+			args: []string{"confluence", "attachments", "download", "--format", "bogus", "123456"},
 		},
 		{
 			// -f is left off on purpose: cobra parses the flags before it
 			// validates the required ones, so the bad format is what gets
 			// reported. Supplying -f here would drop that guarantee.
 			name: "update, before cobra reports a missing required flag",
-			args: []string{"update", "--format", "bogus"},
+			args: []string{"confluence", "update", "--format", "bogus"},
 		},
 		{
 			name: "plantuml list, before cobra reports a missing required flag",
-			args: []string{"plantuml", "list", "--format", "bogus"},
+			args: []string{"confluence", "plantuml", "list", "--format", "bogus"},
 		},
 		{
 			name: "plantuml get, before cobra reports a missing required flag",
-			args: []string{"plantuml", "get", "--format", "bogus"},
+			args: []string{"confluence", "plantuml", "get", "--format", "bogus"},
 		},
 		{
 			name: "plantuml set, before cobra reports a missing required flag",
-			args: []string{"plantuml", "set", "--format", "bogus"},
+			args: []string{"confluence", "plantuml", "set", "--format", "bogus"},
 		},
 	}
 
@@ -291,9 +292,21 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantErr: "unknown command \"loign\" for \"atlio auth\"\n\nDid you mean this?\n\tlogin\n",
 		},
 		{
-			name:    "attachments",
-			args:    []string{"attachments", "bogus"},
-			wantErr: `unknown command "bogus" for "atlio attachments"`,
+			name:    "confluence",
+			args:    []string{"confluence", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio confluence"`,
+		},
+		{
+			// A group nested in a group: the help function is reached from
+			// two levels below the root, where it was registered.
+			name:    "confluence comments",
+			args:    []string{"confluence", "comments", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio confluence comments"`,
+		},
+		{
+			name:    "confluence attachments",
+			args:    []string{"confluence", "attachments", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio confluence attachments"`,
 		},
 		{
 			name:    "profile",
@@ -306,6 +319,11 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			name:    "completion",
 			args:    []string{"completion", "bogus"},
 			wantErr: `unknown command "bogus" for "atlio completion"`,
+		},
+		{
+			name:    "confluence help",
+			args:    []string{"confluence", "help"},
+			wantErr: "unknown command \"help\" for \"atlio confluence\"\n\nDid you mean this?\n\t--help\n",
 		},
 		{
 			name:    "auth help",
@@ -346,12 +364,12 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 // for help, not a typo. A run that ends without an error is one the help
 // function recorded nothing for, since runCLI merges the two.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
-	for _, name := range []string{"", "attachments", "comments", "auth", "profile", "completion"} {
+	for _, name := range []string{
+		"", "confluence", "confluence attachments", "confluence comments", "confluence plantuml",
+		"auth", "profile", "completion",
+	} {
 		t.Run("atlio "+name, func(t *testing.T) {
-			var args []string
-			if name != "" {
-				args = append(args, name)
-			}
+			args := strings.Fields(name)
 
 			run, err := runCLI(t, args...)
 			if err != nil {
@@ -414,6 +432,76 @@ func TestRootRejectsAnUnknownCommand(t *testing.T) {
 	}
 }
 
+// TestRootRejectsAMovedCommand pins that the Confluence commands exist only
+// under `confluence`: at the root they are unknown like any other word, with
+// no alias and no hint pointing at where they went. The config is isolated
+// and the API refuses every request so that a tree still carrying a command
+// at the root fails here rather than reaching a real site.
+func TestRootRejectsAMovedCommand(t *testing.T) {
+	isolateConfig(t)
+	startAPI(t, neverCalled(t, "for a command that is no longer at the root"))
+
+	for _, name := range []string{"read", "update", "search", "children", "comments", "attachments", "plantuml"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runCLI(t, name, "123456")
+			if err == nil {
+				t.Fatalf("%s 123456 error = nil, want an error", name)
+			}
+			if want := fmt.Sprintf("unknown command %q for \"atlio\"", name); !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("error = %q, want it to start with %q", err, want)
+			}
+			if strings.Contains(err.Error(), "confluence") {
+				t.Errorf("error = %q, want no hint at the new path", err)
+			}
+			if code, _ := describeFailure(err, defaultTimeout); code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+		})
+	}
+}
+
+// TestHelpListsTheCommandTree pins the commands each level's help lists. The
+// names are read off the "Available Commands:" section rather than matched
+// anywhere in the output, since the descriptions mention reading pages too.
+func TestHelpListsTheCommandTree(t *testing.T) {
+	tests := []struct {
+		args []string
+		want []string
+	}{
+		{args: nil, want: []string{"auth", "completion", "confluence", "help", "profile"}},
+		{
+			args: []string{"confluence"},
+			want: []string{"attachments", "children", "comments", "plantuml", "read", "search", "update"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run("atlio "+strings.Join(tt.args, " "), func(t *testing.T) {
+			run, err := runCLI(t, append(tt.args, "--help")...)
+			if err != nil {
+				t.Fatalf("%v --help error = %v, want nil", tt.args, err)
+			}
+
+			_, section, found := strings.Cut(run.stdout, "Available Commands:\n")
+			if !found {
+				t.Fatalf("%v --help stdout = %q, want an Available Commands section", tt.args, run.stdout)
+			}
+			section, _, _ = strings.Cut(section, "\n\n")
+			var got []string
+			for line := range strings.SplitSeq(section, "\n") {
+				if fields := strings.Fields(line); len(fields) > 0 {
+					got = append(got, fields[0])
+				}
+			}
+
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("%v --help lists %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHelpRejectsAnUnresolvableTopic covers what cobra's own help command
 // does not: its Run cannot fail, so a topic that does not resolve exits 0 —
 // and `atlio help auth bogus` reports nothing at all, since Find resolves
@@ -436,8 +524,13 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 			// bogus is too far from any command to be suggested, so a table
 			// built only on it would never exercise the candidates.
 			name:    "topic close enough to suggest",
-			args:    []string{"help", "raed"},
-			wantErr: "unknown command \"raed\" for \"atlio\"\n\nDid you mean this?\n\tread\n",
+			args:    []string{"help", "confluenec"},
+			wantErr: "unknown command \"confluenec\" for \"atlio\"\n\nDid you mean this?\n\tconfluence\n",
+		},
+		{
+			name:    "topic under the confluence group close enough to suggest",
+			args:    []string{"help", "confluence", "raed"},
+			wantErr: "unknown command \"raed\" for \"atlio confluence\"\n\nDid you mean this?\n\tread\n",
 		},
 		{
 			name:    "topic a group command cannot resolve",
@@ -470,11 +563,11 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 			// The third shape: a command that resolves and has no
 			// subcommands at all, with an argument left over anyway. Neither
 			// Find's error nor the target having subcommands separates it
-			// from `atlio help read`, so a condition built on either would
-			// still render the help here and exit 0, as this did before.
+			// from `atlio help confluence read`, so a condition built on
+			// either would still render the help here and exit 0.
 			name:    "leftover after a command that takes arguments",
-			args:    []string{"help", "read", "123456"},
-			wantErr: `unknown command "123456" for "atlio read"`,
+			args:    []string{"help", "confluence", "read", "123456"},
+			wantErr: `unknown command "123456" for "atlio confluence read"`,
 		},
 	}
 
@@ -500,7 +593,7 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 // request, so a replacement help command that rendered something else would
 // fail here rather than pass on a substring match.
 func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
-	for _, topic := range [][]string{nil, {"auth"}, {"auth", "login"}, {"read"}} {
+	for _, topic := range [][]string{nil, {"auth"}, {"auth", "login"}, {"confluence"}, {"confluence", "read"}} {
 		t.Run("atlio help "+strings.Join(topic, " "), func(t *testing.T) {
 			run, err := runCLI(t, append([]string{"help"}, topic...)...)
 			if err != nil {
@@ -530,10 +623,7 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 // stderr is not asserted here, unlike the tests above: cobra ends every
 // __complete run with a "Completion ended with directive" line on it.
 func TestHelpTopicCompletion(t *testing.T) {
-	want := []string{
-		"attachments", "auth", "children", "comments", "completion",
-		"help", "plantuml", "profile", "read", "search", "update",
-	}
+	want := []string{"auth", "completion", "confluence", "help", "profile"}
 
 	run, err := runCLI(t, "__complete", "help", "")
 	if err != nil {

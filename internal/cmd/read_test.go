@@ -32,12 +32,12 @@ func pageResponse(t *testing.T, body, webui string) string {
 	return string(payload)
 }
 
-// runRead runs `read`, leaving --output off when outPath is empty so the
-// default naming is exercised.
+// runRead runs `confluence read`, leaving --output off when outPath is empty so
+// the default naming is exercised.
 func runRead(t *testing.T, arg, outPath string, extra ...string) (cliRun, error) {
 	t.Helper()
 
-	args := []string{"read"}
+	args := []string{"confluence", "read"}
 	if outPath != "" {
 		args = append(args, "--output", outPath)
 	}
@@ -136,8 +136,8 @@ func TestReadByPageIDStillProducesAnUpdatableSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sidecar.Load() error = %v", err)
 	}
-	// The URL is what `update` resolves a profile from, so an ID-only read
-	// still has to produce one.
+	// The URL is what `confluence update` resolves a profile from, so an
+	// ID-only read still has to produce one.
 	if meta.PageURL != testPageURL {
 		t.Errorf("page_url = %q, want it built from the profile site and the API link", meta.PageURL)
 	}
@@ -267,8 +267,8 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 
 	// A sidecar from a previous read of a different page. If it survived a
 	// failed read of page 123456, the file would hold one page's body next
-	// to another page's metadata, and `update` would write it to the wrong
-	// page.
+	// to another page's metadata, and `confluence update` would write it to the
+	// wrong page.
 	path := filepath.Join(t.TempDir(), "page.xml")
 	stale := sidecar.Meta{
 		PageID:  "999",
@@ -334,8 +334,8 @@ func TestReadMarkdownConvertsTheBodyAndWritesNoSidecar(t *testing.T) {
 		t.Errorf("file = %q, want the converted Markdown %q", written, want)
 	}
 
-	// No sidecar means `update` refuses the file, which is the only thing
-	// keeping a converted body from being written back over the page.
+	// No sidecar means `confluence update` refuses the file, which is the only
+	// thing keeping a converted body from being written back over the page.
 	if _, err := os.Stat(sidecar.Path(path)); !os.IsNotExist(err) {
 		t.Errorf("Stat(%s) = %v, want no sidecar in Markdown mode", sidecar.Path(path), err)
 	}
@@ -633,8 +633,8 @@ func TestReadMarkdownDropsAStaleSidecar(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	// Converting over a file that was previously read in storage mode must
-	// not leave the old sidecar behind: `update` would then send Markdown to
-	// the page it names.
+	// not leave the old sidecar behind: `confluence update` would then send
+	// Markdown to the page it names.
 	path := filepath.Join(t.TempDir(), "page.md")
 	stale := sidecar.Meta{
 		PageID:  "123456",
@@ -773,8 +773,8 @@ type readAttachmentsAPI struct {
 }
 
 // newReadAttachmentsAPI serves the page body alongside the listing and the
-// downloads, reusing the listing and transfer handler the `attachments` tests
-// use so the two paths cannot drift apart.
+// downloads, reusing the listing and transfer handler the
+// `confluence attachments` tests use so the two paths cannot drift apart.
 func newReadAttachmentsAPI(t *testing.T, body string, attachments ...attachment) (*readAttachmentsAPI, http.HandlerFunc) {
 	t.Helper()
 
@@ -844,8 +844,8 @@ func TestReadMarkdownDownloadsOnlyTheAttachmentsTheBodyReferences(t *testing.T) 
 		t.Errorf("downloaded = %v, want the bytes the API served", downloaded)
 	}
 
-	// The page holds it, the body does not reference it: `attachments
-	// download` is the command for pulling that one.
+	// The page holds it, the body does not reference it:
+	// `confluence attachments download` is the command for pulling that one.
 	if _, err := os.Lstat(filepath.Join("assets", "unused.pdf")); !os.IsNotExist(err) {
 		t.Errorf("Lstat(assets/unused.pdf) error = %v, want the unreferenced attachment left alone", err)
 	}
@@ -923,10 +923,11 @@ func TestReadMarkdownWithNoImageAsksForNothingAndCreatesNothing(t *testing.T) {
 	}
 }
 
-// Unlike `attachments download`, which refuses the whole run on a collision, a
-// read cannot fail over one: it would make re-reading a page depend on the
-// state of a directory. The existing file is kept and linked instead, which
-// makes the second read of the same page cheap and non-destructive.
+// Unlike `confluence attachments download`, which refuses the whole run on a
+// collision, a read cannot fail over one: it would make re-reading a page
+// depend on the state of a directory. The existing file is kept and linked
+// instead, which makes the second read of the same page cheap and
+// non-destructive.
 func TestReadMarkdownKeepsAFileAlreadyAtTheDestination(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
@@ -1003,9 +1004,10 @@ func TestReadMarkdownCountsEveryImageUncheckedWhenTheListingFails(t *testing.T) 
 	}
 }
 
-// TestReadRecordsThePageSubtype pins what makes `plantuml set` able to tell a
-// live doc from a classic page offline. The API omits the field for a classic
-// page, and the sidecar has to record that as an answer rather than as a gap.
+// TestReadRecordsThePageSubtype pins what makes `confluence plantuml set` able
+// to tell a live doc from a classic page offline. The API omits the field for a
+// classic page, and the sidecar has to record that as an answer rather than as
+// a gap.
 func TestReadRecordsThePageSubtype(t *testing.T) {
 	for _, tt := range []struct {
 		name string

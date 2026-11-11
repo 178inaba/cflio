@@ -39,8 +39,9 @@ func newCommentsListCmd(g *globalFlags) *cobra.Command {
 their direct replies. Inline comments also show the text they are anchored
 to and whether they are resolved.
 
-This command only reads. Posting a footer comment is ` + "`atlio comments create`" + `;
-replies and inline comments cannot be posted at all.`,
+This command only reads. Posting a footer comment is
+` + "`atlio confluence comments create`" + `; replies and inline comments cannot be
+posted at all.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runComments(cmd, args, g, limit, outFormat)
@@ -92,9 +93,9 @@ comments, which have to be anchored to a span of the body.`,
 	return cmd
 }
 
-// commentResult is what `comments create` prints on success. The comment ID
-// is what a later reply would be posted against, once there is a command
-// that posts one.
+// commentResult is what `confluence comments create` prints on success. The
+// comment ID is what a later reply would be posted against, once there is a
+// command that posts one.
 type commentResult struct {
 	CommentID  string `json:"comment_id"`
 	PageID     string `json:"page_id"`
@@ -103,9 +104,9 @@ type commentResult struct {
 
 func runCommentsCreate(cmd *cobra.Command, args []string, g *globalFlags, file string, outFormat format.Format) error {
 	// Hoisted ahead of the request rather than left to the writer, as in
-	// `attachments download`: this is the other command that would otherwise
-	// fail on the output format with the outward-facing work already done,
-	// and a comment cannot be taken back.
+	// `confluence attachments download`: this is the other command that would
+	// otherwise fail on the output format with the outward-facing work already
+	// done, and a comment cannot be taken back.
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
@@ -194,10 +195,10 @@ type commentSection struct {
 	Notice   string        `json:"notice,omitempty"`
 }
 
-// commentsPayload is the document `comments list --format json` prints. The
-// two families are named fields rather than members of a map keyed at run
-// time: the set is fixed, so the shape belongs in the type — which is also
-// what settles member order, with no encoder option standing in for it.
+// commentsPayload is the document `confluence comments list --format json`
+// prints. The two families are named fields rather than members of a map keyed
+// at run time: the set is fixed, so the shape belongs in the type — which is
+// also what settles member order, with no encoder option standing in for it.
 type commentsPayload struct {
 	Footer commentSection `json:"footer_comments"`
 	Inline commentSection `json:"inline_comments"`
@@ -287,8 +288,9 @@ func commentItemFrom(c confluence.Comment) commentItem {
 		Author:    c.Version.AuthorID,
 		CreatedAt: c.Version.CreatedAt,
 		// Comment endpoints reject body-format=view, so the storage XHTML is
-		// converted here, by the same converter `read --markdown` uses: a
-		// comment carries code blocks and tables as often as a page does.
+		// converted here, by the same converter `confluence read --markdown`
+		// uses: a comment carries code blocks and tables as often as a page
+		// does.
 		Body:      strings.TrimSuffix(format.ToMarkdown(c.Body.Storage.Value, format.Options{}).Markdown, "\n"),
 		Highlight: c.Properties.InlineOriginalSelection,
 		Status:    c.ResolutionStatus,

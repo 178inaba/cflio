@@ -31,7 +31,7 @@ func newPlantUMLCmd() *cobra.Command {
 		Use:   "plantuml",
 		Short: "Read and rewrite the PlantUML diagrams in a downloaded page",
 		Long: `Work with the PlantUML diagrams on a page you have downloaded with
-` + "`atlio read`" + `, without hand-editing the macro's encoded payload.
+` + "`atlio confluence read`" + `, without hand-editing the macro's encoded payload.
 
 A ` + "`plantumlcloud`" + ` macro stores its diagram source percent-encoded, deflated
 and base64'd in a data parameter. Producing that by hand is both error-prone
@@ -39,21 +39,21 @@ and base64'd in a data parameter. Producing that by hand is both error-prone
 the kind of blob this tool exists to keep out of an agent's context. These
 subcommands read and write it for you:
 
-  atlio read <url> -o page.xml
-  atlio plantuml list -f page.xml
-  atlio plantuml get -f page.xml --id <local-id> -o diagram.puml
+  atlio confluence read <url> -o page.xml
+  atlio confluence plantuml list -f page.xml
+  atlio confluence plantuml get -f page.xml --id <local-id> -o diagram.puml
   ...edit diagram.puml with your regular file editing tools...
-  atlio plantuml set -f page.xml --id <local-id> --source diagram.puml
-  atlio update -f page.xml
+  atlio confluence plantuml set -f page.xml --id <local-id> --source diagram.puml
+  atlio confluence update -f page.xml
 
 ` + "`add`" + ` puts a new diagram on the page the same way, building the whole
 macro element out of a source file:
 
-  atlio plantuml add -f page.xml --source diagram.puml
-  atlio update -f page.xml
+  atlio confluence plantuml add -f page.xml --source diagram.puml
+  atlio confluence update -f page.xml
 
 All four work on the local file and never talk to Confluence; the page is
-only written when you run ` + "`atlio update`" + `.`,
+only written when you run ` + "`atlio confluence update`" + `.`,
 	}
 	cmd.AddCommand(newPlantUMLListCmd(), newPlantUMLGetCmd(), newPlantUMLSetCmd(), newPlantUMLAddCmd())
 	return cmd
@@ -102,16 +102,16 @@ func newPlantUMLGetCmd() *cobra.Command {
 a file, then print where it went.
 
 The source is never printed: edit the file with your regular file editing
-tools and write it back with ` + "`atlio plantuml set`" + `, the same way a page body
-is edited. It is written exactly as it was decoded, with no trailing newline
-added, so what you edit is the diagram as the page holds it. (` + "`set`" + ` re-encodes
-whatever it is given, so running it on an unedited file still rewrites the
-macro's payload and bumps its revision -- the diagram is the same, the bytes
-are not.)
+tools and write it back with ` + "`atlio confluence plantuml set`" + `, the same way
+a page body is edited. It is written exactly as it was decoded, with no
+trailing newline added, so what you edit is the diagram as the page holds it.
+(` + "`set`" + ` re-encodes whatever it is given, so running it on an unedited file
+still rewrites the macro's payload and bumps its revision -- the diagram is
+the same, the bytes are not.)
 
-An existing file at the destination is overwritten, as ` + "`atlio read -o`" + `
-overwrites one -- so do not run this again over a source you have already
-edited.`,
+An existing file at the destination is overwritten, as
+` + "`atlio confluence read -o`" + ` overwrites one -- so do not run this again over
+a source you have already edited.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runPlantUMLGet(cmd, file, id, name, outPath, outFormat)
@@ -141,7 +141,7 @@ func newPlantUMLSetCmd() *cobra.Command {
 		Short: "Replace one diagram's source in a downloaded page body",
 		Long: `Encode a diagram source file into one macro's data parameter, leaving every
 other byte of the page body untouched. Write the page back with
-` + "`atlio update`" + `.
+` + "`atlio confluence update`" + `.
 
 The macro's revision parameter is incremented at the same time, when it has
 one. A diagram drawn in the Confluence editor also exists as a rendered
@@ -183,7 +183,7 @@ func newPlantUMLAddCmd() *cobra.Command {
 		Short: "Insert a new PlantUML diagram into a downloaded page body",
 		Long: `Build a plantumlcloud macro around a diagram source file and splice it into
 a downloaded page body, then print the new macro's ac:local-id so ` + "`set`" + ` can
-address it. Write the page back with ` + "`atlio update`" + `.
+address it. Write the page back with ` + "`atlio confluence update`" + `.
 
 The whole element is written here rather than by hand, because one part of
 it cannot be left out and has no visible symptom. Confluence keeps the
@@ -197,8 +197,9 @@ for that reason.
 Without ` + "`--after`" + ` the macro is appended at the end of the body. ` + "`--after`" + `
 puts it directly after the element carrying that identifier -- Confluence
 stamps ` + "`local-id`" + ` on block elements and ` + "`ac:local-id`" + ` on macros, and either
-is accepted, so ` + "`atlio plantuml list`" + ` names the anchors for placing a diagram
-beside an existing one. Every other byte of the file is left untouched.
+is accepted, so ` + "`atlio confluence plantuml list`" + ` names the anchors for
+placing a diagram beside an existing one. Every other byte of the file is left
+untouched.
 
 The ` + "`filename`" + ` parameter defaults to the source file's name with its
 extension replaced by ` + "`.svg`" + `. The app names the attachments it creates after
@@ -226,10 +227,10 @@ without it.`,
 }
 
 // addPlantUMLFileFlag registers the -f every subcommand takes. It names the
-// downloaded page body, exactly as `update` takes it.
+// downloaded page body, exactly as `confluence update` takes it.
 func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
 	cmd.Flags().StringVarP(file, "file", "f", "",
-		"page body downloaded by atlio read, without --markdown")
+		"page body downloaded by atlio confluence read, without --markdown")
 	if err := cmd.MarkFlagRequired("file"); err != nil {
 		panic(err)
 	}
@@ -240,7 +241,7 @@ func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
 // and picking the first would silently rewrite the wrong one.
 func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
 	cmd.Flags().StringVar(id, "id", "",
-		"ac:local-id of the macro to act on, as atlio plantuml list prints it")
+		"ac:local-id of the macro to act on, as atlio confluence plantuml list prints it")
 	cmd.Flags().StringVar(name, "name", "",
 		"filename parameter of the macro to act on; must match exactly one")
 	cmd.MarkFlagsMutuallyExclusive("id", "name")
@@ -255,8 +256,8 @@ func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
 // falls through to matching on --name, and an empty --name matches every macro
 // that carries no filename. That is a path an agent actually takes -- `list
 // --format json` reports "local_id": "" for a macro that has none -- and
-// following it would act on a different diagram without saying so. `update
-// --title` refuses an empty value for the same reason.
+// following it would act on a different diagram without saying so.
+// `confluence update --title` refuses an empty value for the same reason.
 func refuseEmptyFlag(cmd *cobra.Command, flag, value, guidance string) error {
 	if !cmd.Flags().Changed(flag) || value != "" {
 		return nil
@@ -267,7 +268,7 @@ func refuseEmptyFlag(cmd *cobra.Command, flag, value, guidance string) error {
 // validatePlantUMLSelector rejects an explicitly empty --id or --name.
 func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
 	if err := refuseEmptyFlag(cmd, "id", id,
-		"a macro that `atlio plantuml list` reports with no local-id carries no "+
+		"a macro that `atlio confluence plantuml list` reports with no local-id carries no "+
 			"ac:local-id to select it by, so name it with --name <filename> instead"); err != nil {
 		return err
 	}
@@ -277,8 +278,8 @@ func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
 
 // plantUMLFile is a downloaded page body and its sidecar. The two travel
 // together because every subcommand needs both: the body to read offsets into,
-// and the sidecar to reject a file that was not produced by `read` and to tell
-// a live doc apart.
+// and the sidecar to reject a file that was not produced by `confluence read`
+// and to tell a live doc apart.
 type plantUMLFile struct {
 	path    string
 	storage string
@@ -290,7 +291,7 @@ type plantUMLFile struct {
 // The sidecar is loaded even by `list`, which has no use for its contents: it
 // is what refuses a --markdown file, whose Markdown holds no macro to find and
 // could not be written back if it did. sidecar.Load already says that in the
-// words `update` says it in.
+// words `confluence update` says it in.
 func loadPlantUMLFile(path string) (plantUMLFile, error) {
 	meta, err := sidecar.Load(path)
 	if err != nil {
@@ -528,9 +529,10 @@ type plantUMLGetResult struct {
 }
 
 func runPlantUMLGet(cmd *cobra.Command, file, id, name, outPath string, outFormat format.Format) error {
-	// Validated before the file is read, the way `attachments download`
-	// hoists it: this command writes a file, and reaching the writer with an
-	// unvalidated format would leave one behind on the way to the error.
+	// Validated before the file is read, the way
+	// `confluence attachments download` hoists it: this command writes a file,
+	// and reaching the writer with an unvalidated format would leave one behind
+	// on the way to the error.
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
@@ -679,7 +681,7 @@ func (f plantUMLFile) checkReachable(m format.Macro) error {
 	if !known {
 		return fmt.Errorf("macro %s in %s has no ac:local-id, and the sidecar does not say whether "+
 			"the page is a live doc -- it was written before atlio recorded that. "+
-			"Run `atlio read` on the page again and redo the edit on the fresh file",
+			"Run `atlio confluence read` on the page again and redo the edit on the fresh file",
 			plantUMLName(plantUMLFilename(m)), f.path)
 	}
 	if live {
@@ -783,7 +785,7 @@ func writePlantUMLSetResult(cmd *cobra.Command, outFormat format.Format, result 
 	} else {
 		out.WriteString("Revision: none (this macro has no revision parameter)\n")
 	}
-	fmt.Fprintf(&out, "Write the page back with `atlio update -f %s`.\n", result.Path)
+	fmt.Fprintf(&out, "Write the page back with `atlio confluence update -f %s`.\n", result.Path)
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
 	return err
@@ -804,8 +806,8 @@ type plantUMLAddResult struct {
 
 func runPlantUMLAdd(cmd *cobra.Command, file, source, after, filename string, outFormat format.Format) error {
 	// Everything that can fail is resolved before the body is written, so a
-	// refusal leaves the file exactly as `read` left it -- a half-applied
-	// insertion is not something a re-run can reason about.
+	// refusal leaves the file exactly as `confluence read` left it -- a
+	// half-applied insertion is not something a re-run can reason about.
 	if err := outFormat.Validate(); err != nil {
 		return err
 	}
@@ -878,7 +880,7 @@ func plantUMLDiagramFilename(flag, source string) (string, error) {
 		if !isPlainFilename(flag) {
 			return "", fmt.Errorf("--filename %q is not a plain filename; "+
 				"it names the attachments the app creates for this diagram, and "+
-				"`atlio plantuml get` names its default output file after it", flag)
+				"`atlio confluence plantuml get` names its default output file after it", flag)
 		}
 		return flag, nil
 	}
@@ -905,7 +907,7 @@ func plantUMLInsertAt(f plantUMLFile, after string) (int, error) {
 		return ends[0], nil
 	case 0:
 		return 0, fmt.Errorf("no element in %s has --after %q; "+
-			"anchor on a macro's ac:local-id, as `atlio plantuml list` prints it, "+
+			"anchor on a macro's ac:local-id, as `atlio confluence plantuml list` prints it, "+
 			"or on a block element's local-id", f.path, after)
 	default:
 		// Confluence does not write a body with one identifier on two
@@ -1013,7 +1015,7 @@ func writePlantUMLAddResult(cmd *cobra.Command, outFormat format.Format, result 
 	fmt.Fprintf(&out, "Diagram:  %s (%s)\nAdded:    %s (%d bytes of source)\nPosition: %s\n",
 		plantUMLName(result.Filename), plantUMLLocalID(result.LocalID),
 		result.Path, result.Bytes, position)
-	fmt.Fprintf(&out, "Write the page back with `atlio update -f %s`.\n", result.Path)
+	fmt.Fprintf(&out, "Write the page back with `atlio confluence update -f %s`.\n", result.Path)
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
 	return err

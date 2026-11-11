@@ -37,8 +37,9 @@ func newAttachmentsListCmd(g *globalFlags) *cobra.Command {
 		Short: "List the files attached to a page",
 		Long: `List a page's attachments with their filename, media type and size.
 
-Download the ones you want with ` + "`atlio attachments download`" + `: the filename
-shown here is what its --pattern matches against.`,
+Download the ones you want with
+` + "`atlio confluence attachments download`" + `: the filename shown here is what
+its --pattern matches against.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsList(cmd, args, g, limit, outFormat)
@@ -97,7 +98,7 @@ Read-only against Confluence: atlio never uploads an attachment.`,
 
 // attachmentItem is one rendered attachment. Filename is the API's title,
 // named for what it is. FileSize is the server's own byte count, printed raw
-// the way `read` prints the size of the file it wrote.
+// the way `confluence read` prints the size of the file it wrote.
 type attachmentItem struct {
 	Filename  string `json:"filename"`
 	MediaType string `json:"media_type"`

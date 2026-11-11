@@ -828,7 +828,7 @@ func (r *renderer) linkBody(n *node) string {
 // image renders <ac:image>. An attachment has no URL the converter could put
 // here — it is fetched, not linked — so unless the caller downloaded it and
 // said where to, the filename is what is kept, and it is also what
-// `atlio attachments download --pattern` selects the file by.
+// `atlio confluence attachments download --pattern` selects the file by.
 func (r *renderer) image(n *node) string {
 	source := riChild(n)
 

@@ -25,8 +25,8 @@ func validateLimit(limit int) error {
 // command rather than on the root so it never appears on `auth` and
 // `profile`, which would silently ignore it. No check comes with it: a
 // format.Format rejects an unknown value as cobra parses the flags, which is
-// early enough that `update --format bogus` with no -f still names the bad
-// format rather than the missing file.
+// early enough that `confluence update --format bogus` with no -f still names
+// the bad format rather than the missing file.
 //
 // The default is assigned before registering because pflag takes a Var flag's
 // default from the value itself, and that is what puts the (default "md") in

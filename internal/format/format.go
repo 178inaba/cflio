@@ -9,10 +9,10 @@
 // the one thing here an edit does consult — reports where a macro's
 // parameters sit and leaves the writing to its caller.
 //
-// ToMarkdown serves both readers of a storage body: `read --markdown`, whose
-// output carries no sidecar and cannot be updated, and comment bodies, which
-// arrive as storage XHTML because the comment endpoints refuse
-// body-format=view.
+// ToMarkdown serves both readers of a storage body: `confluence read
+// --markdown`, whose output carries no sidecar and cannot be updated, and
+// comment bodies, which arrive as storage XHTML because the comment endpoints
+// refuse body-format=view.
 package format
 
 import (

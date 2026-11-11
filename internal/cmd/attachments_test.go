@@ -70,7 +70,7 @@ func attachmentsAPI(t *testing.T, attachments ...attachment) (*int, http.Handler
 
 func runAttachmentsListCmd(t *testing.T, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
-	return runLimitCmd(t, "attachments list", arg, limit, extra...)
+	return runLimitCmd(t, "confluence attachments list", arg, limit, extra...)
 }
 
 func TestAttachmentsListShowsFilenameMediaTypeAndSize(t *testing.T) {
@@ -82,7 +82,7 @@ func TestAttachmentsListShowsFilenameMediaTypeAndSize(t *testing.T) {
 	)
 	startAPI(t, handler)
 
-	run, err := runCLI(t, "attachments", "list", testPageURL)
+	run, err := runCLI(t, "confluence", "attachments", "list", testPageURL)
 	if err != nil {
 		t.Fatalf("attachments list error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestAttachmentsListJSONOutput(t *testing.T) {
 	_, handler := attachmentsAPI(t, attachment{title: "screenshot.png", mediaType: "image/png", size: 46982})
 	startAPI(t, handler)
 
-	run, err := runCLI(t, "attachments", "list", testPageURL, "--format", "json")
+	run, err := runCLI(t, "confluence", "attachments", "list", testPageURL, "--format", "json")
 	if err != nil {
 		t.Fatalf("attachments list error = %v", err)
 	}
@@ -137,7 +137,7 @@ func TestAttachmentsListWithNoAttachments(t *testing.T) {
 	_, handler := attachmentsAPI(t)
 	startAPI(t, handler)
 
-	run, err := runCLI(t, "attachments", "list", testPageURL)
+	run, err := runCLI(t, "confluence", "attachments", "list", testPageURL)
 	if err != nil {
 		t.Fatalf("attachments list error = %v, want a page with no attachments to succeed", err)
 	}
@@ -181,7 +181,7 @@ func TestAttachmentsListAcceptsABarePageID(t *testing.T) {
 		_, _ = w.Write([]byte(`{"results":[],"_links":{}}`))
 	})
 
-	if _, err := runCLI(t, "attachments", "list", "123456"); err != nil {
+	if _, err := runCLI(t, "confluence", "attachments", "list", "123456"); err != nil {
 		t.Fatalf("attachments list error = %v", err)
 	}
 	if gotPath != "/wiki/api/v2/pages/123456/attachments" {
@@ -200,11 +200,11 @@ func TestAttachmentsListRejectsAnOutOfRangeLimit(t *testing.T) {
 	}
 }
 
-// runDownload runs `attachments download` with --pattern and -o set.
+// runDownload runs `confluence attachments download` with --pattern and -o set.
 func runDownload(t *testing.T, dir, pattern string, extra ...string) (cliRun, error) {
 	t.Helper()
 
-	args := append([]string{"attachments", "download", testPageURL, "--pattern", pattern, "-o", dir}, extra...)
+	args := append([]string{"confluence", "attachments", "download", testPageURL, "--pattern", pattern, "-o", dir}, extra...)
 	return runCLI(t, args...)
 }
 
@@ -288,7 +288,7 @@ func TestAttachmentsDownloadDefaultsToTheWorkingDirectory(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	if _, err := runCLI(t, "attachments", "download", testPageURL, "--pattern", "*.png"); err != nil {
+	if _, err := runCLI(t, "confluence", "attachments", "download", testPageURL, "--pattern", "*.png"); err != nil {
 		t.Fatalf("attachments download error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "screenshot.png")); err != nil {
@@ -365,7 +365,7 @@ func TestAttachmentsDownloadRequiresThePatternFlag(t *testing.T) {
 
 	startAPI(t, neverCalled(t, "despite a missing --pattern"))
 
-	_, err := runCLI(t, "attachments", "download", testPageURL)
+	_, err := runCLI(t, "confluence", "attachments", "download", testPageURL)
 	if err == nil {
 		t.Fatal("attachments download error = nil, want the missing flag reported")
 	}
