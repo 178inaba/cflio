@@ -56,15 +56,7 @@ type Client struct {
 // and its pages under /wiki on every site, so the client derives that base
 // itself rather than having it stored with the site.
 func New(siteURL, email, token string, opts ...atlassian.Option) (*Client, error) {
-	site, err := url.Parse(siteURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse site url %q: %w", siteURL, err)
-	}
-	if site.Scheme == "" || site.Host == "" {
-		return nil, fmt.Errorf("site url %q must be absolute, e.g. https://example.atlassian.net", siteURL)
-	}
-
-	api, err := atlassian.New(strings.TrimSuffix(siteURL, "/")+"/wiki", email, token, apiErrorMessages, opts...)
+	api, err := atlassian.New(siteURL, "/wiki", email, token, apiErrorMessages, opts...)
 	if err != nil {
 		return nil, err
 	}

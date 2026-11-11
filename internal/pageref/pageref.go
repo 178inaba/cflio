@@ -120,8 +120,9 @@ func unrecognizedError(arg string) error {
 }
 
 // PageURL builds a page's absolute URL from the Confluence base URL
-// (<site>/wiki) and the relative web link the API returned. When the API returned no link, it falls back
-// to the page-ID query form, which needs no space key.
+// (<site>/wiki) and the relative web link the API returned. When the API
+// returned no link, it falls back to the page-ID query form, which needs no
+// space key.
 func PageURL(base, webui, pageID string) string {
 	base = strings.TrimSuffix(base, "/")
 	if webui != "" {
@@ -160,8 +161,8 @@ func SpaceKeyOf(webui string) string {
 }
 
 // SpacePageURL builds a page's URL from the Confluence base URL
-// (<site>/wiki) and the page's space key. The result is in the
-// form Parse accepts, so a link built with it can be fed straight back to
+// (<site>/wiki) and the page's space key. The result is in the form Parse
+// accepts, so a link built with it can be fed straight back to
 // `atlio confluence read`.
 func SpacePageURL(base, spaceKey, pageID string) string {
 	return strings.TrimSuffix(base, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)

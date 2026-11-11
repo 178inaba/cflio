@@ -1,5 +1,5 @@
 // Package atlassian is the HTTP transport shared by atlio's product clients:
-// it builds requests against one product's base URL, authenticates them with
+// it builds requests against one product's base URL on a site, authenticates them with
 // Atlassian Basic auth (account email + API token), encodes and decodes JSON,
 // and turns a non-2xx response into an *APIError.
 //
@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 // MessageFunc extracts human-readable messages from the body of a failed
@@ -43,19 +42,27 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }
 
-// New creates a Client whose request paths are joined onto baseURL, the
-// product's API root on the site (e.g. "https://example.atlassian.net/wiki").
-// messages may be nil, in which case every error reports its raw body.
-func New(baseURL, email, token string, messages MessageFunc, opts ...Option) (*Client, error) {
-	base, err := url.Parse(strings.TrimSuffix(baseURL, "/"))
+// New creates a Client for the site at siteURL, its scheme and host (e.g.
+// "https://example.atlassian.net"). Request paths are joined onto basePath,
+// the product's root on that site: "/wiki" for a product served under it, ""
+// for one served at the site root. messages may be nil, in which case every
+// error reports its raw body.
+func New(siteURL, basePath, email, token string, messages MessageFunc, opts ...Option) (*Client, error) {
+	site, err := url.Parse(siteURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse base url %q: %w", baseURL, err)
+		return nil, fmt.Errorf("parse site url %q: %w", siteURL, err)
 	}
-	if base.Scheme == "" || base.Host == "" {
-		return nil, fmt.Errorf("base url %q must be absolute", baseURL)
+	if site.Scheme == "" || site.Host == "" {
+		return nil, fmt.Errorf("site url %q must be absolute, e.g. https://example.atlassian.net", siteURL)
 	}
 
-	c := &Client{base: base, email: email, token: token, messages: messages, httpClient: http.DefaultClient}
+	c := &Client{
+		base:       site.JoinPath(basePath),
+		email:      email,
+		token:      token,
+		messages:   messages,
+		httpClient: http.DefaultClient,
+	}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -84,8 +91,8 @@ func (c *Client) Get(ctx context.Context, path string, query url.Values, out any
 
 // Send issues a request carrying payload as a JSON body. Every method that
 // sends a body shares this path, and encodeJSON's escaping trade is the
-// reason to keep it one: a body carrying markup is the norm here, and a
-// second encoder would be the place for that to drift.
+// reason to keep it one: request bodies routinely carry markup, and a second
+// encoder would be the place for that to drift.
 func (c *Client) Send(ctx context.Context, method, path string, payload, out any) error {
 	body, err := encodeJSON(payload)
 	if err != nil {
@@ -110,7 +117,8 @@ func (c *Client) Send(ctx context.Context, method, path string, payload, out any
 // application/json is a claim the server is entitled to act on.
 //
 // The credentials go to the site and nowhere else. A rawURL on another host
-// is a signed URL — it needs no auth header, and sending the site's to a host
+// is one the site handed out for a file it stores elsewhere, typically a
+// pre-signed URL: it needs no auth header, and sending the site's to a host
 // that never asked for it both leaks it and is what such a host rejects.
 // http.Client cannot make this check itself, since it only strips headers it
 // did not set; it does strip the header when a redirect leaves the host,
@@ -143,9 +151,9 @@ func (c *Client) Download(ctx context.Context, rawURL, path string, w io.Writer)
 }
 
 // encodeJSON renders a request body. It relies on v2 leaving HTML alone:
-// a storage-format body is mostly angle brackets and ampersands, and escaping
-// each one to \uXXXX triples its size in the request — exactly the wrong
-// trade for the large pages this tool exists to handle. v1 needed
+// a body in a markup format is mostly angle brackets and ampersands, and
+// escaping each one to \uXXXX triples its size in the request — exactly the
+// wrong trade for the multi-megabyte bodies a document can have. v1 needed
 // SetEscapeHTML(false) to reach the same place.
 //
 // The bytes.Buffer is what keeps a multi-megabyte body down to one copy:
@@ -182,9 +190,9 @@ func (c *Client) doJSON(req *http.Request, path string, out any) error {
 	if out == nil {
 		return nil
 	}
-	// Decoded straight from the stream rather than buffered first: a page
-	// response carries the whole body, and reading it into a []byte before
-	// unmarshalling would hold a second full copy of a multi-megabyte page.
+	// Decoded straight from the stream rather than buffered first: a response
+	// can carry a whole document, and reading it into a []byte before
+	// unmarshalling would hold a second full copy of a multi-megabyte one.
 	// UnmarshalRead reads to EOF and rejects anything after the value, which
 	// is what every endpoint here returns: exactly one JSON document.
 	if err := json.UnmarshalRead(resp.Body, out); err != nil {

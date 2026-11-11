@@ -2,7 +2,6 @@ package confluence
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
@@ -444,9 +443,9 @@ func TestPageAttachmentsReportsMoreBeyondTheLimit(t *testing.T) {
 var pngBytes = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x42}
 
 func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
-	var gotPath, gotAccept string
+	var gotPath string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotAccept = r.URL.Path, r.Header.Get("Accept")
+		gotPath = r.URL.Path
 		_, _ = w.Write(pngBytes)
 	})
 
@@ -460,40 +459,11 @@ func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
 	if gotPath != "/wiki/rest/api/content/10/child/attachment/att1/download" {
 		t.Errorf("path = %q, want the download link joined onto the site base", gotPath)
 	}
-	// The response is the file, not an error envelope, so asking for JSON
-	// would be a lie the media service is entitled to act on.
-	if gotAccept == "application/json" {
-		t.Errorf("Accept = %q, want the download not to ask for JSON", gotAccept)
-	}
 	if !bytes.Equal(buf.Bytes(), pngBytes) {
 		t.Errorf("body = %v, want the served bytes verbatim %v", buf.Bytes(), pngBytes)
 	}
 	if n != int64(len(pngBytes)) {
 		t.Errorf("n = %d, want %d", n, len(pngBytes))
-	}
-}
-
-func TestDownloadAttachmentSurfacesANonSuccessStatus(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(w, `{"errors":[{"title":"Not Found","detail":"No attachment"}]}`)
-	})
-
-	var buf bytes.Buffer
-	_, err := client.DownloadAttachment(t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf)
-	if err == nil {
-		t.Fatal("DownloadAttachment() error = nil, want an error")
-	}
-
-	apiErr, ok := errors.AsType[*atlassian.APIError](err)
-	if !ok {
-		t.Fatalf("DownloadAttachment() error = %v, want an *APIError", err)
-	}
-	if apiErr.Status != http.StatusNotFound {
-		t.Errorf("Status = %d, want %d", apiErr.Status, http.StatusNotFound)
-	}
-	if buf.Len() != 0 {
-		t.Errorf("body = %q, want nothing written for a failed download", buf.Bytes())
 	}
 }
 
@@ -870,21 +840,6 @@ func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRequestsHonorContextCancellation(t *testing.T) {
-	client := newTestClient(t, func(_ http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	})
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	if _, err := client.GetPage(ctx, "123", true); err == nil {
-		t.Fatal("GetPage() error = nil, want the context error")
-	} else if !errors.Is(err, context.Canceled) {
-		t.Errorf("GetPage() error = %v, want it to wrap context.Canceled", err)
 	}
 }
 

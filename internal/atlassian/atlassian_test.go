@@ -2,6 +2,7 @@ package atlassian
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,25 +20,45 @@ import (
 var wantAuth = "Basic " + base64.StdEncoding.EncodeToString([]byte("a@example.com:api-token"))
 
 // newTestClient starts an httptest server with the given handler and returns
-// a Client whose base URL is the server's plus /api, so a test can tell the
-// base path was kept.
+// a Client for it with /api as the base path, so a test can tell the base
+// path was kept.
 func newTestClient(t *testing.T, messages MessageFunc, handler http.HandlerFunc) *Client {
 	t.Helper()
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	client, err := New(srv.URL+"/api", "a@example.com", "api-token", messages)
+	client, err := New(srv.URL, "/api", "a@example.com", "api-token", messages)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	return client
 }
 
-func TestNewRejectsARelativeBaseURL(t *testing.T) {
-	for _, base := range []string{"example.atlassian.net/wiki", "/wiki", ""} {
-		if _, err := New(base, "a@example.com", "t", nil); err == nil {
-			t.Errorf("New(%q) error = nil, want an error for a non-absolute base url", base)
+func TestNewRejectsARelativeSiteURL(t *testing.T) {
+	for _, site := range []string{"example.atlassian.net", "/", ""} {
+		if _, err := New(site, "/wiki", "a@example.com", "t", nil); err == nil {
+			t.Errorf("New(%q) error = nil, want an error for a non-absolute site url", site)
+		}
+	}
+}
+
+func TestBaseURLJoinsTheBasePathOntoTheSite(t *testing.T) {
+	tests := []struct {
+		site, basePath, want string
+	}{
+		{site: "https://example.atlassian.net", basePath: "/wiki", want: "https://example.atlassian.net/wiki"},
+		{site: "https://example.atlassian.net/", basePath: "/wiki", want: "https://example.atlassian.net/wiki"},
+		{site: "https://example.atlassian.net", basePath: "", want: "https://example.atlassian.net"},
+	}
+
+	for _, tt := range tests {
+		client, err := New(tt.site, tt.basePath, "a@example.com", "t", nil)
+		if err != nil {
+			t.Fatalf("New(%q, %q) error = %v", tt.site, tt.basePath, err)
+		}
+		if got := client.BaseURL(); got != tt.want {
+			t.Errorf("New(%q, %q).BaseURL() = %q, want %q", tt.site, tt.basePath, got, tt.want)
 		}
 	}
 }
@@ -199,6 +220,21 @@ func TestAFailedResponseBodyIsBounded(t *testing.T) {
 	}
 }
 
+func TestRequestsHonorContextCancellation(t *testing.T) {
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := client.Get(ctx, "/rest/thing", nil, nil); err == nil {
+		t.Fatal("Get() error = nil, want the context error")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Errorf("Get() error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
 // fileBytes is a real PNG signature plus a byte that is not valid UTF-8 on its
 // own, so a download that decoded or re-encoded the body would corrupt it
 // visibly rather than passing the assertion by luck.
@@ -206,19 +242,13 @@ var fileBytes = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 
 
 func TestDownloadStreamsTheBodyUnchangedWithoutAskingForJSON(t *testing.T) {
 	var gotAccept string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
 		gotAccept = r.Header.Get("Accept")
 		_, _ = w.Write(fileBytes)
-	}))
-	t.Cleanup(srv.Close)
-
-	client, err := New(srv.URL+"/api", "a@example.com", "api-token", nil)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	})
 
 	var buf bytes.Buffer
-	n, err := client.Download(t.Context(), srv.URL+"/api/file", "/file", &buf)
+	n, err := client.Download(t.Context(), client.BaseURL()+"/file", "/file", &buf)
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
@@ -232,18 +262,12 @@ func TestDownloadStreamsTheBodyUnchangedWithoutAskingForJSON(t *testing.T) {
 }
 
 func TestDownloadReportsAFailureUnderTheCallersPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-	}))
-	t.Cleanup(srv.Close)
-
-	client, err := New(srv.URL+"/api", "a@example.com", "api-token", nil)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	})
 
 	var buf bytes.Buffer
-	_, err = client.Download(t.Context(), srv.URL+"/api/file", "/file", &buf)
+	_, err := client.Download(t.Context(), client.BaseURL()+"/file", "/file", &buf)
 	apiErr, ok := errors.AsType[*APIError](err)
 	if !ok {
 		t.Fatalf("Download() error = %v, want an *APIError", err)
@@ -286,7 +310,7 @@ const (
 func newRecordingClient(t *testing.T, transport *recordingTransport) *Client {
 	t.Helper()
 
-	client, err := New("https://"+siteHost+"/wiki", "a@example.com", "api-token", nil,
+	client, err := New("https://"+siteHost, "/wiki", "a@example.com", "api-token", nil,
 		WithHTTPClient(&http.Client{Transport: transport}))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
