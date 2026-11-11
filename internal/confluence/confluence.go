@@ -10,9 +10,7 @@
 package confluence
 
 import (
-	"bytes"
 	"context"
-	"encoding/json/v2"
 	"fmt"
 	"io"
 	"maps"
@@ -21,6 +19,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/178inaba/atlio/internal/atlassian"
 )
 
 const (
@@ -43,53 +43,30 @@ const (
 	// Confluence's 255-character ceiling would still outgrow what some proxies
 	// carry, which costs the batch its resolution and nothing more.
 	maxTitlesPerQuery = 50
-
-	// maxErrorBody bounds how much of a failed response is read to build the
-	// error from it. See responseError for why it is this far above the width
-	// the message is finally truncated to.
-	maxErrorBody = 64 << 10
 )
 
 // Client talks to one Confluence Cloud site with one set of credentials.
 type Client struct {
-	site       *url.URL
-	email      string
-	token      string
-	httpClient *http.Client
+	api *atlassian.Client
 }
 
-// Option configures a Client constructed by New.
-type Option func(*Client)
-
-// WithHTTPClient overrides the HTTP client. Tests use this to point at an
-// httptest server; production callers should leave it unset.
-func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) { c.httpClient = hc }
-}
-
-// New creates a Client for the given site base URL (including the /wiki
-// path, e.g. "https://example.atlassian.net/wiki"), authenticating with
-// Atlassian Basic auth (account email + API token).
-func New(siteURL, email, token string, opts ...Option) (*Client, error) {
-	site, err := url.Parse(strings.TrimSuffix(siteURL, "/"))
+// New creates a Client for the Atlassian site at siteURL, its scheme and
+// host (e.g. "https://example.atlassian.net"), authenticating with Atlassian
+// Basic auth (account email + API token). Confluence Cloud serves its API
+// and its pages under /wiki on every site, so the client derives that base
+// itself rather than having it stored with the site.
+func New(siteURL, email, token string, opts ...atlassian.Option) (*Client, error) {
+	api, err := atlassian.New(siteURL, "/wiki", email, token, apiErrorMessages, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("parse site url %q: %w", siteURL, err)
+		return nil, err
 	}
-	if site.Scheme == "" || site.Host == "" {
-		return nil, fmt.Errorf("site url %q must be absolute, e.g. https://example.atlassian.net/wiki", siteURL)
-	}
-
-	c := &Client{site: site, email: email, token: token, httpClient: http.DefaultClient}
-	for _, opt := range opts {
-		opt(c)
-	}
-	return c, nil
+	return &Client{api: api}, nil
 }
 
-// SiteURL returns the site base URL the client was built for, for callers
-// that need to turn a relative link into an absolute one.
-func (c *Client) SiteURL() string {
-	return c.site.String()
+// BaseURL returns the site's Confluence base URL, <site>/wiki. Page links
+// the API returns are relative to it, so it is what callers join them onto.
+func (c *Client) BaseURL() string {
+	return c.api.BaseURL()
 }
 
 // User is the subset of the current-user response atlio needs.
@@ -394,7 +371,7 @@ func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (
 
 // Attachment is one file attached to a page. Title is the filename, which is
 // what `confluence attachments download` matches its glob against. DownloadLink
-// is relative to the site base URL, in the form
+// is relative to the client's base URL (<site>/wiki), in the form
 // /rest/api/content/{pageID}/child/attachment/{attachmentID}/download.
 //
 // The API's own attachment id is deliberately not modelled: DownloadLink
@@ -416,68 +393,28 @@ func (c *Client) PageAttachments(ctx context.Context, pageID string, limit int) 
 }
 
 // DownloadAttachment streams the bytes behind downloadLink to w and returns
-// how many it wrote. The body is copied through untouched: an attachment is
-// the only response atlio takes that is not JSON, and re-encoding it would
-// leave an image that no longer opens.
+// how many it wrote. Errors name downloadLink as the API returned it.
 //
-// It cannot go through do, which asks for JSON and decodes the response as
-// JSON. Nothing else about the request differs, so the auth and the error
-// handling are the same.
-//
-// The download redirects once, to Atlassian's media service on another host.
-// Go's http.Client follows it and drops the Authorization header on the way,
-// because the target is neither the initial host nor a subdomain of it (see
-// shouldCopyHeaderOnRedirect in net/http). That is what the media service
-// needs: the redirect target is a signed URL, and it rejects a request that
-// carries the site's credentials as well.
+// The download redirects once, to Atlassian's media service on another host,
+// whose signed URL rejects a request that also carries the site's
+// credentials. atlassian.Client.Download is what keeps them off it, both on
+// the redirect and for a link that already points there.
 func (c *Client) DownloadAttachment(ctx context.Context, downloadLink string, w io.Writer) (int64, error) {
 	endpoint, err := c.attachmentURL(downloadLink)
 	if err != nil {
 		return 0, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, fmt.Errorf("build request for %s: %w", downloadLink, err)
-	}
-	// No Accept header: the response is the file itself, and asking for
-	// application/json is a claim the media service is entitled to act on.
-	//
-	// The credentials go to the site and nowhere else. attachmentURL passes an
-	// absolute link through, and one pointing at another host is a signed URL
-	// like the redirect target — it needs no auth header, and sending the
-	// site's to a host that never asked for it both leaks it and is what the
-	// media service rejects. Same reasoning as the redirect below, applied
-	// where http.Client cannot: it only strips headers it did not set.
-	if req.URL.Host == c.site.Host {
-		req.SetBasicAuth(c.email, c.token)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("%s %s: %w", req.Method, downloadLink, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, responseError(req.Method, downloadLink, resp)
-	}
-
-	n, err := io.Copy(w, resp.Body)
-	if err != nil {
-		return n, fmt.Errorf("download %s: %w", downloadLink, err)
-	}
-	return n, nil
+	return c.api.Download(ctx, endpoint, downloadLink, w)
 }
 
 // attachmentURL turns the relative download link an attachment carries into an
 // absolute URL.
 //
-// The link is relative to the listing's `_links.base`, which is the site base
-// URL this client was built for — the same string. So the two are
-// concatenated: url.URL.ResolveReference would read the leading slash as
-// site-root-relative and drop the /wiki path the base ends with, addressing a
-// host that serves nothing there.
+// The link is relative to the listing's `_links.base`, which is the base URL
+// this client derived — the same string. So the two are concatenated:
+// url.URL.ResolveReference would read the leading slash as site-root-relative
+// and drop the /wiki path the base ends with, addressing a host that serves
+// nothing there.
 //
 // A link that is neither absolute nor rooted at / is an error rather than a
 // guess: every shape the API has been observed to return is one of those two,
@@ -493,7 +430,7 @@ func (c *Client) attachmentURL(downloadLink string) (string, error) {
 	if !strings.HasPrefix(downloadLink, "/") {
 		return "", fmt.Errorf("download link %q is neither absolute nor rooted at /", downloadLink)
 	}
-	return c.site.String() + downloadLink, nil
+	return c.api.BaseURL() + downloadLink, nil
 }
 
 // SearchResult is one CQL hit. Content is absent for results that are not
@@ -624,108 +561,13 @@ func nextCursor(next string) string {
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {
-	endpoint := c.site.JoinPath(path)
-	if len(query) > 0 {
-		endpoint.RawQuery = query.Encode()
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return fmt.Errorf("build request for %s: %w", path, err)
-	}
-	return c.do(req, path, out)
+	return c.api.Get(ctx, path, query, out)
 }
 
 func (c *Client) put(ctx context.Context, path string, payload, out any) error {
-	return c.send(ctx, http.MethodPut, path, payload, out)
+	return c.api.Send(ctx, http.MethodPut, path, payload, out)
 }
 
 func (c *Client) post(ctx context.Context, path string, payload, out any) error {
-	return c.send(ctx, http.MethodPost, path, payload, out)
-}
-
-// send issues a request carrying a JSON body. The two methods that do share
-// everything but the verb, and encodeJSON's escaping trade is the reason to
-// keep them on one path: a comment body is storage XHTML like a page body,
-// and a second encoder would be the place for that to drift.
-func (c *Client) send(ctx context.Context, method, path string, payload, out any) error {
-	body, err := encodeJSON(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.site.JoinPath(path).String(), body)
-	if err != nil {
-		return fmt.Errorf("build request for %s: %w", path, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.do(req, path, out)
-}
-
-// encodeJSON renders a request body. It relies on v2 leaving HTML alone:
-// storage XHTML is mostly angle brackets and ampersands, and escaping each
-// one to \uXXXX triples its size in the request — exactly the wrong trade for
-// the large pages this tool exists to handle. v1 needed SetEscapeHTML(false)
-// to reach the same place.
-//
-// The bytes.Buffer is what keeps a multi-megabyte body down to one copy:
-// MarshalWrite appends straight into a bytes.Buffer instead of filling an
-// intermediate buffer and copying out of it. net/http reads Content-Length
-// off the body's concrete type, and *bytes.Buffer is one of the types it
-// knows, so that type has to survive the io.Reader this returns.
-//
-// This is the one marshal site that does not ask for Deterministic. Nothing
-// diffs a request body: the payload types carry no maps, and the server reads
-// members by name.
-func encodeJSON(payload any) (io.Reader, error) {
-	var buf bytes.Buffer
-	if err := json.MarshalWrite(&buf, payload); err != nil {
-		return nil, fmt.Errorf("encode request body: %w", err)
-	}
-	return &buf, nil
-}
-
-// responseError turns a non-2xx response into an *APIError.
-//
-// The body is read through a LimitReader because it is not always the small
-// JSON envelope the API documents: a gateway answers with an HTML page, and the
-// download path can be handed anything at all. maxErrorBody sits far above
-// maxRawBodyInError, which is where the message actually gets cut — the limit
-// here only stops an unbounded read, and cutting near the display width would
-// split a multi-byte rune where truncate's rune-boundary rewind can no longer
-// see it.
-func responseError(method, path string, resp *http.Response) error {
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-	if err != nil {
-		return fmt.Errorf("read response from %s %s: %w", method, path, err)
-	}
-	return newAPIError(method, path, resp.StatusCode, body)
-}
-
-func (c *Client) do(req *http.Request, path string, out any) error {
-	req.SetBasicAuth(c.email, c.token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", req.Method, path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return responseError(req.Method, path, resp)
-	}
-
-	if out == nil {
-		return nil
-	}
-	// Decoded straight from the stream rather than buffered first: a page
-	// response carries the whole body, and reading it into a []byte before
-	// unmarshalling would hold a second full copy of a multi-megabyte page.
-	// UnmarshalRead reads to EOF and rejects anything after the value, which
-	// is what every endpoint here returns: exactly one JSON document.
-	if err := json.UnmarshalRead(resp.Body, out); err != nil {
-		return fmt.Errorf("parse response from %s %s: %w", req.Method, path, err)
-	}
-	return nil
+	return c.api.Send(ctx, http.MethodPost, path, payload, out)
 }

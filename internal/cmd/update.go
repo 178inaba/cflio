@@ -102,7 +102,7 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, title stri
 		return fmt.Errorf("read %s: %w", file, err)
 	}
 
-	client, creds, err := resolveClient(g.profile, pageref.HostOf(meta.PageURL))
+	client, err := resolveConfluence(g.profile, pageref.HostOf(meta.PageURL))
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, title stri
 	// taken from the response rather than from what was sent.
 	meta.Version = updated.Version.Number
 	meta.Title = updated.Title
-	meta.PageURL = pageref.PageURL(creds.SiteURL, updated.Links.WebUI, meta.PageID)
+	meta.PageURL = pageref.PageURL(client.BaseURL(), updated.Links.WebUI, meta.PageID)
 	if err := sidecar.Write(file, meta); err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ import (
 func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	run, err := runCLI(t, "profile", "list")
 	if err != nil {
@@ -25,11 +25,8 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "example\t") || !strings.HasPrefix(lines[1], "other\t") {
 		t.Errorf("output = %q, want the profiles sorted by name", run.stdout)
 	}
-	if !strings.Contains(lines[0], testSite) || !strings.Contains(lines[0], "a@example.com") {
-		t.Errorf("line = %q, want it to carry the site and the account email", lines[0])
-	}
-	if !strings.Contains(lines[0], "(default)") {
-		t.Errorf("line = %q, want the default profile marked", lines[0])
+	if want := "example\thttps://example.atlassian.net\ta@example.com\t(default)"; lines[0] != want {
+		t.Errorf("line = %q, want %q: the site, the account email and the default mark", lines[0], want)
 	}
 	if strings.Contains(lines[1], "(default)") {
 		t.Errorf("line = %q, want only one profile marked as default", lines[1])
@@ -64,7 +61,7 @@ func TestProfileListNeverPrintsTokens(t *testing.T) {
 func TestProfileUseSwitchesTheDefault(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	if _, err := runCLI(t, "profile", "use", "other"); err != nil {
 		t.Fatalf("profile use error = %v", err)

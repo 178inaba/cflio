@@ -2,7 +2,6 @@ package confluence
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
@@ -14,7 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"unicode/utf8"
+
+	"github.com/178inaba/atlio/internal/atlassian"
 )
 
 // newTestClient starts an httptest server with the given handler and
@@ -25,7 +25,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	client, err := New(srv.URL+"/wiki", "a@example.com", "api-token")
+	client, err := New(srv.URL, "a@example.com", "api-token")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -33,9 +33,21 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 }
 
 func TestNewRejectsRelativeSiteURL(t *testing.T) {
-	for _, site := range []string{"example.atlassian.net/wiki", "/wiki", ""} {
+	for _, site := range []string{"example.atlassian.net", "/", ""} {
 		if _, err := New(site, "a@example.com", "t"); err == nil {
 			t.Errorf("New(%q) error = nil, want an error for a non-absolute site url", site)
+		}
+	}
+}
+
+func TestBaseURLAddsWikiToTheSite(t *testing.T) {
+	for _, site := range []string{"https://example.atlassian.net", "https://example.atlassian.net/"} {
+		client, err := New(site, "a@example.com", "t")
+		if err != nil {
+			t.Fatalf("New(%q) error = %v", site, err)
+		}
+		if got, want := client.BaseURL(), "https://example.atlassian.net/wiki"; got != want {
+			t.Errorf("New(%q).BaseURL() = %q, want %q", site, got, want)
 		}
 	}
 }
@@ -431,9 +443,9 @@ func TestPageAttachmentsReportsMoreBeyondTheLimit(t *testing.T) {
 var pngBytes = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x42}
 
 func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
-	var gotPath, gotAccept string
+	var gotPath string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotAccept = r.URL.Path, r.Header.Get("Accept")
+		gotPath = r.URL.Path
 		_, _ = w.Write(pngBytes)
 	})
 
@@ -445,12 +457,7 @@ func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
 	}
 
 	if gotPath != "/wiki/rest/api/content/10/child/attachment/att1/download" {
-		t.Errorf("path = %q, want the download link joined onto the site base", gotPath)
-	}
-	// The response is the file, not an error envelope, so asking for JSON
-	// would be a lie the media service is entitled to act on.
-	if gotAccept == "application/json" {
-		t.Errorf("Accept = %q, want the download not to ask for JSON", gotAccept)
+		t.Errorf("path = %q, want the download link joined onto the base URL", gotPath)
 	}
 	if !bytes.Equal(buf.Bytes(), pngBytes) {
 		t.Errorf("body = %v, want the served bytes verbatim %v", buf.Bytes(), pngBytes)
@@ -460,156 +467,8 @@ func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
 	}
 }
 
-func TestDownloadAttachmentSurfacesANonSuccessStatus(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(w, `{"errors":[{"title":"Not Found","detail":"No attachment"}]}`)
-	})
-
-	var buf bytes.Buffer
-	_, err := client.DownloadAttachment(t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf)
-	if err == nil {
-		t.Fatal("DownloadAttachment() error = nil, want an error")
-	}
-
-	apiErr, ok := errors.AsType[*APIError](err)
-	if !ok {
-		t.Fatalf("DownloadAttachment() error = %v, want an *APIError", err)
-	}
-	if apiErr.Status != http.StatusNotFound {
-		t.Errorf("Status = %d, want %d", apiErr.Status, http.StatusNotFound)
-	}
-	if buf.Len() != 0 {
-		t.Errorf("body = %q, want nothing written for a failed download", buf.Bytes())
-	}
-}
-
-// recordingTransport answers every request from responses, keyed by host, and
-// records the request that reached each one.
-//
-// A RoundTripper rather than two httptest servers: this test is about what
-// http.Client does with the Authorization header when a redirect crosses to
-// another host, and httptest servers all listen on 127.0.0.1 — Go compares
-// hostnames with the port stripped, so two of them count as the same host and
-// the header would be copied either way.
-type recordingTransport struct {
-	responses map[string]*http.Response
-	seen      []*http.Request
-}
-
-func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	t.seen = append(t.seen, req)
-	resp, ok := t.responses[req.URL.Host]
-	if !ok {
-		return nil, fmt.Errorf("no canned response for host %q", req.URL.Host)
-	}
-	resp.Request = req
-	return resp, nil
-}
-
-func TestDownloadAttachmentDropsTheAuthHeaderOnTheRedirectToTheMediaHost(t *testing.T) {
-	const (
-		apiHost   = "example.atlassian.net"
-		mediaHost = "media-cdn.example.com"
-	)
-
-	transport := &recordingTransport{responses: map[string]*http.Response{
-		apiHost: {
-			StatusCode: http.StatusFound,
-			Header:     http.Header{"Location": {"https://" + mediaHost + "/signed/blob?token=abc"}},
-			Body:       io.NopCloser(strings.NewReader("")),
-		},
-		mediaHost: {
-			StatusCode: http.StatusOK,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewReader(pngBytes)),
-		},
-	}}
-
-	client, err := New("https://"+apiHost+"/wiki", "a@example.com", "api-token",
-		WithHTTPClient(&http.Client{Transport: transport}))
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	if _, err := client.DownloadAttachment(
-		t.Context(), "/rest/api/content/10/child/attachment/att1/download", &buf); err != nil {
-		t.Fatalf("DownloadAttachment() error = %v", err)
-	}
-
-	if len(transport.seen) != 2 {
-		t.Fatalf("requests = %d, want 2 (the API host and the redirect target)", len(transport.seen))
-	}
-	if transport.seen[0].URL.Host != apiHost || transport.seen[0].Header.Get("Authorization") == "" {
-		t.Errorf("first request = %s (auth %q), want the API host with credentials",
-			transport.seen[0].URL, transport.seen[0].Header.Get("Authorization"))
-	}
-	// The redirect target is a signed URL. Forwarding the site's credentials
-	// to a host that did not ask for them is what the media service rejects.
-	if got := transport.seen[1].Header.Get("Authorization"); got != "" {
-		t.Errorf("Authorization on the redirect = %q, want it dropped across hosts", got)
-	}
-	if !bytes.Equal(buf.Bytes(), pngBytes) {
-		t.Errorf("body = %v, want the redirect target's bytes %v", buf.Bytes(), pngBytes)
-	}
-}
-
-func TestDownloadAttachmentSendsCredentialsOnlyToTheSite(t *testing.T) {
-	const apiHost = "example.atlassian.net"
-
-	tests := []struct {
-		name     string
-		link     string
-		wantAuth bool
-	}{
-		{
-			name:     "a relative link addresses the site",
-			link:     "/rest/api/content/10/child/attachment/att1/download",
-			wantAuth: true,
-		},
-		{
-			// A signed URL like the redirect target: it needs no auth header,
-			// and the media host rejects a request that carries the site's.
-			// http.Client only strips what it did not set, so a first request
-			// straight to another host is on this method to get right.
-			name:     "an absolute link to another host does not",
-			link:     "https://media-cdn.example.com/signed/blob?token=abc",
-			wantAuth: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			transport := &recordingTransport{responses: map[string]*http.Response{
-				apiHost:                 {StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(pngBytes))},
-				"media-cdn.example.com": {StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(pngBytes))},
-			}}
-
-			client, err := New("https://"+apiHost+"/wiki", "a@example.com", "api-token",
-				WithHTTPClient(&http.Client{Transport: transport}))
-			if err != nil {
-				t.Fatalf("New() error = %v", err)
-			}
-
-			var buf bytes.Buffer
-			if _, err := client.DownloadAttachment(t.Context(), tt.link, &buf); err != nil {
-				t.Fatalf("DownloadAttachment() error = %v", err)
-			}
-
-			if len(transport.seen) != 1 {
-				t.Fatalf("requests = %d, want 1", len(transport.seen))
-			}
-			if gotAuth := transport.seen[0].Header.Get("Authorization") != ""; gotAuth != tt.wantAuth {
-				t.Errorf("Authorization sent = %v, want %v (host %s)",
-					gotAuth, tt.wantAuth, transport.seen[0].URL.Host)
-			}
-		})
-	}
-}
-
 func TestAttachmentURL(t *testing.T) {
-	client, err := New("https://example.atlassian.net/wiki", "a@example.com", "t")
+	client, err := New("https://example.atlassian.net", "a@example.com", "t")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -968,7 +827,7 @@ func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 				t.Fatal("GetPage() error = nil, want an error")
 			}
 
-			apiErr, ok := errors.AsType[*APIError](err)
+			apiErr, ok := errors.AsType[*atlassian.APIError](err)
 			if !ok {
 				t.Fatalf("GetPage() error = %v, want an *APIError", err)
 			}
@@ -981,53 +840,6 @@ func TestAPIErrorSurfacesStatusAndMessages(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestAPIErrorTruncatesLongRawBodies(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-	}{
-		{name: "ascii", body: strings.Repeat("x", 5000)},
-		// Multi-byte runes must not be cut in half: an invalid UTF-8 tail
-		// would render as a replacement character in the user's terminal.
-		{name: "multibyte", body: strings.Repeat("あ", 5000)},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = fmt.Fprint(w, tt.body)
-			})
-
-			_, err := client.GetPage(t.Context(), "123", true)
-			if err == nil {
-				t.Fatal("GetPage() error = nil, want an error")
-			}
-			if len(err.Error()) > maxRawBodyInError+200 {
-				t.Errorf("error length = %d, want the raw body truncated", len(err.Error()))
-			}
-			if !utf8.ValidString(err.Error()) {
-				t.Errorf("error = %q, want valid UTF-8 after truncation", err.Error())
-			}
-		})
-	}
-}
-
-func TestRequestsHonorContextCancellation(t *testing.T) {
-	client := newTestClient(t, func(_ http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	})
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	if _, err := client.GetPage(ctx, "123", true); err == nil {
-		t.Fatal("GetPage() error = nil, want the context error")
-	} else if !errors.Is(err, context.Canceled) {
-		t.Errorf("GetPage() error = %v, want it to wrap context.Canceled", err)
 	}
 }
 

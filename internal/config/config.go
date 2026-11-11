@@ -1,5 +1,5 @@
 // Package config manages atlio's on-disk configuration (registered
-// Confluence site profiles and their API tokens) and resolves which
+// Atlassian site profiles and their API tokens) and resolves which
 // credentials an invocation should use.
 package config
 
@@ -16,9 +16,10 @@ import (
 
 // Profile holds the stored credentials for a single registered site.
 type Profile struct {
-	// SiteURL is the Confluence base URL including the /wiki path, e.g.
-	// "https://example.atlassian.net/wiki". The host is derived from it
-	// rather than stored separately, so there is no second copy to drift.
+	// SiteURL is the site's scheme and host and nothing else, e.g.
+	// "https://example.atlassian.net"; each product's client adds its own
+	// base path to it. The host is derived from it rather than stored
+	// separately, so there is no second copy to drift.
 	SiteURL string `json:"site_url"`
 	Email   string `json:"email"`
 	Token   string `json:"token"`

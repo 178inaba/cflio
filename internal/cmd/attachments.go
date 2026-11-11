@@ -229,7 +229,7 @@ func resolvePageClient(arg, profile string) (*confluence.Client, string, error) 
 		return nil, "", err
 	}
 
-	client, _, err := resolveClient(profile, ref.Host)
+	client, err := resolveConfluence(profile, ref.Host)
 	if err != nil {
 		return nil, "", err
 	}

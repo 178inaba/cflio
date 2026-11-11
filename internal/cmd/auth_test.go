@@ -75,6 +75,7 @@ func TestAuthLoginNormalizesThePastedSiteURL(t *testing.T) {
 		{name: "host with scheme", input: "https://example.atlassian.net"},
 		{name: "wiki base", input: "https://example.atlassian.net/wiki"},
 		{name: "a page url pasted from the browser", input: "https://example.atlassian.net/wiki/spaces/DEV/pages/1/T"},
+		{name: "an issue url pasted from the browser", input: "https://example.atlassian.net/browse/KAN-1"},
 		{name: "trailing slash", input: "https://example.atlassian.net/"},
 	}
 
@@ -90,8 +91,8 @@ func TestAuthLoginNormalizesThePastedSiteURL(t *testing.T) {
 			if err != nil {
 				t.Fatalf("config.Load() error = %v", err)
 			}
-			if got := file.Profiles["example"].SiteURL; got != testSite {
-				t.Errorf("stored site = %q, want %q", got, testSite)
+			if got, want := file.Profiles["example"].SiteURL, "https://example.atlassian.net"; got != want {
+				t.Errorf("stored site = %q, want %q", got, want)
 			}
 		})
 	}
@@ -209,7 +210,7 @@ func TestAuthLoginRotatesTheTokenAfterConfirmation(t *testing.T) {
 
 func TestAuthLoginConfirmsBeforeReusingANameFromAnotherSite(t *testing.T) {
 	isolateConfig(t)
-	seedProfile(t, "example", "https://other.atlassian.net/wiki")
+	seedProfile(t, "example", "https://other.atlassian.net")
 
 	if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\nexample\nn\n",
 		okCurrentUser); err != nil {
@@ -220,14 +221,14 @@ func TestAuthLoginConfirmsBeforeReusingANameFromAnotherSite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	if got := file.Profiles["example"].SiteURL; got != "https://other.atlassian.net/wiki" {
+	if got := file.Profiles["example"].SiteURL; got != "https://other.atlassian.net" {
 		t.Errorf("site = %q, want the declined overwrite to leave the other site in place", got)
 	}
 }
 
 func TestAuthLoginKeepsTheExistingDefaultProfile(t *testing.T) {
 	isolateConfig(t)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	if _, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
 		okCurrentUser); err != nil {

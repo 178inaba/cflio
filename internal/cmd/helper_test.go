@@ -5,18 +5,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/178inaba/atlio/internal/atlassian"
 	"github.com/178inaba/atlio/internal/config"
 	"github.com/178inaba/atlio/internal/confluence"
 )
 
 const (
-	testSite = "https://example.atlassian.net/wiki"
+	// testSite is the site URL a profile stores.
+	testSite = "https://example.atlassian.net"
+
+	// testWikiBase is the Confluence base URL the client derives from
+	// testSite, which every URL a Confluence command prints starts with. It
+	// is spelled out rather than built from testSite so that an output URL
+	// missing /wiki fails the expectations built from it.
+	testWikiBase = "https://example.atlassian.net/wiki"
 
 	// testPageWebUI is the relative link the API returns for the test page,
-	// i.e. testPageURL without the site prefix.
+	// i.e. testPageURL without the base prefix.
 	testPageWebUI = "/spaces/DEV/pages/123456/Some+Page"
 )
 
@@ -56,21 +65,44 @@ func neverCalled(t *testing.T, reason string) http.HandlerFunc {
 	}
 }
 
-// startAPI serves handler and redirects every client the commands build to
-// it, regardless of the site URL the resolved profile carries.
+// startAPI serves handler and sends every request the commands make to it,
+// whichever site the resolved profile names. The clients keep that site as
+// their own, so the URLs a command prints are the ones it would print against
+// the real site.
 func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	original := clientFactory
-	clientFactory = func(_, email, token string) (*confluence.Client, error) {
-		return confluence.New(srv.URL+"/wiki", email, token)
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse test server url: %v", err)
 	}
-	t.Cleanup(func() { clientFactory = original })
+	httpClient := &http.Client{Transport: redirectTransport{target: target}}
+
+	original := confluenceFactory
+	confluenceFactory = func(site, email, token string) (*confluence.Client, error) {
+		return confluence.New(site, email, token, atlassian.WithHTTPClient(httpClient))
+	}
+	t.Cleanup(func() { confluenceFactory = original })
 
 	return srv
+}
+
+// redirectTransport sends every request to target's scheme and host, keeping
+// its path and query.
+type redirectTransport struct {
+	target *url.URL
+}
+
+func (rt redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// A RoundTripper must not modify the request it was handed.
+	out := req.Clone(req.Context())
+	out.URL.Scheme = rt.target.Scheme
+	out.URL.Host = rt.target.Host
+	out.Host = ""
+	return http.DefaultTransport.RoundTrip(out)
 }
 
 // cliRun is what one invocation of the command tree produced. The two

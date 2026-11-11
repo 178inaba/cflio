@@ -14,7 +14,7 @@ import (
 	"github.com/178inaba/atlio/internal/sidecar"
 )
 
-const testPageURL = testSite + testPageWebUI
+const testPageURL = testWikiBase + testPageWebUI
 
 // seedReadPage writes a body file and its sidecar, as `atlio confluence read`
 // would.
@@ -322,7 +322,7 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 func TestUpdateResolvesTheProfileFromTheSidecarURL(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	meta := currentMeta()
 	meta.PageURL = "https://other.atlassian.net/wiki/spaces/OPS/pages/123456/Other"
@@ -348,7 +348,7 @@ func TestUpdateResolvesTheProfileFromTheSidecarURL(t *testing.T) {
 func TestUpdateRejectsAConflictingProfileFlag(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	path := seedReadPage(t, "<p>hi</p>", currentMeta())
 	startAPI(t, neverCalled(t, "despite a profile/site conflict"))
@@ -442,7 +442,7 @@ func TestUpdateRenamesThePage(t *testing.T) {
 			if meta.Title != newTitle {
 				t.Errorf("sidecar title = %q, want the server's %q", meta.Title, newTitle)
 			}
-			if want := testSite + webUIFor(newTitle); meta.PageURL != want {
+			if want := testWikiBase + webUIFor(newTitle); meta.PageURL != want {
 				t.Errorf("sidecar page_url = %q, want the renamed page's %q", meta.PageURL, want)
 			}
 			if meta.Version != 8 {
@@ -463,7 +463,7 @@ func TestUpdateRefreshesTheSidecarWithoutRenaming(t *testing.T) {
 	seedProfile(t, "example", testSite)
 
 	meta := currentMeta()
-	meta.PageURL = testSite + "/pages/viewpage.action?pageId=123456"
+	meta.PageURL = testWikiBase + "/pages/viewpage.action?pageId=123456"
 	path := seedReadPage(t, "<p>hi</p>", meta)
 
 	stub := &updateStub{serverVersion: 7}
@@ -483,7 +483,7 @@ func TestUpdateRefreshesTheSidecarWithoutRenaming(t *testing.T) {
 	if updated.Title != "Some Page" {
 		t.Errorf("sidecar title = %q, want it left at the server's %q", updated.Title, "Some Page")
 	}
-	if want := testSite + webUIFor("Some Page"); updated.PageURL != want {
+	if want := testWikiBase + webUIFor("Some Page"); updated.PageURL != want {
 		t.Errorf("sidecar page_url = %q, want the response's link %q", updated.PageURL, want)
 	}
 }

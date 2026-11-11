@@ -61,12 +61,12 @@ commit — the checksum is checked as part of it.
    atlio auth login
    ```
 
-   You will be asked for your site URL (anything copied from the browser works — only the host is
-   kept), your Atlassian account email, and the token. The token is not echoed when the prompt is
-   attached to a terminal, so it stays out of your scrollback. `atlio` verifies the credentials
-   before saving anything, then records the site as a named profile under `~/.config/atlio/`
-   (`XDG_CONFIG_HOME` is respected; the directory is `0700` and the file `0600`). The first profile
-   registered becomes the default.
+   You will be asked for your Atlassian site URL (anything copied from the browser works — only the
+   host is kept), your Atlassian account email, and the token. The token is not echoed when the
+   prompt is attached to a terminal, so it stays out of your scrollback. `atlio` verifies the
+   credentials before saving anything, then records the site as a named profile under
+   `~/.config/atlio/` (`XDG_CONFIG_HOME` is respected; the directory is `0700` and the file `0600`).
+   The first profile registered becomes the default.
 
 ## Usage
 

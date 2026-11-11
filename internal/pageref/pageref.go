@@ -119,15 +119,16 @@ func unrecognizedError(arg string) error {
 		"or a page URL (e.g. https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title)", arg)
 }
 
-// PageURL builds a page's absolute URL from the site base and the relative
-// web link the API returned. When the API returned no link, it falls back
-// to the page-ID query form, which needs no space key.
-func PageURL(site, webui, pageID string) string {
-	site = strings.TrimSuffix(site, "/")
+// PageURL builds a page's absolute URL from the Confluence base URL
+// (<site>/wiki) and the relative web link the API returned. When the API
+// returned no link, it falls back to the page-ID query form, which needs no
+// space key.
+func PageURL(base, webui, pageID string) string {
+	base = strings.TrimSuffix(base, "/")
 	if webui != "" {
-		return site + webui
+		return base + webui
 	}
-	return site + "/pages/viewpage.action?pageId=" + url.QueryEscape(pageID)
+	return base + "/pages/viewpage.action?pageId=" + url.QueryEscape(pageID)
 }
 
 // ChildPageURL builds the URL of a page sitting in the same space as the page
@@ -138,12 +139,12 @@ func PageURL(site, webui, pageID string) string {
 // When parentWebUI yields no space key it falls back to the page-ID query
 // form, which needs none: a URL built from an empty key is a 404, so the key
 // never reaches spacePageURL unless it is real.
-func ChildPageURL(site, parentWebUI, childID string) string {
+func ChildPageURL(base, parentWebUI, childID string) string {
 	spaceKey := SpaceKeyOf(parentWebUI)
 	if spaceKey == "" {
-		return PageURL(site, "", childID)
+		return PageURL(base, "", childID)
 	}
-	return SpacePageURL(site, spaceKey, childID)
+	return SpacePageURL(base, spaceKey, childID)
 }
 
 // SpaceKeyOf returns the space key embedded in the relative web link the API
@@ -159,11 +160,12 @@ func SpaceKeyOf(webui string) string {
 	return match[1]
 }
 
-// SpacePageURL builds a page's URL from its space key. The result is in the
-// form Parse accepts, so a link built with it can be fed straight back to
+// SpacePageURL builds a page's URL from the Confluence base URL
+// (<site>/wiki) and the page's space key. The result is in the form Parse
+// accepts, so a link built with it can be fed straight back to
 // `atlio confluence read`.
-func SpacePageURL(site, spaceKey, pageID string) string {
-	return strings.TrimSuffix(site, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
+func SpacePageURL(base, spaceKey, pageID string) string {
+	return strings.TrimSuffix(base, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
 }
 
 // HostOf returns the host of a stored page URL, or "" if it has none. It is

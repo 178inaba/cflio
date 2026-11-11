@@ -35,7 +35,7 @@ func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {
 	if gotCQL != cql {
 		t.Errorf("cql = %q, want it passed through unchanged as %q", gotCQL, cql)
 	}
-	for _, want := range []string{"Release Notes", "page", "ID 1", testSite + "/spaces/DEV/pages/1/Release+Notes"} {
+	for _, want := range []string{"Release Notes", "page", "ID 1", testWikiBase + "/spaces/DEV/pages/1/Release+Notes"} {
 		if !strings.Contains(run.stdout, want) {
 			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
 		}
@@ -150,7 +150,7 @@ func TestSearchLeavesAbsoluteResultURLsAlone(t *testing.T) {
 	if !strings.Contains(run.stdout, "https://elsewhere.example/p/1") {
 		t.Errorf("output = %q, want an already-absolute url left as-is", run.stdout)
 	}
-	if strings.Contains(run.stdout, testSite+"/https") {
+	if strings.Contains(run.stdout, testWikiBase+"/https") {
 		t.Errorf("output = %q, want no double-prefixed url", run.stdout)
 	}
 }
@@ -288,7 +288,7 @@ func TestSearchReportsADeadlineThatExpiresMidResponse(t *testing.T) {
 func TestSearchUsesTheDefaultProfile(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
-	seedProfile(t, "other", "https://other.atlassian.net/wiki")
+	seedProfile(t, "other", "https://other.atlassian.net")
 
 	var gotUser string
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {

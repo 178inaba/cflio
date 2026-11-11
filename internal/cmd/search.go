@@ -54,7 +54,7 @@ func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, out
 		return err
 	}
 
-	client, creds, err := resolveClient(g.profile, "")
+	client, err := resolveConfluence(g.profile, "")
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, out
 
 	items := make([]searchItem, 0, len(results))
 	for _, r := range results {
-		items = append(items, searchItemFrom(r, creds.SiteURL))
+		items = append(items, searchItemFrom(r, client.BaseURL()))
 	}
 
 	// v1 search is the only endpoint here that reports a total, so it is
@@ -85,11 +85,11 @@ func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, out
 	return writeList(cmd, outFormat, "results", items, notice)
 }
 
-func searchItemFrom(r confluence.SearchResult, site string) searchItem {
+func searchItemFrom(r confluence.SearchResult, base string) searchItem {
 	item := searchItem{
 		Title: format.StripHighlightMarkers(r.Title),
 		Type:  r.EntityType,
-		URL:   absoluteURL(site, r.URL),
+		URL:   absoluteURL(base, r.URL),
 	}
 	if r.Content != nil {
 		item.Title = format.StripHighlightMarkers(r.Content.Title)
@@ -99,17 +99,17 @@ func searchItemFrom(r confluence.SearchResult, site string) searchItem {
 	return item
 }
 
-// absoluteURL joins a site-relative result link to the site base. The v1
-// schema does not document the link as relative, so an already-absolute
-// value is passed through rather than mangled.
-func absoluteURL(site, link string) string {
+// absoluteURL joins a result link to the Confluence base URL it is relative
+// to. The v1 schema does not document the link as relative, so an
+// already-absolute value is passed through rather than mangled.
+func absoluteURL(base, link string) string {
 	if link == "" {
 		return ""
 	}
 	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
 		return link
 	}
-	return strings.TrimSuffix(site, "/") + "/" + strings.TrimPrefix(link, "/")
+	return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(link, "/")
 }
 
 func (i searchItem) markdown() string {

@@ -160,7 +160,7 @@ func TestReadFallsBackWhenTheAPIReturnsNoWebLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sidecar.Load() error = %v", err)
 	}
-	want := testSite + "/pages/viewpage.action?pageId=123456"
+	want := testWikiBase + "/pages/viewpage.action?pageId=123456"
 	if meta.PageURL != want {
 		t.Errorf("page_url = %q, want the page-id fallback %q", meta.PageURL, want)
 	}
@@ -275,7 +275,7 @@ func TestReadDropsAStaleSidecarBeforeWritingTheBody(t *testing.T) {
 		Version: 3,
 		Title:   "Some Other Page",
 		Status:  "current",
-		PageURL: testSite + "/spaces/DEV/pages/999/Other",
+		PageURL: testWikiBase + "/spaces/DEV/pages/999/Other",
 	}
 	if err := sidecar.Write(path, stale); err != nil {
 		t.Fatalf("sidecar.Write() error = %v", err)
@@ -394,8 +394,8 @@ func TestReadMarkdownResolvesMentionsAndPageLinks(t *testing.T) {
 
 	// The same-space link is resolved against the space the page itself is
 	// in, which is DEV — the key its web link carries.
-	want := "Ping @Ada Lovelace, see [Runbook](" + testSite + "/spaces/OPS/pages/777) " +
-		"and [Onboarding](" + testSite + "/spaces/DEV/pages/888).\n"
+	want := "Ping @Ada Lovelace, see [Runbook](" + testWikiBase + "/spaces/OPS/pages/777) " +
+		"and [Onboarding](" + testWikiBase + "/spaces/DEV/pages/888).\n"
 	if string(written) != want {
 		t.Errorf("file = %q, want the resolved Markdown %q", written, want)
 	}

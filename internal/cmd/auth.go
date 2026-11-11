@@ -29,7 +29,7 @@ func newAuthCmd(g *globalFlags) *cobra.Command {
 func newAuthLoginCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
-		Short: "Register a Confluence Cloud site interactively",
+		Short: "Register an Atlassian Cloud site interactively",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAuthLogin(cmd, g)
@@ -41,7 +41,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	in := bufio.NewReader(cmd.InOrStdin())
 	out := cmd.OutOrStdout()
 
-	siteURL, err := prompt(out, in, "Confluence site URL (e.g. https://example.atlassian.net): ")
+	siteURL, err := prompt(out, in, "Atlassian site URL (e.g. https://example.atlassian.net): ")
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 		return fmt.Errorf("api token is required")
 	}
 
-	client, err := clientFactory(site, email, token)
+	client, err := confluenceFactory(site, email, token)
 	if err != nil {
 		return err
 	}
@@ -154,10 +154,10 @@ func chooseProfileName(out io.Writer, in *bufio.Reader, file *config.File, site 
 	return name, false, nil
 }
 
-// normalizeSiteURL reduces anything pasted from a browser to the site's
-// Confluence base URL. Only the scheme and host are kept and /wiki is
-// appended: atlio targets Confluence Cloud, where that path is fixed, so
-// deriving it beats asking the user to get it right.
+// normalizeSiteURL reduces anything pasted from a browser — a bare host, a
+// Confluence page URL, a Jira issue URL — to the site URL a profile stores:
+// the scheme and host, and nothing else. Each product's client adds its own
+// base path to it.
 func normalizeSiteURL(input string) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -177,11 +177,11 @@ func normalizeSiteURL(input string) (string, error) {
 	if u.Scheme != "https" {
 		return "", fmt.Errorf("site url %q must use https", input)
 	}
-	return "https://" + u.Host + "/wiki", nil
+	return "https://" + u.Host, nil
 }
 
 // proposedProfileName derives a profile name from a site URL, e.g.
-// "https://example.atlassian.net/wiki" -> "example".
+// "https://example.atlassian.net" -> "example".
 func proposedProfileName(site string) string {
 	u, err := url.Parse(site)
 	if err != nil {

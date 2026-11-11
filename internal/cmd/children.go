@@ -57,7 +57,7 @@ func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 		return err
 	}
 
-	client, creds, err := resolveClient(g.profile, ref.Host)
+	client, err := resolveConfluence(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 			Title:  child.Title,
 			ID:     child.ID,
 			Status: child.Status,
-			URL:    pageref.ChildPageURL(creds.SiteURL, parentWebUI, child.ID),
+			URL:    pageref.ChildPageURL(client.BaseURL(), parentWebUI, child.ID),
 		})
 	}
 

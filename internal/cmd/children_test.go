@@ -63,7 +63,7 @@ func TestChildrenListsOnlyPagesWithSpaceKeyURLs(t *testing.T) {
 	for _, want := range []string{
 		"Child One", "ID 11", "current",
 		"Child Two", "ID 13", "archived",
-		testSite + "/spaces/DEV/pages/11",
+		testWikiBase + "/spaces/DEV/pages/11",
 	} {
 		if !strings.Contains(run.stdout, want) {
 			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
@@ -152,7 +152,7 @@ func TestChildrenJSONOutput(t *testing.T) {
 	if len(got.ChildPages) != 1 || got.ChildPages[0].ID != "11" {
 		t.Fatalf("child_pages = %+v, want the single child", got.ChildPages)
 	}
-	if got.ChildPages[0].URL != testSite+"/spaces/DEV/pages/11" {
+	if got.ChildPages[0].URL != testWikiBase+"/spaces/DEV/pages/11" {
 		t.Errorf("url = %q, want the space-key form", got.ChildPages[0].URL)
 	}
 }
@@ -194,7 +194,7 @@ func TestChildrenFallsBackToThePageIDFormWithoutASpaceKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("children error = %v", err)
 	}
-	if want := testSite + "/pages/viewpage.action?pageId=11"; !strings.Contains(run.stdout, want) {
+	if want := testWikiBase + "/pages/viewpage.action?pageId=11"; !strings.Contains(run.stdout, want) {
 		t.Errorf("output = %q, want it to contain the page-id form %q", run.stdout, want)
 	}
 }
