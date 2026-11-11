@@ -21,14 +21,6 @@ func newCommentsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comments",
 		Short: "Read a page's comments and post new ones",
-		// `cflio comments <page>` was this command before `create` joined
-		// it, and a page id is not a misspelling of `list`, so the
-		// suggestions cobra offers for a mistyped subcommand never fire for
-		// the retired form. The hint is what names its replacement.
-		Annotations: map[string]string{
-			unknownCommandHint: "A page's comments are now read with " +
-				"`cflio comments list <page-url|page-id>`.",
-		},
 	}
 	cmd.AddCommand(newCommentsListCmd(g), newCommentsCreateCmd(g))
 	return cmd

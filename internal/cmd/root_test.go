@@ -301,24 +301,6 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantErr: `unknown command "bogus" for "cflio profile"`,
 		},
 		{
-			// The form `comments` had before it became a group. A page id is
-			// not a misspelling of any subcommand, so nothing would be
-			// suggested for it: the hint is what names the replacement.
-			name: "comments, the retired form",
-			args: []string{"comments", "65815"},
-			wantErr: "unknown command \"65815\" for \"cflio comments\"\n\n" +
-				"A page's comments are now read with `cflio comments list <page-url|page-id>`.",
-		},
-		{
-			// A hint and a suggestion together: the hint follows the
-			// candidate block, one blank line away either way.
-			name: "comments, close enough to suggest",
-			args: []string{"comments", "lsit"},
-			wantErr: "unknown command \"lsit\" for \"cflio comments\"\n\n" +
-				"Did you mean this?\n\tlist\n\n" +
-				"A page's comments are now read with `cflio comments list <page-url|page-id>`.",
-		},
-		{
 			// completion is cobra's own command, added inside ExecuteC, so
 			// nothing cflio's constructors set could reach it.
 			name:    "completion",
