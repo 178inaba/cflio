@@ -1,4 +1,4 @@
-// Package config manages cflio's on-disk configuration (registered
+// Package config manages atlio's on-disk configuration (registered
 // Confluence site profiles and their API tokens) and resolves which
 // credentials an invocation should use.
 package config
@@ -36,23 +36,23 @@ func (p Profile) Host() string {
 	return u.Host
 }
 
-// File is the on-disk representation of ~/.config/cflio/config.json.
+// File is the on-disk representation of ~/.config/atlio/config.json.
 type File struct {
 	DefaultProfile string             `json:"default_profile"`
 	Profiles       map[string]Profile `json:"profiles"`
 }
 
-// Dir returns the directory cflio's config file lives in, honoring
+// Dir returns the directory atlio's config file lives in, honoring
 // XDG_CONFIG_HOME.
 func Dir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "cflio"), nil
+		return filepath.Join(xdg, "atlio"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "cflio"), nil
+	return filepath.Join(home, ".config", "atlio"), nil
 }
 
 // Path returns the full path to the config file.
@@ -130,7 +130,7 @@ type Credentials struct {
 	Token   string
 }
 
-// Resolve implements cflio's credential precedence for a single invocation:
+// Resolve implements atlio's credential precedence for a single invocation:
 //
 //  1. --profile flag (flagProfile): uses that profile. Errors if the profile
 //     doesn't exist, or if urlHost is set and doesn't match the profile's
@@ -139,12 +139,12 @@ type Credentials struct {
 //  2. urlHost auto-selection: the profile whose host matches urlHost. Errors
 //     if no profile is registered for that host; there is deliberately no
 //     fallback to the default profile, for the same reason as above.
-//  3. CFLIO_PROFILE, which stands in for the default profile. It does not
+//  3. ATLIO_PROFILE, which stands in for the default profile. It does not
 //     override URL-host auto-selection, and it is not checked for host
 //     conflicts — only an explicit --profile is.
 //  4. The default profile.
 //
-// CFLIO_TOKEN, if set, then replaces the resolved profile's token; the site
+// ATLIO_TOKEN, if set, then replaces the resolved profile's token; the site
 // and email still come from the profile, so a profile must resolve either
 // way. Shared-namespace variables such as ATLASSIAN_API_TOKEN are
 // deliberately never read.
@@ -153,7 +153,7 @@ func Resolve(f *File, flagProfile, urlHost string, getenv func(string) string) (
 	if err != nil {
 		return Credentials{}, err
 	}
-	if token := getenv("CFLIO_TOKEN"); token != "" {
+	if token := getenv("ATLIO_TOKEN"); token != "" {
 		creds.Token = token
 	}
 	return creds, nil
@@ -181,21 +181,21 @@ func resolveProfile(f *File, flagProfile, urlHost string, getenv func(string) st
 			}
 		}
 		return Credentials{}, fmt.Errorf(
-			"no profile registered for %s; registered profiles: %s; run `cflio auth login` to register it",
+			"no profile registered for %s; registered profiles: %s; run `atlio auth login` to register it",
 			urlHost, ProfileNames(f))
 	}
 
-	if name := getenv("CFLIO_PROFILE"); name != "" {
+	if name := getenv("ATLIO_PROFILE"); name != "" {
 		p, ok := f.Profiles[name]
 		if !ok {
-			return Credentials{}, fmt.Errorf("CFLIO_PROFILE %q not found; registered profiles: %s",
+			return Credentials{}, fmt.Errorf("ATLIO_PROFILE %q not found; registered profiles: %s",
 				name, ProfileNames(f))
 		}
 		return credentials(name, p), nil
 	}
 
 	if f.DefaultProfile == "" {
-		return Credentials{}, fmt.Errorf("no profiles registered; run `cflio auth login` first")
+		return Credentials{}, fmt.Errorf("no profiles registered; run `atlio auth login` first")
 	}
 	p, ok := f.Profiles[f.DefaultProfile]
 	if !ok {

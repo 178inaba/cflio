@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/pageref"
+	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/spf13/cobra"
 )
 
@@ -21,14 +21,6 @@ func newCommentsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comments",
 		Short: "Read a page's comments and post new ones",
-		// `cflio comments <page>` was this command before `create` joined
-		// it, and a page id is not a misspelling of `list`, so the
-		// suggestions cobra offers for a mistyped subcommand never fire for
-		// the retired form. The hint is what names its replacement.
-		Annotations: map[string]string{
-			unknownCommandHint: "A page's comments are now read with " +
-				"`cflio comments list <page-url|page-id>`.",
-		},
 	}
 	cmd.AddCommand(newCommentsListCmd(g), newCommentsCreateCmd(g))
 	return cmd
@@ -47,7 +39,7 @@ func newCommentsListCmd(g *globalFlags) *cobra.Command {
 their direct replies. Inline comments also show the text they are anchored
 to and whether they are resolved.
 
-This command only reads. Posting a footer comment is ` + "`cflio comments create`" + `;
+This command only reads. Posting a footer comment is ` + "`atlio comments create`" + `;
 replies and inline comments cannot be posted at all.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

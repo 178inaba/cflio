@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/pageref"
-	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/pageref"
+	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
 
-// defaultVersionMessage labels every version cflio writes, so page history
+// defaultVersionMessage labels every version atlio writes, so page history
 // shows which edits came from an agent.
-const defaultVersionMessage = "Updated via cflio"
+const defaultVersionMessage = "Updated via atlio"
 
-// statusCurrent is the only page status cflio updates. The API also accepts
+// statusCurrent is the only page status atlio updates. The API also accepts
 // "draft", but drafts number their versions differently, so writing one
 // from a sidecar captured against a published page would be wrong.
 const statusCurrent = "current"
@@ -32,7 +32,7 @@ func newUpdateCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update -f <file>",
 		Short: "Write an edited page body back to Confluence",
-		Long: `Write a file previously downloaded with ` + "`cflio read`" + ` back to its page.
+		Long: `Write a file previously downloaded with ` + "`atlio read`" + ` back to its page.
 
 The page, the profile and the expected version all come from the file's
 sidecar, so an update can never target the wrong page. If the page changed
@@ -55,7 +55,7 @@ and updated again without re-reading the page.`,
 	// No backticks in flag usage strings: cobra reads the first backtick
 	// pair as the flag's argument placeholder.
 	cmd.Flags().StringVarP(&file, "file", "f", "",
-		"file holding the edited body, as downloaded by cflio read")
+		"file holding the edited body, as downloaded by atlio read")
 	cmd.Flags().StringVar(&message, "message", defaultVersionMessage,
 		"version message recorded in the page's history")
 	cmd.Flags().StringVar(&title, "title", "",
@@ -119,7 +119,7 @@ func runUpdatePage(cmd *cobra.Command, g *globalFlags, file, message, title stri
 	}
 	if current.Version.Number != meta.Version {
 		return fmt.Errorf("page %s changed since it was read (read at version %d, now at version %d): "+
-			"run `cflio read` again and re-apply the edits",
+			"run `atlio read` again and re-apply the edits",
 			meta.PageID, meta.Version, current.Version.Number)
 	}
 	if current.Status != statusCurrent {

@@ -1,4 +1,4 @@
-module github.com/178inaba/cflio
+module github.com/178inaba/atlio
 
 go 1.27
 

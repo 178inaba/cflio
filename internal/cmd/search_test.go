@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (cflioRun, error) {
+func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "search", cql, limit, extra...)
 }

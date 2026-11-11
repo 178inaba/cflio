@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/178inaba/cflio/internal/config"
+	"github.com/178inaba/atlio/internal/config"
 	"golang.org/x/term"
 )
 
 // runLogin drives auth login with the given prompt answers.
-func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cflioRun, error) {
+func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cliRun, error) {
 	t.Helper()
 
 	startAPI(t, handler)
-	return runCflioWithStdin(t, answers, "auth", "login")
+	return runCLIWithStdin(t, answers, "auth", "login")
 }
 
 func okCurrentUser(w http.ResponseWriter, _ *http.Request) {

@@ -3,8 +3,8 @@ package cmd
 import (
 	"os"
 
-	"github.com/178inaba/cflio/internal/config"
-	"github.com/178inaba/cflio/internal/confluence"
+	"github.com/178inaba/atlio/internal/config"
+	"github.com/178inaba/atlio/internal/confluence"
 )
 
 // defaultClientFactory builds a production client. Tests override

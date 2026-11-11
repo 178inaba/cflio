@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/sidecar"
 )
 
 const testPageURL = testSite + testPageWebUI
 
-// seedReadPage writes a body file and its sidecar, as `cflio read` would.
+// seedReadPage writes a body file and its sidecar, as `atlio read` would.
 func seedReadPage(t *testing.T, body string, meta sidecar.Meta) string {
 	t.Helper()
 
@@ -89,11 +89,11 @@ func webUIFor(title string) string {
 	return "/spaces/DEV/pages/123456/" + strings.ReplaceAll(title, " ", "+")
 }
 
-func runUpdate(t *testing.T, path string, extra ...string) (cflioRun, error) {
+func runUpdate(t *testing.T, path string, extra ...string) (cliRun, error) {
 	t.Helper()
 
 	args := []string{"update", "-f", path}
-	return runCflio(t, append(args, extra...)...)
+	return runCLI(t, append(args, extra...)...)
 }
 
 func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
@@ -125,7 +125,7 @@ func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
 	if put.Version.Number != 8 {
 		t.Errorf("version = %d, want the sidecar's 7 plus one", put.Version.Number)
 	}
-	if put.Version.Message != "Updated via cflio" {
+	if put.Version.Message != "Updated via atlio" {
 		t.Errorf("version message = %q, want the default", put.Version.Message)
 	}
 	if put.Title != "Some Page" || put.Status != "current" || put.ID != "123456" {
@@ -197,7 +197,7 @@ func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 			if len(stub.puts) != 0 {
 				t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
 			}
-			for _, want := range []string{"7", "9", "cflio read"} {
+			for _, want := range []string{"7", "9", "atlio read"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error = %q, want it to contain %q", err, want)
 				}
@@ -313,8 +313,8 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 	if err == nil {
 		t.Fatal("update error = nil, want an error")
 	}
-	if !strings.Contains(err.Error(), "cflio read") {
-		t.Errorf("error = %q, want it to point at `cflio read`", err)
+	if !strings.Contains(err.Error(), "atlio read") {
+		t.Errorf("error = %q, want it to point at `atlio read`", err)
 	}
 }
 
@@ -377,7 +377,7 @@ func TestUpdateFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	if err == nil {
 		t.Fatal("update error = nil, want an error")
 	}
-	for _, want := range []string{"unknown.atlassian.net", "example", "cflio auth login"} {
+	for _, want := range []string{"unknown.atlassian.net", "example", "atlio auth login"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to contain %q", err, want)
 		}
@@ -503,7 +503,7 @@ func TestUpdateRejectsAnEmptyTitle(t *testing.T) {
 	}
 }
 
-// The server rejects a title another page in the space already holds; cflio
+// The server rejects a title another page in the space already holds; atlio
 // runs no pre-check of its own, so the message has to come through as it is.
 func TestUpdateSurfacesADuplicateTitle(t *testing.T) {
 	isolateConfig(t)
@@ -553,7 +553,7 @@ func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runCflio(t, "update", "-f", file); err != nil {
+	if _, err := runCLI(t, "update", "-f", file); err != nil {
 		t.Fatalf("update error = %v", err)
 	}
 

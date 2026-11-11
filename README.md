@@ -1,4 +1,4 @@
-# cflio
+# atlio
 
 A Confluence Cloud CLI built for AI coding agents.
 
@@ -8,7 +8,7 @@ regenerate as output tokens — around 35 KB of body HTML is enough for the stre
 MCP exposes only Markdown and its own HTML dialect, so every read and write crosses a format
 conversion that macros do not survive.
 
-`cflio` moves the round-trip onto the filesystem: `read` downloads a page's body to a local file,
+`atlio` moves the round-trip onto the filesystem: `read` downloads a page's body to a local file,
 the agent edits that file with its regular file-editing tools, and `update` writes it back. Only
 the diff costs tokens.
 
@@ -26,25 +26,25 @@ the diff costs tokens.
 On macOS, with Homebrew:
 
 ```sh
-brew install 178inaba/tap/cflio
+brew install 178inaba/tap/atlio
 ```
 
 On any platform, download the archive for your OS and architecture from the
-[Releases page](https://github.com/178inaba/cflio/releases) and put `cflio` somewhere on your
+[Releases page](https://github.com/178inaba/atlio/releases) and put `atlio` somewhere on your
 `PATH`.
 
 Or, with a Go toolchain:
 
 ```sh
-go install github.com/178inaba/cflio@latest
+go install github.com/178inaba/atlio@latest
 ```
 
-`cflio --version` prints the version you ended up with.
+`atlio --version` prints the version you ended up with.
 
 ### Verify a download
 
 ```sh
-gh attestation verify <downloaded archive> --repo 178inaba/cflio
+gh attestation verify <downloaded archive> --repo 178inaba/atlio
 ```
 
 A pass means the archive is exactly what this repository's release workflow built from the tagged
@@ -52,19 +52,19 @@ commit — the checksum is checked as part of it.
 
 ## Setup
 
-`cflio` authenticates with an Atlassian API token (Basic auth with your account email).
+`atlio` authenticates with an Atlassian API token (Basic auth with your account email).
 
 1. Create a token at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
 2. Register it:
 
    ```sh
-   cflio auth login
+   atlio auth login
    ```
 
    You will be asked for your site URL (anything copied from the browser works — only the host is
    kept), your Atlassian account email, and the token. The token is not echoed when the prompt is
-   attached to a terminal, so it stays out of your scrollback. `cflio` verifies the credentials
-   before saving anything, then records the site as a named profile under `~/.config/cflio/`
+   attached to a terminal, so it stays out of your scrollback. `atlio` verifies the credentials
+   before saving anything, then records the site as a named profile under `~/.config/atlio/`
    (`XDG_CONFIG_HOME` is respected; the directory is `0700` and the file `0600`). The first profile
    registered becomes the default.
 
@@ -72,49 +72,49 @@ commit — the checksum is checked as part of it.
 
 ```sh
 # Download a page's body and its metadata sidecar
-cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes -o page.xml
+atlio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes -o page.xml
 
 # ...edit page.xml with your editor, then write it back
-cflio update -f page.xml
-cflio update -f page.xml --message 'Clarify the rollback steps'
+atlio update -f page.xml
+atlio update -f page.xml --message 'Clarify the rollback steps'
 
 # Rename the page while writing it back — or on its own, with the body untouched
-cflio update -f page.xml --title 'Release Notes (Q3)'
+atlio update -f page.xml --title 'Release Notes (Q3)'
 
 # Just reading it? Get Markdown instead of storage XHTML
-cflio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes --markdown
+atlio read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes --markdown
 
 # Explore
-cflio search 'type = page and space = "DEV" and text ~ "release notes"'
-cflio children 123456
-cflio comments list https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
+atlio search 'type = page and space = "DEV" and text ~ "release notes"'
+atlio children 123456
+atlio comments list https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes
 
 # Leave a note on the page without leaving the terminal
-cflio comments create 123456 -f note.xml
+atlio comments create 123456 -f note.xml
 
 # See what the page shows: pull the images the body uses along with the Markdown
-cflio read 123456 --markdown --attachments ./assets
+atlio read 123456 --markdown --attachments ./assets
 
 # ...or reach for an attachment the body does not reference
-cflio attachments list 123456
-cflio attachments download 123456 --pattern '*.png' -o ./assets
+atlio attachments list 123456
+atlio attachments download 123456 --pattern '*.png' -o ./assets
 
 # Change a PlantUML diagram on the page, without hand-encoding its payload
-cflio plantuml list -f page.xml
-cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
+atlio plantuml list -f page.xml
+atlio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
 # ...edit diagram.puml, then put it back and update the page
-cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
-cflio update -f page.xml
+atlio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
+atlio update -f page.xml
 
 # ...or put a new diagram on the page
-cflio plantuml add -f page.xml --source diagram.puml --after 7c1d4e8a
-cflio update -f page.xml
+atlio plantuml add -f page.xml --source diagram.puml --after 7c1d4e8a
+atlio update -f page.xml
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
 dialog copies, and a bare page ID.
-Add `--format json` to any of them for structured output instead of Markdown. Run `cflio --help` or
-`cflio <command> --help` for the full flag reference.
+Add `--format json` to any of them for structured output instead of Markdown. Run `atlio --help` or
+`atlio <command> --help` for the full flag reference.
 
 ### The read/update cycle
 
@@ -134,7 +134,7 @@ takes the title as a required field: there is nothing else to call. The body sti
 rename on an untouched file resends the same bytes and only the title changes. An empty `--title`
 is refused before anything is sent.
 
-Every version `cflio` writes carries a message (`Updated via cflio` by default, `--message` to
+Every version `atlio` writes carries a message (`Updated via atlio` by default, `--message` to
 override) so agent edits are identifiable in the page history.
 
 ### Reading a page without editing it
@@ -145,7 +145,7 @@ Markdown — the request still asks the API for `storage`, which is the only rep
 carries macros and code bodies intact — and writes `<page-id>.md` by default.
 
 Mentions and page links are resolved on the way: a mention becomes the person's display name, and a
-link to another page becomes a Markdown link you can pass straight back to `cflio read`. That costs
+link to another page becomes a Markdown link you can pass straight back to `atlio read`. That costs
 a couple of extra requests, batched so the count does not grow with the number of links. A reference
 that cannot be resolved — a deleted account, a page this token cannot see — falls back to the
 account ID or the bare page title rather than failing the read. So does one whose lookup failed
@@ -181,12 +181,12 @@ Unchecked: 2 (not looked up; names and links may be missing)
 
 When that line is present, the rendering may be missing names and links that do exist. Re-reading
 without `--markdown` does not help — storage resolves nothing at all — so the useful response is to
-run the same command again; in keeping with the no-retries posture below, `cflio` will not do it
+run the same command again; in keeping with the no-retries posture below, `atlio` will not do it
 for you. The same count covers the attachment fetches `--attachments` makes (below).
 
 ### Posting a comment
 
-`cflio comments create <page> -f <file>` posts a file's contents as a footer comment. The file is
+`atlio comments create <page> -f <file>` posts a file's contents as a footer comment. The file is
 sent as the `storage` representation, byte for byte — the same representation `read` downloads and
 `update` writes back — so a comment can carry an info panel, a code block or any other macro, and
 nothing is converted on the way. Markdown written into that file therefore posts as the literal
@@ -196,7 +196,7 @@ Top-level comments only: replies and inline comments are not posted. There is no
 flag either: storage XHTML in a single shell argument is a quoting trap, and passing a body through
 one would put back the copy-paste this command exists to remove.
 
-The comment cannot be edited or deleted with `cflio`; do that in the browser.
+The comment cannot be edited or deleted with `atlio`; do that in the browser.
 
 ### Reading a page's images and files
 
@@ -207,7 +207,7 @@ one, the file has to be downloaded and read.
 For the images the body actually uses, `--attachments` does that as part of the read:
 
 ```sh
-cflio read 123456 --markdown --attachments ./assets
+atlio read 123456 --markdown --attachments ./assets
 ```
 
 The referenced attachments land in `./assets`, and the Markdown links to them
@@ -229,7 +229,7 @@ and size, so you can tell a 10 KB screenshot from a 4 MB PDF before fetching eit
 `attachments download` then writes the ones whose filename matches a glob:
 
 ```sh
-cflio attachments download 123456 --pattern '*.png' -o ./assets
+atlio attachments download 123456 --pattern '*.png' -o ./assets
 ```
 
 The bytes are the response body written through unchanged, so a downloaded image opens as the image
@@ -250,17 +250,17 @@ Uploading attachments is not supported.
 
 A page drawn on with the [PlantUML Diagrams for Confluence][puml-app] app stores each diagram as a
 `plantumlcloud` macro, whose source is percent-encoded, deflated and base64'd into a `data`
-parameter. `read --markdown` already renders one as a fenced `plantuml` block; `cflio plantuml` is
+parameter. `read --markdown` already renders one as a fenced `plantuml` block; `atlio plantuml` is
 the way back:
 
 ```sh
-cflio read <url> -o page.xml
-cflio plantuml list -f page.xml
-cflio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
+atlio read <url> -o page.xml
+atlio plantuml list -f page.xml
+atlio plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
 # ...edit diagram.puml with your regular tools...
-cflio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
-cflio plantuml add -f page.xml --source new.puml --after 7c1d4e8a   # a diagram that is not there yet
-cflio update -f page.xml
+atlio plantuml set -f page.xml --id 7c1d4e8a --source diagram.puml
+atlio plantuml add -f page.xml --source new.puml --after 7c1d4e8a   # a diagram that is not there yet
+atlio update -f page.xml
 ```
 
 All four subcommands work on the file `read` downloaded and never talk to Confluence; the page
@@ -315,7 +315,7 @@ refusal of its own.
 A command given a page URL picks the matching profile automatically, and `update` does the same
 from the URL its sidecar recorded. A URL from an unregistered site fails immediately rather than
 falling back to the default profile. `search`, and commands given a bare page ID, use the default
-profile; pass `--profile <name>` to choose another, or `cflio profile use <name>` to change the
+profile; pass `--profile <name>` to choose another, or `atlio profile use <name>` to change the
 default. An explicit `--profile` that disagrees with the URL's site is an error rather than a
 silent choice.
 
@@ -334,37 +334,37 @@ deadline that expires while `read --markdown` is resolving references or downloa
 the exception: it is absorbed like any other lookup failure, so the reference is counted in
 `Unchecked: N` above and the run still exits `0`.
 
-Ctrl-C and `SIGTERM` are not reported as failures: cflio prints nothing and terminates by the
+Ctrl-C and `SIGTERM` are not reported as failures: atlio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over
-cflio invocations ends the loop too. At a `cflio auth login` prompt the terminal's echo is restored
+atlio invocations ends the loop too. At an `atlio auth login` prompt the terminal's echo is restored
 first, and no profile is written or changed.
 
 ### Environment variables
 
-- `CFLIO_PROFILE` selects a profile without passing `--profile` every time. It stands in for the
+- `ATLIO_PROFILE` selects a profile without passing `--profile` every time. It stands in for the
   default profile, so URL-based auto-selection still wins.
-- `CFLIO_TOKEN` replaces the resolved profile's stored token for one invocation; the site and email
+- `ATLIO_TOKEN` replaces the resolved profile's stored token for one invocation; the site and email
   still come from the profile.
 - Shared names such as `ATLASSIAN_API_TOKEN` are intentionally **not** read, so another tool's
   credentials can never be picked up by accident.
 
 ## Agent Skill
 
-This repo ships an [Agent Skill](./skills/cflio/SKILL.md) that tells an AI agent when and how to
-reach for `cflio`. In Claude Code, install it as a plugin:
+This repo ships an [Agent Skill](./skills/atlio/SKILL.md) that tells an AI agent when and how to
+reach for `atlio`. In Claude Code, install it as a plugin:
 
 ```sh
-claude plugin marketplace add 178inaba/cflio
-claude plugin install cflio@cflio
+claude plugin marketplace add 178inaba/atlio
+claude plugin install atlio@atlio
 ```
 
 For other agents, use a skill installer that consumes GitHub repos directly, e.g.
 [`npx skills`](https://www.npmjs.com/package/skills):
 
 ```sh
-# The URL form is required: 178inaba/cflio@stable reads that suffix as a
+# The URL form is required: 178inaba/atlio@stable reads that suffix as a
 # skill-name filter, so it silently installs from the default branch.
-npx skills add https://github.com/178inaba/cflio/tree/stable
+npx skills add https://github.com/178inaba/atlio/tree/stable
 ```
 
 ## Development
@@ -391,7 +391,7 @@ docker compose run --rm lint --fix
   `read --markdown` — are for reading only. A body that will be written back is never converted.
 - **Short links** (`/wiki/x/…`) are resolved locally: the token encodes the page ID, so no request
   is made to expand one. A short link pointing at a blog post decodes just as well, but the page
-  API then answers 404 — cflio addresses pages only. A token that does not decode reports so and
+  API then answers 404 — atlio addresses pages only. A token that does not decode reports so and
   asks for the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
 - **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
@@ -402,4 +402,4 @@ docker compose run --rm lint --fix
   one, and posting an inline comment are not supported.
 - Creating, deleting and moving pages, uploading attachments, and ADF (the
   representation behind live docs) are not supported. See
-  [the tracking issue](https://github.com/178inaba/cflio/issues/1) for the full list.
+  [the tracking issue](https://github.com/178inaba/atlio/issues/1) for the full list.

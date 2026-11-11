@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/pageref"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/spf13/cobra"
 )
 

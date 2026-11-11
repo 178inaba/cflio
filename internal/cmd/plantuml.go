@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/plantuml"
-	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/plantuml"
+	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func newPlantUMLCmd() *cobra.Command {
 		Use:   "plantuml",
 		Short: "Read and rewrite the PlantUML diagrams in a downloaded page",
 		Long: `Work with the PlantUML diagrams on a page you have downloaded with
-` + "`cflio read`" + `, without hand-editing the macro's encoded payload.
+` + "`atlio read`" + `, without hand-editing the macro's encoded payload.
 
 A ` + "`plantumlcloud`" + ` macro stores its diagram source percent-encoded, deflated
 and base64'd in a data parameter. Producing that by hand is both error-prone
@@ -39,21 +39,21 @@ and base64'd in a data parameter. Producing that by hand is both error-prone
 the kind of blob this tool exists to keep out of an agent's context. These
 subcommands read and write it for you:
 
-  cflio read <url> -o page.xml
-  cflio plantuml list -f page.xml
-  cflio plantuml get -f page.xml --id <local-id> -o diagram.puml
+  atlio read <url> -o page.xml
+  atlio plantuml list -f page.xml
+  atlio plantuml get -f page.xml --id <local-id> -o diagram.puml
   ...edit diagram.puml with your regular file editing tools...
-  cflio plantuml set -f page.xml --id <local-id> --source diagram.puml
-  cflio update -f page.xml
+  atlio plantuml set -f page.xml --id <local-id> --source diagram.puml
+  atlio update -f page.xml
 
 ` + "`add`" + ` puts a new diagram on the page the same way, building the whole
 macro element out of a source file:
 
-  cflio plantuml add -f page.xml --source diagram.puml
-  cflio update -f page.xml
+  atlio plantuml add -f page.xml --source diagram.puml
+  atlio update -f page.xml
 
 All four work on the local file and never talk to Confluence; the page is
-only written when you run ` + "`cflio update`" + `.`,
+only written when you run ` + "`atlio update`" + `.`,
 	}
 	cmd.AddCommand(newPlantUMLListCmd(), newPlantUMLGetCmd(), newPlantUMLSetCmd(), newPlantUMLAddCmd())
 	return cmd
@@ -102,14 +102,14 @@ func newPlantUMLGetCmd() *cobra.Command {
 a file, then print where it went.
 
 The source is never printed: edit the file with your regular file editing
-tools and write it back with ` + "`cflio plantuml set`" + `, the same way a page body
+tools and write it back with ` + "`atlio plantuml set`" + `, the same way a page body
 is edited. It is written exactly as it was decoded, with no trailing newline
 added, so what you edit is the diagram as the page holds it. (` + "`set`" + ` re-encodes
 whatever it is given, so running it on an unedited file still rewrites the
 macro's payload and bumps its revision -- the diagram is the same, the bytes
 are not.)
 
-An existing file at the destination is overwritten, as ` + "`cflio read -o`" + `
+An existing file at the destination is overwritten, as ` + "`atlio read -o`" + `
 overwrites one -- so do not run this again over a source you have already
 edited.`,
 		Args: cobra.NoArgs,
@@ -141,7 +141,7 @@ func newPlantUMLSetCmd() *cobra.Command {
 		Short: "Replace one diagram's source in a downloaded page body",
 		Long: `Encode a diagram source file into one macro's data parameter, leaving every
 other byte of the page body untouched. Write the page back with
-` + "`cflio update`" + `.
+` + "`atlio update`" + `.
 
 The macro's revision parameter is incremented at the same time, when it has
 one. A diagram drawn in the Confluence editor also exists as a rendered
@@ -183,7 +183,7 @@ func newPlantUMLAddCmd() *cobra.Command {
 		Short: "Insert a new PlantUML diagram into a downloaded page body",
 		Long: `Build a plantumlcloud macro around a diagram source file and splice it into
 a downloaded page body, then print the new macro's ac:local-id so ` + "`set`" + ` can
-address it. Write the page back with ` + "`cflio update`" + `.
+address it. Write the page back with ` + "`atlio update`" + `.
 
 The whole element is written here rather than by hand, because one part of
 it cannot be left out and has no visible symptom. Confluence keeps the
@@ -197,7 +197,7 @@ for that reason.
 Without ` + "`--after`" + ` the macro is appended at the end of the body. ` + "`--after`" + `
 puts it directly after the element carrying that identifier -- Confluence
 stamps ` + "`local-id`" + ` on block elements and ` + "`ac:local-id`" + ` on macros, and either
-is accepted, so ` + "`cflio plantuml list`" + ` names the anchors for placing a diagram
+is accepted, so ` + "`atlio plantuml list`" + ` names the anchors for placing a diagram
 beside an existing one. Every other byte of the file is left untouched.
 
 The ` + "`filename`" + ` parameter defaults to the source file's name with its
@@ -229,7 +229,7 @@ without it.`,
 // downloaded page body, exactly as `update` takes it.
 func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
 	cmd.Flags().StringVarP(file, "file", "f", "",
-		"page body downloaded by cflio read, without --markdown")
+		"page body downloaded by atlio read, without --markdown")
 	if err := cmd.MarkFlagRequired("file"); err != nil {
 		panic(err)
 	}
@@ -240,7 +240,7 @@ func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
 // and picking the first would silently rewrite the wrong one.
 func addPlantUMLSelectFlags(cmd *cobra.Command, id, name *string) {
 	cmd.Flags().StringVar(id, "id", "",
-		"ac:local-id of the macro to act on, as cflio plantuml list prints it")
+		"ac:local-id of the macro to act on, as atlio plantuml list prints it")
 	cmd.Flags().StringVar(name, "name", "",
 		"filename parameter of the macro to act on; must match exactly one")
 	cmd.MarkFlagsMutuallyExclusive("id", "name")
@@ -267,7 +267,7 @@ func refuseEmptyFlag(cmd *cobra.Command, flag, value, guidance string) error {
 // validatePlantUMLSelector rejects an explicitly empty --id or --name.
 func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
 	if err := refuseEmptyFlag(cmd, "id", id,
-		"a macro that `cflio plantuml list` reports with no local-id carries no "+
+		"a macro that `atlio plantuml list` reports with no local-id carries no "+
 			"ac:local-id to select it by, so name it with --name <filename> instead"); err != nil {
 		return err
 	}
@@ -630,8 +630,8 @@ func runPlantUMLSet(cmd *cobra.Command, file, id, name, source string, outFormat
 		return err
 	}
 	// Checked before anything is written, and before the source is even read:
-	// the payload format has to be one cflio can read back, or the next `get`
-	// would fail on a diagram cflio itself wrote.
+	// the payload format has to be one atlio can read back, or the next `get`
+	// would fail on a diagram atlio itself wrote.
 	if _, err := plantUMLSource(m); err != nil {
 		return err
 	}
@@ -678,8 +678,8 @@ func (f plantUMLFile) checkReachable(m format.Macro) error {
 	live, known := f.meta.LiveDoc()
 	if !known {
 		return fmt.Errorf("macro %s in %s has no ac:local-id, and the sidecar does not say whether "+
-			"the page is a live doc -- it was written before cflio recorded that. "+
-			"Run `cflio read` on the page again and redo the edit on the fresh file",
+			"the page is a live doc -- it was written before atlio recorded that. "+
+			"Run `atlio read` on the page again and redo the edit on the fresh file",
 			plantUMLName(plantUMLFilename(m)), f.path)
 	}
 	if live {
@@ -704,7 +704,7 @@ type storageEdit struct {
 func plantUMLEdits(m format.Macro, data string) ([]storageEdit, *plantUMLRevision, error) {
 	dataParam, ok := m.Param("data")
 	if !ok || dataParam.Empty {
-		// Only reachable on a macro cflio would refuse to read, since a
+		// Only reachable on a macro atlio would refuse to read, since a
 		// decodable one has a data parameter by definition -- and one `add`
 		// wrote always has it. Reported rather than assumed away, because
 		// adding the parameter to someone else's macro is a guess about what
@@ -783,7 +783,7 @@ func writePlantUMLSetResult(cmd *cobra.Command, outFormat format.Format, result 
 	} else {
 		out.WriteString("Revision: none (this macro has no revision parameter)\n")
 	}
-	fmt.Fprintf(&out, "Write the page back with `cflio update -f %s`.\n", result.Path)
+	fmt.Fprintf(&out, "Write the page back with `atlio update -f %s`.\n", result.Path)
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
 	return err
@@ -878,7 +878,7 @@ func plantUMLDiagramFilename(flag, source string) (string, error) {
 		if !isPlainFilename(flag) {
 			return "", fmt.Errorf("--filename %q is not a plain filename; "+
 				"it names the attachments the app creates for this diagram, and "+
-				"`cflio plantuml get` names its default output file after it", flag)
+				"`atlio plantuml get` names its default output file after it", flag)
 		}
 		return flag, nil
 	}
@@ -905,7 +905,7 @@ func plantUMLInsertAt(f plantUMLFile, after string) (int, error) {
 		return ends[0], nil
 	case 0:
 		return 0, fmt.Errorf("no element in %s has --after %q; "+
-			"anchor on a macro's ac:local-id, as `cflio plantuml list` prints it, "+
+			"anchor on a macro's ac:local-id, as `atlio plantuml list` prints it, "+
 			"or on a block element's local-id", f.path, after)
 	default:
 		// Confluence does not write a body with one identifier on two
@@ -921,7 +921,7 @@ func plantUMLInsertAt(f plantUMLFile, after string) (int, error) {
 // The shape is the editor's, whitespace and all: attributes in the order
 // Confluence writes them, no whitespace between the children, and the five
 // parameters an editor-created macro carries. Only data and compressed are
-// needed to render, but writing what the app writes keeps a page cflio added a
+// needed to render, but writing what the app writes keeps a page atlio added a
 // diagram to indistinguishable from one drawn in the editor.
 func plantUMLElement(filename, data string) (string, string, error) {
 	localID, err := newUUID()
@@ -985,7 +985,7 @@ func writeEscaped(out *strings.Builder, value string) {
 // newUUID returns a random version-4 UUID in the lower-case hyphenated form
 // Confluence writes its own identifiers in.
 //
-// Written out rather than taken from a library: it is a dozen lines, and cflio
+// Written out rather than taken from a library: it is a dozen lines, and atlio
 // is otherwise a module with no dependency beyond cobra.
 func newUUID() (string, error) {
 	var b [16]byte
@@ -1013,7 +1013,7 @@ func writePlantUMLAddResult(cmd *cobra.Command, outFormat format.Format, result 
 	fmt.Fprintf(&out, "Diagram:  %s (%s)\nAdded:    %s (%d bytes of source)\nPosition: %s\n",
 		plantUMLName(result.Filename), plantUMLLocalID(result.LocalID),
 		result.Path, result.Bytes, position)
-	fmt.Fprintf(&out, "Write the page back with `cflio update -f %s`.\n", result.Path)
+	fmt.Fprintf(&out, "Write the page back with `atlio update -f %s`.\n", result.Path)
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
 	return err

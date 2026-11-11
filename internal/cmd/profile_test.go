@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/178inaba/cflio/internal/config"
+	"github.com/178inaba/atlio/internal/config"
 )
 
 func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
@@ -12,7 +12,7 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
-	run, err := runCflio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
@@ -39,12 +39,12 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 func TestProfileListWithoutProfilesPointsAtAuthLogin(t *testing.T) {
 	isolateConfig(t)
 
-	run, err := runCflio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
-	if !strings.Contains(run.stdout, "cflio auth login") {
-		t.Errorf("output = %q, want it to point at `cflio auth login`", run.stdout)
+	if !strings.Contains(run.stdout, "atlio auth login") {
+		t.Errorf("output = %q, want it to point at `atlio auth login`", run.stdout)
 	}
 }
 
@@ -52,7 +52,7 @@ func TestProfileListNeverPrintsTokens(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	run, err := runCflio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestProfileUseSwitchesTheDefault(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
-	if _, err := runCflio(t, "profile", "use", "other"); err != nil {
+	if _, err := runCLI(t, "profile", "use", "other"); err != nil {
 		t.Fatalf("profile use error = %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestProfileUseUnknownProfileListsTheRegisteredOnes(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	_, err := runCflio(t, "profile", "use", "nope")
+	_, err := runCLI(t, "profile", "use", "nope")
 	if err == nil {
 		t.Fatal("profile use error = nil, want an error")
 	}

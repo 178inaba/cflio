@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/178inaba/cflio/internal/pageref"
-	"github.com/178inaba/cflio/internal/sidecar"
+	"github.com/178inaba/atlio/internal/pageref"
+	"github.com/178inaba/atlio/internal/sidecar"
 )
 
 // pageResponse renders a GET /pages/{id} body with the given storage value.
@@ -34,7 +34,7 @@ func pageResponse(t *testing.T, body, webui string) string {
 
 // runRead runs `read`, leaving --output off when outPath is empty so the
 // default naming is exercised.
-func runRead(t *testing.T, arg, outPath string, extra ...string) (cflioRun, error) {
+func runRead(t *testing.T, arg, outPath string, extra ...string) (cliRun, error) {
 	t.Helper()
 
 	args := []string{"read"}
@@ -42,7 +42,7 @@ func runRead(t *testing.T, arg, outPath string, extra ...string) (cflioRun, erro
 		args = append(args, "--output", outPath)
 	}
 	args = append(args, extra...)
-	return runCflio(t, append(args, arg)...)
+	return runCLI(t, append(args, arg)...)
 }
 
 func TestReadWritesTheBodyByteForByte(t *testing.T) {
@@ -254,7 +254,7 @@ func TestReadFromAnUnregisteredSiteNamesTheHost(t *testing.T) {
 	if err == nil {
 		t.Fatal("read error = nil, want an error")
 	}
-	for _, want := range []string{"unknown.atlassian.net", "example", "cflio auth login"} {
+	for _, want := range []string{"unknown.atlassian.net", "example", "atlio auth login"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to contain %q", err, want)
 		}
@@ -405,7 +405,7 @@ func TestReadMarkdownResolvesMentionsAndPageLinks(t *testing.T) {
 		t.Errorf("search requests = %d (%v), want one per space", len(searchedCQL), searchedCQL)
 	}
 
-	// A resolved link is only worth emitting if cflio can follow it, which is
+	// A resolved link is only worth emitting if atlio can follow it, which is
 	// the whole reason the URL is looked up rather than assembled from the
 	// space key and title the body carries.
 	_, link, ok := strings.Cut(string(written), "](")
@@ -1035,7 +1035,7 @@ func TestReadRecordsThePageSubtype(t *testing.T) {
 				t.Fatalf("sidecar.Load() error = %v", err)
 			}
 			// Recorded in every case, the absent field included: what the API
-			// reported is an answer, and only a sidecar written before cflio
+			// reported is an answer, and only a sidecar written before atlio
 			// asked has none.
 			if meta.Subtype == nil {
 				t.Fatal("sidecar records no subtype")

@@ -49,7 +49,7 @@ func (f *Format) Set(s string) error {
 
 // Type names the value cobra prints in the --format help line. It reports
 // "string" rather than "format" because that line is part of the agent-facing
-// contract kept in sync with README.md and skills/cflio/SKILL.md.
+// contract kept in sync with README.md and skills/atlio/SKILL.md.
 func (Format) Type() string { return "string" }
 
 // Validate rejects a Format that is not one of the accepted values. Set is not the

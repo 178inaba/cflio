@@ -78,10 +78,10 @@ func TestLoadMissingSidecarPointsAtAReadThatProducesOne(t *testing.T) {
 	}
 	// Writing to a page that was never read is structurally impossible, so
 	// the error has to point at the way out. Naming --markdown is what makes
-	// that way out reachable: a plain "run `cflio read`" is satisfied by
+	// that way out reachable: a plain "run `atlio read`" is satisfied by
 	// re-running the Markdown read that produced this sidecar-less file, and
 	// the caller lands right back here.
-	for _, want := range []string{"cflio read", "--markdown", Path(body)} {
+	for _, want := range []string{"atlio read", "--markdown", Path(body)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Load() error = %q, want it to mention %q", err, want)
 		}

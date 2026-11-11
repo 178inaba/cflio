@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/178inaba/cflio/internal/confluence"
-	"github.com/178inaba/cflio/internal/format"
-	"github.com/178inaba/cflio/internal/pageref"
+	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/format"
+	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ func newAttachmentsListCmd(g *globalFlags) *cobra.Command {
 		Short: "List the files attached to a page",
 		Long: `List a page's attachments with their filename, media type and size.
 
-Download the ones you want with ` + "`cflio attachments download`" + `: the filename
+Download the ones you want with ` + "`atlio attachments download`" + `: the filename
 shown here is what its --pattern matches against.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,7 +74,7 @@ An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
 cannot leave some files replaced and others not.
 
-Read-only against Confluence: cflio never uploads an attachment.`,
+Read-only against Confluence: atlio never uploads an attachment.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsDownload(cmd, args, g, pattern, outDir, outFormat)

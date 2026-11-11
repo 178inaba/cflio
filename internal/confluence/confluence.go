@@ -1,5 +1,5 @@
 // Package confluence is a small client for the Confluence Cloud REST API,
-// covering exactly the calls cflio needs. It is hand-rolled rather than
+// covering exactly the calls atlio needs. It is hand-rolled rather than
 // built on a third-party library because the page body has to survive as an
 // untouched string end to end — a model layer that re-encodes it would break
 // the lossless round-trip that is the whole point of this tool.
@@ -92,7 +92,7 @@ func (c *Client) SiteURL() string {
 	return c.site.String()
 }
 
-// User is the subset of the current-user response cflio needs.
+// User is the subset of the current-user response atlio needs.
 type User struct {
 	AccountID   string `json:"accountId"`
 	Email       string `json:"email"`
@@ -193,7 +193,7 @@ type Version struct {
 	AuthorID  string `json:"authorId"`
 }
 
-// Page is the subset of v2's PageSingle cflio needs. Body holds the raw
+// Page is the subset of v2's PageSingle atlio needs. Body holds the raw
 // storage representation exactly as the API returned it.
 type Page struct {
 	ID     string `json:"id"`
@@ -201,7 +201,7 @@ type Page struct {
 	Title  string `json:"title"`
 	// Subtype is "live" for a live doc and absent for a classic page. It is
 	// what tells the two apart offline, once `read` has recorded it in the
-	// sidecar: a live doc's editor rewrites the storage body behind cflio's
+	// sidecar: a live doc's editor rewrites the storage body behind atlio's
 	// back, which some edits have to refuse rather than silently lose.
 	Subtype string  `json:"subtype"`
 	Version Version `json:"version"`
@@ -215,7 +215,7 @@ type Page struct {
 }
 
 // links is the single-entity `_links` envelope. Only the web link is
-// modelled: the API also returns edit and tiny-link variants, which cflio
+// modelled: the API also returns edit and tiny-link variants, which atlio
 // has no use for.
 type links struct {
 	WebUI string `json:"webui"`
@@ -238,7 +238,7 @@ func (c *Client) GetPage(ctx context.Context, id string, withBody bool) (*Page, 
 }
 
 // UpdatePageRequest is the v2 page-update payload. Every field is required
-// by the API; cflio fills them from the sidecar written at read time.
+// by the API; atlio fills them from the sidecar written at read time.
 type UpdatePageRequest struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
@@ -376,7 +376,7 @@ type commentBody struct {
 // returns the comment the server created.
 //
 // The body travels as the storage representation, unchanged. The API also
-// accepts "wiki" and "atlas_doc_format", neither of which cflio sends: they
+// accepts "wiki" and "atlas_doc_format", neither of which atlio sends: they
 // are conversions, and a body that is converted on the way in is no longer
 // the one the caller wrote.
 func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (*Comment, error) {
@@ -417,7 +417,7 @@ func (c *Client) PageAttachments(ctx context.Context, pageID string, limit int) 
 
 // DownloadAttachment streams the bytes behind downloadLink to w and returns
 // how many it wrote. The body is copied through untouched: an attachment is
-// the only response cflio takes that is not JSON, and re-encoding it would
+// the only response atlio takes that is not JSON, and re-encoding it would
 // leave an image that no longer opens.
 //
 // It cannot go through do, which asks for JSON and decodes the response as

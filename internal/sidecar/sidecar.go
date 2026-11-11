@@ -1,4 +1,4 @@
-// Package sidecar reads and writes the metadata file that `cflio read`
+// Package sidecar reads and writes the metadata file that `atlio read`
 // leaves next to a downloaded page body. The sidecar is what makes `update`
 // self-describing: the page it targets, the profile it authenticates with
 // and the version it locks against all come from here, so there is no way
@@ -27,7 +27,7 @@ type Meta struct {
 	PageURL string `json:"page_url"`
 	// Subtype is the page's v2 subtype — "live" for a live doc, empty for a
 	// classic page. It is a pointer, and the one optional field, because
-	// three states have to be told apart: a sidecar written before cflio
+	// three states have to be told apart: a sidecar written before atlio
 	// recorded it (nil, the key absent), a page the API reported no subtype
 	// for (empty, the key present), and a live doc. A plain string would
 	// collapse the first two, and they call for opposite answers — one is a
@@ -46,7 +46,7 @@ type Meta struct {
 const liveSubtype = "live"
 
 // LiveDoc reports whether the page is a live doc, and whether the sidecar
-// knows: a sidecar written before cflio recorded the subtype answers known =
+// knows: a sidecar written before atlio recorded the subtype answers known =
 // false, which is a different thing from "not a live doc" and calls for a
 // different answer — ask for a fresh read rather than act on a guess.
 func (m Meta) LiveDoc() (live, known bool) {
@@ -69,11 +69,11 @@ func Load(bodyPath string) (Meta, error) {
 	if os.IsNotExist(err) {
 		// --markdown is named because it is the reachable way to end up
 		// here: that mode writes no sidecar by design, and an instruction to
-		// just "run `cflio read`" is satisfied by re-running the same
+		// just "run `atlio read`" is satisfied by re-running the same
 		// Markdown read, which lands the caller back in this error.
-		return Meta{}, fmt.Errorf("no sidecar at %s: the file was not produced by `cflio read`, "+
+		return Meta{}, fmt.Errorf("no sidecar at %s: the file was not produced by `atlio read`, "+
 			"or it was read with --markdown, whose output carries no sidecar and cannot be written "+
-			"back; run `cflio read` on the page without --markdown, edit that file, and update it", path)
+			"back; run `atlio read` on the page without --markdown, edit that file, and update it", path)
 	}
 	if err != nil {
 		return Meta{}, fmt.Errorf("read sidecar %s: %w", path, err)
@@ -113,7 +113,7 @@ func (m Meta) validate(path string) error {
 		missing = append(missing, "page_url")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("sidecar %s is missing or has an unusable %v; re-run `cflio read` to regenerate it",
+		return fmt.Errorf("sidecar %s is missing or has an unusable %v; re-run `atlio read` to regenerate it",
 			path, missing)
 	}
 	return nil
