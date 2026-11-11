@@ -9,7 +9,7 @@ import (
 
 func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
-	return runLimitCmd(t, "children", arg, limit, extra...)
+	return runLimitCmd(t, "confluence children", arg, limit, extra...)
 }
 
 // childrenAPI answers the direct-children listing with childrenJSON and the

@@ -76,8 +76,8 @@ func Parse(arg string) (Ref, error) {
 	if match := pageURLPattern.FindStringSubmatch(path); match != nil {
 		return Ref{PageID: match[2], Host: u.Host}, nil
 	}
-	// The page-ID query form, which is what `atlio read` records in a
-	// sidecar when the API returns no web link.
+	// The page-ID query form, which is what `atlio confluence read` records in
+	// a sidecar when the API returns no web link.
 	if strings.HasSuffix(path, "/pages/viewpage.action") {
 		if id := u.Query().Get("pageId"); pageIDPattern.MatchString(id) {
 			return Ref{PageID: id, Host: u.Host}, nil
@@ -161,13 +161,13 @@ func SpaceKeyOf(webui string) string {
 
 // SpacePageURL builds a page's URL from its space key. The result is in the
 // form Parse accepts, so a link built with it can be fed straight back to
-// `atlio read`.
+// `atlio confluence read`.
 func SpacePageURL(site, spaceKey, pageID string) string {
 	return strings.TrimSuffix(site, "/") + "/spaces/" + url.PathEscape(spaceKey) + "/pages/" + url.PathEscape(pageID)
 }
 
 // HostOf returns the host of a stored page URL, or "" if it has none. It is
-// how `update` picks a profile from the URL its sidecar recorded.
+// how `confluence update` picks a profile from the URL its sidecar recorded.
 func HostOf(pageURL string) string {
 	u, err := url.Parse(pageURL)
 	if err != nil {

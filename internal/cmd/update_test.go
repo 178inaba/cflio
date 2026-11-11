@@ -16,7 +16,8 @@ import (
 
 const testPageURL = testSite + testPageWebUI
 
-// seedReadPage writes a body file and its sidecar, as `atlio read` would.
+// seedReadPage writes a body file and its sidecar, as `atlio confluence read`
+// would.
 func seedReadPage(t *testing.T, body string, meta sidecar.Meta) string {
 	t.Helper()
 
@@ -92,7 +93,7 @@ func webUIFor(title string) string {
 func runUpdate(t *testing.T, path string, extra ...string) (cliRun, error) {
 	t.Helper()
 
-	args := []string{"update", "-f", path}
+	args := []string{"confluence", "update", "-f", path}
 	return runCLI(t, append(args, extra...)...)
 }
 
@@ -197,7 +198,7 @@ func TestUpdateRefusesWhenTheServerVersionMoved(t *testing.T) {
 			if len(stub.puts) != 0 {
 				t.Errorf("PUT requests = %d, want none once the versions disagree", len(stub.puts))
 			}
-			for _, want := range []string{"7", "9", "atlio read"} {
+			for _, want := range []string{"7", "9", "atlio confluence read"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error = %q, want it to contain %q", err, want)
 				}
@@ -313,8 +314,8 @@ func TestUpdateWithoutASidecarPointsAtRead(t *testing.T) {
 	if err == nil {
 		t.Fatal("update error = nil, want an error")
 	}
-	if !strings.Contains(err.Error(), "atlio read") {
-		t.Errorf("error = %q, want it to point at `atlio read`", err)
+	if !strings.Contains(err.Error(), "atlio confluence read") {
+		t.Errorf("error = %q, want it to point at `atlio confluence read`", err)
 	}
 }
 
@@ -540,10 +541,10 @@ func TestUpdateSurfacesADuplicateTitle(t *testing.T) {
 	}
 }
 
-// TestUpdateKeepsTheRecordedSubtype covers the field `update` neither sends
-// nor learns anything new about: it rewrites the sidecar from the response,
-// so a subtype dropped here would send the next `plantuml set` back for a
-// fresh read for no reason.
+// TestUpdateKeepsTheRecordedSubtype covers the field `confluence update`
+// neither sends nor learns anything new about: it rewrites the sidecar from the
+// response, so a subtype dropped here would send the next
+// `confluence plantuml set` back for a fresh read for no reason.
 func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
@@ -553,7 +554,7 @@ func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runCLI(t, "update", "-f", file); err != nil {
+	if _, err := runCLI(t, "confluence", "update", "-f", file); err != nil {
 		t.Fatalf("update error = %v", err)
 	}
 

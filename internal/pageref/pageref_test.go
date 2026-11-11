@@ -42,8 +42,9 @@ func TestParse(t *testing.T) {
 			want: Ref{PageID: "999", Host: "example.atlassian.net"},
 		},
 		{
-			// The form PageURL and ChildPageURL fall back to, so `children`
-			// output stays usable as input even without a space key.
+			// The form PageURL and ChildPageURL fall back to, so
+			// `confluence children` output stays usable as input even without a
+			// space key.
 			name: "page-id query form",
 			arg:  "https://example.atlassian.net/wiki/pages/viewpage.action?pageId=123456",
 			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
@@ -266,7 +267,7 @@ func TestChildPageURL(t *testing.T) {
 			}
 
 			// children prints these URLs, and an agent is expected to feed
-			// them straight back into `atlio read`.
+			// them straight back into `atlio confluence read`.
 			ref, err := Parse(got)
 			if err != nil {
 				t.Fatalf("Parse(%q) error = %v", got, err)

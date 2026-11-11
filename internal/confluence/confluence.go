@@ -200,9 +200,9 @@ type Page struct {
 	Status string `json:"status"`
 	Title  string `json:"title"`
 	// Subtype is "live" for a live doc and absent for a classic page. It is
-	// what tells the two apart offline, once `read` has recorded it in the
-	// sidecar: a live doc's editor rewrites the storage body behind atlio's
-	// back, which some edits have to refuse rather than silently lose.
+	// what tells the two apart offline, once `confluence read` has recorded it
+	// in the sidecar: a live doc's editor rewrites the storage body behind
+	// atlio's back, which some edits have to refuse rather than silently lose.
 	Subtype string  `json:"subtype"`
 	Version Version `json:"version"`
 	Body    struct {
@@ -223,7 +223,7 @@ type links struct {
 
 // GetPage fetches a page. withBody requests the storage representation;
 // callers that only need the version (the optimistic-lock pre-flight in
-// `update`) pass false to avoid pulling the whole body back.
+// `confluence update`) pass false to avoid pulling the whole body back.
 func (c *Client) GetPage(ctx context.Context, id string, withBody bool) (*Page, error) {
 	query := url.Values{}
 	if withBody {
@@ -393,8 +393,8 @@ func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (
 }
 
 // Attachment is one file attached to a page. Title is the filename, which is
-// what `attachments download` matches its glob against. DownloadLink is
-// relative to the site base URL, in the form
+// what `confluence attachments download` matches its glob against. DownloadLink
+// is relative to the site base URL, in the form
 // /rest/api/content/{pageID}/child/attachment/{attachmentID}/download.
 //
 // The API's own attachment id is deliberately not modelled: DownloadLink

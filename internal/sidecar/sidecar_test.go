@@ -78,10 +78,10 @@ func TestLoadMissingSidecarPointsAtAReadThatProducesOne(t *testing.T) {
 	}
 	// Writing to a page that was never read is structurally impossible, so
 	// the error has to point at the way out. Naming --markdown is what makes
-	// that way out reachable: a plain "run `atlio read`" is satisfied by
-	// re-running the Markdown read that produced this sidecar-less file, and
-	// the caller lands right back here.
-	for _, want := range []string{"atlio read", "--markdown", Path(body)} {
+	// that way out reachable: a plain "run `atlio confluence read`" is
+	// satisfied by re-running the Markdown read that produced this sidecar-less
+	// file, and the caller lands right back here.
+	for _, want := range []string{"atlio confluence read", "--markdown", Path(body)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Load() error = %q, want it to mention %q", err, want)
 		}
@@ -153,8 +153,8 @@ func TestRemove(t *testing.T) {
 }
 
 func TestWriteOverwritesAnExistingSidecar(t *testing.T) {
-	// `update` rewrites the version in place so the next edit-update cycle
-	// works without a fresh read.
+	// `confluence update` rewrites the version in place so the next edit-update
+	// cycle works without a fresh read.
 	body := filepath.Join(t.TempDir(), "page.xml")
 	if err := Write(body, testMeta()); err != nil {
 		t.Fatalf("Write() error = %v", err)
@@ -228,8 +228,8 @@ func TestSubtypeRoundTripsItsThreeStates(t *testing.T) {
 }
 
 // TestLoadAcceptsASidecarWithNoSubtype covers the sidecars already on disk:
-// they predate the field, and refusing them would break `update` on a file
-// that was read before this version.
+// they predate the field, and refusing them would break `confluence update` on
+// a file that was read before this version.
 func TestLoadAcceptsASidecarWithNoSubtype(t *testing.T) {
 	body := filepath.Join(t.TempDir(), "page.xml")
 	const written = `{

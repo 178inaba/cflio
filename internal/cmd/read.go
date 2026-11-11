@@ -31,7 +31,7 @@ func newReadCmd(g *globalFlags) *cobra.Command {
 representation, to a local file plus a metadata sidecar.
 
 The body is never printed: edit the downloaded file with your regular file
-editing tools and write it back with ` + "`atlio update`" + `.
+editing tools and write it back with ` + "`atlio confluence update`" + `.
 
 ` + "`--markdown`" + ` converts the body to Markdown for reading instead. That file
 carries no sidecar and cannot be written back, so use it when the page is
@@ -135,9 +135,9 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 	// Any sidecar already sitting next to the output path describes whatever
 	// was read there before, so it is dropped first. Writing the body while
 	// a stale sidecar survives would leave a pair that names one page and
-	// holds another's content, and a later `update` would happily write this
-	// body to that page. Failing here instead leaves no sidecar at all,
-	// which `update` refuses outright.
+	// holds another's content, and a later `confluence update` would happily
+	// write this body to that page. Failing here instead leaves no sidecar at
+	// all, which `confluence update` refuses outright.
 	if err := sidecar.Remove(bodyPath); err != nil {
 		return err
 	}
@@ -194,8 +194,8 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 
 	// A converted body is not a checkout: it carries no version lock and can
 	// never be written back, so it gets no sidecar. That the sidecar exists
-	// if and only if the file beside it is updatable is what `update` relies
-	// on to refuse this file.
+	// if and only if the file beside it is updatable is what
+	// `confluence update` relies on to refuse this file.
 	if !markdown {
 		if err := sidecar.Write(bodyPath, meta); err != nil {
 			return err
@@ -274,7 +274,8 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 		for _, match := range matches {
 			// The search API hands titles back HTML-escaped and marked up for
 			// highlighting, while the title in the body arrives decoded, so
-			// the two only compare after the same normalisation `search` uses.
+			// the two only compare after the same normalisation
+			// `confluence search` uses.
 			if title := format.StripHighlightMarkers(match.Title); ids[title] == "" {
 				ids[title] = match.ID
 			}
@@ -316,8 +317,8 @@ func pagesBySpace(refs []format.PageRef, pageSpaceKey string) (groups map[string
 // keyed by filename, plus how many references it could not answer.
 //
 // Only the referenced filenames are fetched. The page's other attachments are
-// `atlio attachments download`'s job, and pulling a 4 MB PDF because it
-// happens to be attached is exactly the cost its --pattern exists to make
+// `atlio confluence attachments download`'s job, and pulling a 4 MB PDF because
+// it happens to be attached is exactly the cost its --pattern exists to make
 // deliberate.
 //
 // No failure is propagated, on the same terms as resolveReferences: an image
@@ -395,9 +396,9 @@ func downloadReferencedAttachments(
 // already there, reporting whether the destination now holds a file to link.
 //
 // An existing file is kept rather than replaced or re-downloaded. That is a
-// deliberate departure from `attachments download`, which refuses its whole
-// run on a collision: a read must not fail over the state of a directory, or
-// reading the same page twice would stop working the second time.
+// deliberate departure from `confluence attachments download`, which refuses
+// its whole run on a collision: a read must not fail over the state of a
+// directory, or reading the same page twice would stop working the second time.
 //
 // The collision is read off downloadToFile's O_EXCL create rather than checked
 // for first. That create opens the file before a byte is requested, so an
@@ -421,8 +422,8 @@ func attachmentLink(dir, filename string) string {
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:
-// `update` sends the file back as-is, so a single extra byte would turn a
-// no-op update into a content change on the page. That constraint is the
+// `confluence update` sends the file back as-is, so a single extra byte would
+// turn a no-op update into a content change on the page. That constraint is the
 // storage path's; a converted body arrives with its own trailing newline.
 //
 // WriteString rather than os.WriteFile([]byte(body)): converting the body to

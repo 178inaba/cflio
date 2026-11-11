@@ -12,7 +12,7 @@ import (
 
 func runSearchCmd(t *testing.T, cql string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
-	return runLimitCmd(t, "search", cql, limit, extra...)
+	return runLimitCmd(t, "confluence search", cql, limit, extra...)
 }
 
 func TestSearchPassesTheQueryThroughUnchanged(t *testing.T) {

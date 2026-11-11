@@ -14,7 +14,7 @@ import (
 
 func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
-	return runLimitCmd(t, "comments list", arg, limit, extra...)
+	return runLimitCmd(t, "confluence comments list", arg, limit, extra...)
 }
 
 // commentsAPI routes the four calls comments makes: the two root listings
@@ -91,9 +91,9 @@ func TestCommentsShowsBothSectionsWithRepliesAndInlineMetadata(t *testing.T) {
 }
 
 // TestCommentsRendersBodiesAsMarkdown pins the structure a comment body keeps
-// now that it goes through the same converter as `read --markdown`: a code
-// macro stays a code block and a table stays a table, both of which the old
-// flattening squashed to one line per block.
+// now that it goes through the same converter as `confluence read --markdown`:
+// a code macro stays a code block and a table stays a table, both of which the
+// old flattening squashed to one line per block.
 func TestCommentsRendersBodiesAsMarkdown(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
@@ -268,9 +268,9 @@ func TestCommentsRejectsAnOutOfRangeLimit(t *testing.T) {
 	}
 }
 
-// createCommentAPI answers the one POST `comments create` makes, recording
-// the raw request body so a test can assert on what actually travelled
-// rather than on what a decoder made of it.
+// createCommentAPI answers the one POST `confluence comments create` makes,
+// recording the raw request body so a test can assert on what actually
+// travelled rather than on what a decoder made of it.
 func createCommentAPI(t *testing.T, raw *string) http.HandlerFunc {
 	t.Helper()
 
@@ -337,7 +337,7 @@ func TestCommentsCreateSendsTheFileUnchanged(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runCLI(t, "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
+	run, err := runCLI(t, "confluence", "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -360,7 +360,7 @@ func TestCommentsCreateReadsTheBodyFromStdin(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	if _, err := runCLIWithStdin(t, body, "comments", "create", testPageURL, "-f", "-"); err != nil {
+	if _, err := runCLIWithStdin(t, body, "confluence", "comments", "create", testPageURL, "-f", "-"); err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
 	if got := commentBodySent(t, raw); got != body {
@@ -377,7 +377,7 @@ func TestCommentsCreateAcceptsABarePageID(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runCLI(t, "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
+	run, err := runCLI(t, "confluence", "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -396,7 +396,7 @@ func TestCommentsCreateJSONOutput(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runCLI(t, "comments", "create", testPageURL,
+	run, err := runCLI(t, "confluence", "comments", "create", testPageURL,
 		"-f", writeCommentFile(t, "<p>note</p>"), "--format", "json")
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
@@ -424,7 +424,7 @@ func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
 	startAPI(t, neverCalled(t, "despite an unreadable body file"))
 
 	missing := filepath.Join(t.TempDir(), "missing.xml")
-	if _, err := runCLI(t, "comments", "create", testPageURL, "-f", missing); err == nil {
+	if _, err := runCLI(t, "confluence", "comments", "create", testPageURL, "-f", missing); err == nil {
 		t.Error("comments create error = nil for a missing file, want an error")
 	}
 }
