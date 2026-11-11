@@ -26,7 +26,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	client, err := New(srv.URL+"/wiki", "a@example.com", "api-token")
+	client, err := New(srv.URL, "a@example.com", "api-token")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -34,9 +34,21 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 }
 
 func TestNewRejectsRelativeSiteURL(t *testing.T) {
-	for _, site := range []string{"example.atlassian.net/wiki", "/wiki", ""} {
+	for _, site := range []string{"example.atlassian.net", "/", ""} {
 		if _, err := New(site, "a@example.com", "t"); err == nil {
 			t.Errorf("New(%q) error = nil, want an error for a non-absolute site url", site)
+		}
+	}
+}
+
+func TestBaseURLAddsWikiToTheSite(t *testing.T) {
+	for _, site := range []string{"https://example.atlassian.net", "https://example.atlassian.net/"} {
+		client, err := New(site, "a@example.com", "t")
+		if err != nil {
+			t.Fatalf("New(%q) error = %v", site, err)
+		}
+		if got, want := client.BaseURL(), "https://example.atlassian.net/wiki"; got != want {
+			t.Errorf("New(%q).BaseURL() = %q, want %q", site, got, want)
 		}
 	}
 }
@@ -486,7 +498,7 @@ func TestDownloadAttachmentSurfacesANonSuccessStatus(t *testing.T) {
 }
 
 func TestAttachmentURL(t *testing.T) {
-	client, err := New("https://example.atlassian.net/wiki", "a@example.com", "t")
+	client, err := New("https://example.atlassian.net", "a@example.com", "t")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

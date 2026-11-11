@@ -50,20 +50,30 @@ type Client struct {
 	api *atlassian.Client
 }
 
-// New creates a Client for the given site base URL (including the /wiki
-// path, e.g. "https://example.atlassian.net/wiki"), authenticating with
-// Atlassian Basic auth (account email + API token).
+// New creates a Client for the Atlassian site at siteURL, its scheme and
+// host (e.g. "https://example.atlassian.net"), authenticating with Atlassian
+// Basic auth (account email + API token). Confluence Cloud serves its API
+// and its pages under /wiki on every site, so the client derives that base
+// itself rather than having it stored with the site.
 func New(siteURL, email, token string, opts ...atlassian.Option) (*Client, error) {
-	api, err := atlassian.New(siteURL, email, token, apiErrorMessages, opts...)
+	site, err := url.Parse(siteURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse site url %q: %w", siteURL, err)
+	}
+	if site.Scheme == "" || site.Host == "" {
+		return nil, fmt.Errorf("site url %q must be absolute, e.g. https://example.atlassian.net", siteURL)
+	}
+
+	api, err := atlassian.New(strings.TrimSuffix(siteURL, "/")+"/wiki", email, token, apiErrorMessages, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return &Client{api: api}, nil
 }
 
-// SiteURL returns the site base URL the client was built for, for callers
-// that need to turn a relative link into an absolute one.
-func (c *Client) SiteURL() string {
+// BaseURL returns the site's Confluence base URL, <site>/wiki. Page links
+// the API returns are relative to it, so it is what callers join them onto.
+func (c *Client) BaseURL() string {
 	return c.api.BaseURL()
 }
 
@@ -408,11 +418,11 @@ func (c *Client) DownloadAttachment(ctx context.Context, downloadLink string, w 
 // attachmentURL turns the relative download link an attachment carries into an
 // absolute URL.
 //
-// The link is relative to the listing's `_links.base`, which is the site base
-// URL this client was built for — the same string. So the two are
-// concatenated: url.URL.ResolveReference would read the leading slash as
-// site-root-relative and drop the /wiki path the base ends with, addressing a
-// host that serves nothing there.
+// The link is relative to the listing's `_links.base`, which is the base URL
+// this client derived — the same string. So the two are concatenated:
+// url.URL.ResolveReference would read the leading slash as site-root-relative
+// and drop the /wiki path the base ends with, addressing a host that serves
+// nothing there.
 //
 // A link that is neither absolute nor rooted at / is an error rather than a
 // guess: every shape the API has been observed to return is one of those two,

@@ -109,7 +109,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		return err
 	}
 
-	client, creds, err := resolveClient(g.profile, ref.Host)
+	client, err := resolveConfluence(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		// is turn the identifiers a body names into names and URLs, so that
 		// much is looked up first and handed in.
 		refs := format.References(body)
-		resolved = resolveReferences(ctx, client, creds.SiteURL, pageref.SpaceKeyOf(page.Links.WebUI), refs)
+		resolved = resolveReferences(ctx, client, pageref.SpaceKeyOf(page.Links.WebUI), refs)
 		if attachmentsDir != "" {
 			paths, unchecked := downloadReferencedAttachments(ctx, client, page.ID, attachmentsDir, refs.Attachments)
 			resolved.opts.AttachmentPaths = paths
@@ -172,7 +172,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		Version: page.Version.Number,
 		Title:   page.Title,
 		Status:  page.Status,
-		PageURL: pageref.PageURL(creds.SiteURL, page.Links.WebUI, page.ID),
+		PageURL: pageref.PageURL(client.BaseURL(), page.Links.WebUI, page.ID),
 		// Always recorded, empty subtype and all: what the API reported is an
 		// answer, and a caller has to be able to tell it from a sidecar
 		// written before atlio asked the question at all.
@@ -234,7 +234,7 @@ type references struct {
 // way ToMarkdown reports what it could not represent alongside the Markdown.
 // downloadReferencedAttachments answers the third reference kind on the same
 // terms, and adds its count to this one's.
-func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, spaceKey string, refs format.Refs) references {
+func resolveReferences(ctx context.Context, client *confluence.Client, spaceKey string, refs format.Refs) references {
 	var opts format.Options
 	var unchecked int
 	if len(refs.AccountIDs) > 0 {
@@ -285,7 +285,7 @@ func resolveReferences(ctx context.Context, client *confluence.Client, siteURL, 
 			if id := ids[ref.Title]; id != "" {
 				// Keyed by the reference exactly as the body wrote it, empty
 				// space key and all: that is what the converter looks up.
-				opts.PageURLs[ref] = pageref.SpacePageURL(siteURL, key, id)
+				opts.PageURLs[ref] = pageref.SpacePageURL(client.BaseURL(), key, id)
 			}
 		}
 	}

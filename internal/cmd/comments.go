@@ -121,7 +121,7 @@ func runCommentsCreate(cmd *cobra.Command, args []string, g *globalFlags, file s
 		return err
 	}
 
-	client, creds, err := resolveClient(g.profile, ref.Host)
+	client, err := resolveConfluence(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func runCommentsCreate(cmd *cobra.Command, args []string, g *globalFlags, file s
 	return writeCommentResult(cmd, outFormat, commentResult{
 		CommentID:  comment.ID,
 		PageID:     ref.PageID,
-		CommentURL: pageref.PageURL(creds.SiteURL, comment.Links.WebUI, ref.PageID),
+		CommentURL: pageref.PageURL(client.BaseURL(), comment.Links.WebUI, ref.PageID),
 	})
 }
 
@@ -221,7 +221,7 @@ func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 		return err
 	}
 
-	client, _, err := resolveClient(g.profile, ref.Host)
+	client, err := resolveConfluence(g.profile, ref.Host)
 	if err != nil {
 		return err
 	}

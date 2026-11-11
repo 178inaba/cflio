@@ -14,8 +14,7 @@ func TestProfileHost(t *testing.T) {
 		siteURL string
 		want    string
 	}{
-		{name: "site base", siteURL: "https://example.atlassian.net/wiki", want: "example.atlassian.net"},
-		{name: "no path", siteURL: "https://example.atlassian.net", want: "example.atlassian.net"},
+		{name: "site", siteURL: "https://example.atlassian.net", want: "example.atlassian.net"},
 		{name: "unparseable", siteURL: "://nope", want: ""},
 		{name: "empty", siteURL: "", want: ""},
 	}
@@ -48,7 +47,7 @@ func TestSaveUsesRestrictivePermissions(t *testing.T) {
 	f := &File{
 		DefaultProfile: "example",
 		Profiles: map[string]Profile{
-			"example": {SiteURL: "https://example.atlassian.net/wiki", Email: "a@example.com", Token: "t"},
+			"example": {SiteURL: "https://example.atlassian.net", Email: "a@example.com", Token: "t"},
 		},
 	}
 	if err := f.Save(); err != nil {
@@ -99,8 +98,8 @@ func testFile() *File {
 	return &File{
 		DefaultProfile: "example",
 		Profiles: map[string]Profile{
-			"example": {SiteURL: "https://example.atlassian.net/wiki", Email: "a@example.com", Token: "tok-example"},
-			"other":   {SiteURL: "https://other.atlassian.net/wiki", Email: "b@other.com", Token: "tok-other"},
+			"example": {SiteURL: "https://example.atlassian.net", Email: "a@example.com", Token: "tok-example"},
+			"other":   {SiteURL: "https://other.atlassian.net", Email: "b@other.com", Token: "tok-other"},
 		},
 	}
 }
@@ -124,7 +123,7 @@ func TestResolvePrecedence(t *testing.T) {
 			flagProfile: "other",
 			getenv:      env(map[string]string{"ATLIO_PROFILE": "example"}),
 			want: Credentials{
-				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
+				Profile: "other", SiteURL: "https://other.atlassian.net",
 				Email: "b@other.com", Token: "tok-other",
 			},
 		},
@@ -133,7 +132,7 @@ func TestResolvePrecedence(t *testing.T) {
 			urlHost: "other.atlassian.net",
 			getenv:  noEnv,
 			want: Credentials{
-				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
+				Profile: "other", SiteURL: "https://other.atlassian.net",
 				Email: "b@other.com", Token: "tok-other",
 			},
 		},
@@ -142,7 +141,7 @@ func TestResolvePrecedence(t *testing.T) {
 			urlHost: "other.atlassian.net",
 			getenv:  env(map[string]string{"ATLIO_PROFILE": "example"}),
 			want: Credentials{
-				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
+				Profile: "other", SiteURL: "https://other.atlassian.net",
 				Email: "b@other.com", Token: "tok-other",
 			},
 		},
@@ -150,7 +149,7 @@ func TestResolvePrecedence(t *testing.T) {
 			name:   "ATLIO_PROFILE replaces the default profile",
 			getenv: env(map[string]string{"ATLIO_PROFILE": "other"}),
 			want: Credentials{
-				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
+				Profile: "other", SiteURL: "https://other.atlassian.net",
 				Email: "b@other.com", Token: "tok-other",
 			},
 		},
@@ -158,7 +157,7 @@ func TestResolvePrecedence(t *testing.T) {
 			name:   "falls back to the default profile",
 			getenv: noEnv,
 			want: Credentials{
-				Profile: "example", SiteURL: "https://example.atlassian.net/wiki",
+				Profile: "example", SiteURL: "https://example.atlassian.net",
 				Email: "a@example.com", Token: "tok-example",
 			},
 		},
@@ -166,7 +165,7 @@ func TestResolvePrecedence(t *testing.T) {
 			name:   "ATLIO_TOKEN replaces only the token",
 			getenv: env(map[string]string{"ATLIO_TOKEN": "env-token"}),
 			want: Credentials{
-				Profile: "example", SiteURL: "https://example.atlassian.net/wiki",
+				Profile: "example", SiteURL: "https://example.atlassian.net",
 				Email: "a@example.com", Token: "env-token",
 			},
 		},
@@ -175,7 +174,7 @@ func TestResolvePrecedence(t *testing.T) {
 			urlHost: "other.atlassian.net",
 			getenv:  env(map[string]string{"ATLIO_TOKEN": "env-token"}),
 			want: Credentials{
-				Profile: "other", SiteURL: "https://other.atlassian.net/wiki",
+				Profile: "other", SiteURL: "https://other.atlassian.net",
 				Email: "b@other.com", Token: "env-token",
 			},
 		},
@@ -247,7 +246,7 @@ func TestResolveErrors(t *testing.T) {
 		{
 			name: "default profile points at a missing entry",
 			file: &File{DefaultProfile: "gone", Profiles: map[string]Profile{
-				"example": {SiteURL: "https://example.atlassian.net/wiki"},
+				"example": {SiteURL: "https://example.atlassian.net"},
 			}},
 			getenv:       noEnv,
 			wantContains: []string{"gone", "example"},
