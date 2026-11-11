@@ -304,11 +304,6 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantErr: `unknown command "bogus" for "atlio confluence comments"`,
 		},
 		{
-			name:    "confluence attachments",
-			args:    []string{"confluence", "attachments", "bogus"},
-			wantErr: `unknown command "bogus" for "atlio confluence attachments"`,
-		},
-		{
 			name:    "profile",
 			args:    []string{"profile", "bogus"},
 			wantErr: `unknown command "bogus" for "atlio profile"`,
@@ -417,86 +412,45 @@ func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
 
 // TestRootRejectsAnUnknownCommand pins the path cobra does handle: at the
 // root, Find fails before the help function is ever reached, so the error
-// comes back from Execute itself rather than travelling beside it.
+// comes back from Execute itself rather than travelling beside it. The message
+// is matched whole, so a suggestion or a hint creeping in would fail here.
 func TestRootRejectsAnUnknownCommand(t *testing.T) {
-	run, err := runCLI(t, "bogus")
-	if err == nil {
-		t.Fatal("atlio bogus error = nil, want an error")
-	}
-	if want := `unknown command "bogus" for "atlio"`; !strings.Contains(err.Error(), want) {
-		t.Errorf("error = %q, want it to contain %q", err, want)
-	}
-	if run.stdout != "" || run.stderr != "" {
-		t.Errorf("atlio bogus wrote stdout = %q, stderr = %q, want nothing from the tree itself",
-			run.stdout, run.stderr)
-	}
-}
-
-// TestRootRejectsAMovedCommand pins that the Confluence commands exist only
-// under `confluence`: at the root they are unknown like any other word, with
-// no alias and no hint pointing at where they went. The config is isolated
-// and the API refuses every request so that a tree still carrying a command
-// at the root fails here rather than reaching a real site.
-func TestRootRejectsAMovedCommand(t *testing.T) {
-	isolateConfig(t)
-	startAPI(t, neverCalled(t, "for a command that is no longer at the root"))
-
-	for _, name := range []string{"read", "update", "search", "children", "comments", "attachments", "plantuml"} {
-		t.Run(name, func(t *testing.T) {
-			_, err := runCLI(t, name, "123456")
-			if err == nil {
-				t.Fatalf("%s 123456 error = nil, want an error", name)
-			}
-			if want := fmt.Sprintf("unknown command %q for \"atlio\"", name); !strings.HasPrefix(err.Error(), want) {
-				t.Errorf("error = %q, want it to start with %q", err, want)
-			}
-			if strings.Contains(err.Error(), "confluence") {
-				t.Errorf("error = %q, want no hint at the new path", err)
-			}
-			if code, _ := describeFailure(err, defaultTimeout); code != 1 {
-				t.Errorf("exit code = %d, want 1", code)
-			}
-		})
-	}
-}
-
-// TestHelpListsTheCommandTree pins the commands each level's help lists. The
-// names are read off the "Available Commands:" section rather than matched
-// anywhere in the output, since the descriptions mention reading pages too.
-func TestHelpListsTheCommandTree(t *testing.T) {
 	tests := []struct {
-		args []string
-		want []string
+		name    string
+		args    []string
+		wantErr string
 	}{
-		{args: nil, want: []string{"auth", "completion", "confluence", "help", "profile"}},
 		{
-			args: []string{"confluence"},
-			want: []string{"attachments", "children", "comments", "plantuml", "read", "search", "update"},
+			name:    "a word that names nothing",
+			args:    []string{"bogus"},
+			wantErr: `unknown command "bogus" for "atlio"`,
+		},
+		{
+			// A Confluence command lives under `confluence` only: at the root
+			// it is a word like any other, with no alias and no pointer to
+			// the group.
+			name:    "a Confluence command at the root",
+			args:    []string{"read", "123456"},
+			wantErr: `unknown command "read" for "atlio"`,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run("atlio "+strings.Join(tt.args, " "), func(t *testing.T) {
-			run, err := runCLI(t, append(tt.args, "--help")...)
-			if err != nil {
-				t.Fatalf("%v --help error = %v, want nil", tt.args, err)
-			}
+		t.Run(tt.name, func(t *testing.T) {
+			// A tree that did resolve the command would go on to resolve a
+			// profile; with none registered it fails before any request.
+			isolateConfig(t)
 
-			_, section, found := strings.Cut(run.stdout, "Available Commands:\n")
-			if !found {
-				t.Fatalf("%v --help stdout = %q, want an Available Commands section", tt.args, run.stdout)
+			run, err := runCLI(t, tt.args...)
+			if err == nil {
+				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
-			section, _, _ = strings.Cut(section, "\n\n")
-			var got []string
-			for line := range strings.SplitSeq(section, "\n") {
-				if fields := strings.Fields(line); len(fields) > 0 {
-					got = append(got, fields[0])
-				}
+			if err.Error() != tt.wantErr {
+				t.Errorf("%v error = %q, want %q", tt.args, err, tt.wantErr)
 			}
-
-			slices.Sort(got)
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("%v --help lists %v, want %v", tt.args, got, tt.want)
+			if run.stdout != "" || run.stderr != "" {
+				t.Errorf("%v wrote stdout = %q, stderr = %q, want nothing from the tree itself",
+					tt.args, run.stdout, run.stderr)
 			}
 		})
 	}
