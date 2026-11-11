@@ -3,12 +3,18 @@ package cmd
 import (
 	"bytes"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // pngBytes is a real PNG signature plus a byte that is not valid UTF-8 on its
@@ -414,5 +420,350 @@ func TestAttachmentsDownloadRejectsAFilenameThatEscapesTheOutputDirectory(t *tes
 	}
 	if *downloads != 0 {
 		t.Errorf("downloads = %d, want the guard to refuse before any transfer", *downloads)
+	}
+}
+
+const uploadPath = "/wiki/rest/api/content/123456/child/attachment"
+
+// uploadPart is one part of the multipart body the server received.
+type uploadPart struct {
+	name, filename, content string
+}
+
+// uploadRequest is what the server saw of one upload.
+type uploadRequest struct {
+	method, path, user, token string
+	parts                     []uploadPart
+}
+
+// uploadAPI answers every upload with a result per file part it received,
+// at version 1 under POST and 2 under PUT, and records the requests.
+func uploadAPI(t *testing.T) (*[]uploadRequest, http.HandlerFunc) {
+	t.Helper()
+
+	var requests []uploadRequest
+	return &requests, func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ := r.BasicAuth()
+		req := uploadRequest{
+			method: r.Method, path: r.URL.Path, user: user,
+			token: r.Header.Get("X-Atlassian-Token"),
+		}
+		reader, err := r.MultipartReader()
+		if err != nil {
+			t.Errorf("MultipartReader() error = %v", err)
+			return
+		}
+		for {
+			part, err := reader.NextPart()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Errorf("NextPart() error = %v", err)
+				return
+			}
+			content, _ := io.ReadAll(part)
+			req.parts = append(req.parts, uploadPart{name: part.FormName(), filename: part.FileName(), content: string(content)})
+		}
+		requests = append(requests, req)
+
+		version := 1
+		if r.Method == http.MethodPut {
+			version = 2
+		}
+		results := []map[string]any{}
+		for _, p := range req.parts {
+			if p.name != "file" {
+				continue
+			}
+			results = append(results, map[string]any{
+				"title":      p.filename,
+				"extensions": map[string]any{"mediaType": "image/png", "fileSize": len(p.content)},
+				"version":    map[string]any{"number": version},
+			})
+		}
+		payload, err := json.Marshal(map[string]any{"results": results})
+		if err != nil {
+			t.Errorf("Marshal() error = %v", err)
+			return
+		}
+		_, _ = w.Write(payload)
+	}
+}
+
+// writeUploadFile writes content to name under dir and returns its path.
+func writeUploadFile(t *testing.T, dir, name string, content []byte) string {
+	t.Helper()
+
+	p := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(p, content, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return p
+}
+
+func TestAttachmentsUploadPostsTheFileUnderItsBaseName(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	requests, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	file := writeUploadFile(t, t.TempDir(), "out/a.png", pngBytes)
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file); err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	got := (*requests)[0]
+	if got.method != http.MethodPost || got.path != uploadPath {
+		t.Errorf("request = %s %s, want POST %s", got.method, got.path, uploadPath)
+	}
+	if got.user != "a@example.com" {
+		t.Errorf("Basic auth user = %q, want the profile's email", got.user)
+	}
+	if got.token != "nocheck" {
+		t.Errorf("X-Atlassian-Token = %q, want nocheck", got.token)
+	}
+	want := []uploadPart{
+		{name: "file", filename: "a.png", content: string(pngBytes)},
+		{name: "minorEdit", content: "true"},
+	}
+	if !slices.Equal(got.parts, want) {
+		t.Errorf("parts = %q, want %q", got.parts, want)
+	}
+}
+
+func TestAttachmentsUploadWithReplaceIsAPut(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	requests, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--replace"); err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	got := (*requests)[0]
+	if got.method != http.MethodPut || got.path != uploadPath {
+		t.Errorf("request = %s %s, want PUT %s", got.method, got.path, uploadPath)
+	}
+	want := []uploadPart{
+		{name: "file", filename: "a.png", content: string(pngBytes)},
+		{name: "minorEdit", content: "true"},
+	}
+	if got.token != "nocheck" || !slices.Equal(got.parts, want) {
+		t.Errorf("token %q parts %q, want nocheck and %q — nothing but the method differs", got.token, got.parts, want)
+	}
+}
+
+func TestAttachmentsUploadSendsEveryFileInOneRequest(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	requests, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	dir := t.TempDir()
+	a := writeUploadFile(t, dir, "dir/a.png", pngBytes)
+	b := writeUploadFile(t, dir, "b.png", []byte("b"))
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, a, b); err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want both files in 1", len(*requests))
+	}
+	want := []uploadPart{
+		{name: "file", filename: "a.png", content: string(pngBytes)},
+		{name: "minorEdit", content: "true"},
+		{name: "file", filename: "b.png", content: "b"},
+		{name: "minorEdit", content: "true"},
+	}
+	if got := (*requests)[0].parts; !slices.Equal(got, want) {
+		t.Errorf("parts = %q, want %q", got, want)
+	}
+}
+
+func TestAttachmentsUploadListsWhatTheServerStored(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	_, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+
+	res, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--replace")
+	if err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+	want := fmt.Sprintf("- **a.png** (image/png, %d bytes, version 2)\n", len(pngBytes))
+	if res.stdout != want {
+		t.Errorf("stdout = %q, want %q", res.stdout, want)
+	}
+}
+
+func TestAttachmentsUploadJSONOutput(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	_, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+
+	res, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--format", "json")
+	if err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+
+	var got struct {
+		Uploaded []map[string]any `json:"uploaded_attachments"`
+	}
+	if err := json.Unmarshal([]byte(res.stdout), &got); err != nil {
+		t.Fatalf("Unmarshal(%s) error = %v", res.stdout, err)
+	}
+	want := map[string]any{
+		"filename": "a.png", "media_type": "image/png",
+		"file_size": float64(len(pngBytes)), "version": float64(1),
+	}
+	if len(got.Uploaded) != 1 || !maps.Equal(got.Uploaded[0], want) {
+		t.Errorf("uploaded_attachments = %v, want [%v]", got.Uploaded, want)
+	}
+}
+
+func TestAttachmentsUploadAcceptsABarePageID(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	requests, handler := uploadAPI(t)
+	startAPI(t, handler)
+
+	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", "123456", file); err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+	if len(*requests) != 1 || (*requests)[0].path != uploadPath {
+		t.Errorf("requests = %+v, want one to %s", *requests, uploadPath)
+	}
+}
+
+func TestAttachmentsUploadPointsAtReplaceWhenThePostIsRefused(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"statusCode":400,"message":"com.atlassian.confluence.api.service.exceptions.BadRequestException: `+
+			`Cannot add a new attachment with same file name as an existing attachment: a.png"}`)
+	})
+
+	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+
+	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file)
+	if err == nil {
+		t.Fatal("attachments upload error = nil, want the refusal")
+	}
+	if !strings.Contains(err.Error(), "same file name as an existing attachment: a.png") {
+		t.Errorf("error = %q, want the server's message", err)
+	}
+	if !strings.Contains(err.Error(), "--replace") {
+		t.Errorf("error = %q, want it to point at --replace", err)
+	}
+	if code, _ := describeFailure(err, time.Minute); code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+}
+
+func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
+	dir := t.TempDir()
+	valid := writeUploadFile(t, dir, "a.png", pngBytes)
+	missing := filepath.Join(dir, "missing.png")
+	sameName := writeUploadFile(t, dir, "other/a.png", []byte("x"))
+
+	tests := []struct {
+		name     string
+		files    []string
+		wantArgs []string
+	}{
+		{name: "a missing file", files: []string{missing}, wantArgs: []string{missing}},
+		{name: "a directory", files: []string{dir}, wantArgs: []string{dir}},
+		{name: "two files with the same base name", files: []string{valid, sameName}, wantArgs: []string{valid, sameName}},
+		{name: "a valid file beside a missing one", files: []string{valid, missing}, wantArgs: []string{missing}},
+		{
+			name:     "every problem at once",
+			files:    []string{missing, dir, valid, sameName},
+			wantArgs: []string{missing, dir, valid, sameName},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+			startAPI(t, neverCalled(t, "despite a file that cannot be uploaded"))
+
+			args := append([]string{"confluence", "attachments", "upload", testPageURL}, tt.files...)
+			_, err := runCLI(t, args...)
+			if err == nil {
+				t.Fatal("attachments upload error = nil, want the files rejected")
+			}
+			for _, arg := range tt.wantArgs {
+				if !strings.Contains(err.Error(), arg) {
+					t.Errorf("error = %q, want it to name %s", err, arg)
+				}
+			}
+		})
+	}
+}
+
+func TestAttachmentsUploadRequiresAFile(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, neverCalled(t, "with no file to upload"))
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL); err == nil {
+		t.Fatal("attachments upload error = nil, want a usage error")
+	}
+}
+
+// TestAttachmentsUploadReportsADeadlineThatExpiresMidUpload is the upload's
+// side of exit code 124: the deadline lands while the body is still being
+// sent, where the pipe the body streams through fails too, and that failure
+// must not stand in for the deadline describeFailure reads.
+func TestAttachmentsUploadReportsADeadlineThatExpiresMidUpload(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	// Released by the test: a server that has not read the body to its end
+	// never sees the client go away, so r.Context() would not end it.
+	release := make(chan struct{})
+	var served atomic.Bool
+	startAPI(t, func(_ http.ResponseWriter, _ *http.Request) {
+		served.Store(true)
+		<-release
+	})
+	defer close(release)
+
+	// Large enough that the body cannot all sit in the socket buffers while
+	// the server stalls without reading it.
+	file := writeUploadFile(t, t.TempDir(), "big.bin", make([]byte, 16<<20))
+
+	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--timeout=300ms")
+
+	if !served.Load() {
+		t.Fatal("the request never reached the server, so the upload path was not exercised")
+	}
+	if code, _ := describeFailure(err, 300*time.Millisecond); code != timeoutExitCode {
+		t.Errorf("exit code = %d for %v, want %d", code, err, timeoutExitCode)
 	}
 }

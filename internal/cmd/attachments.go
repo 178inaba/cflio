@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/178inaba/atlio/internal/atlassian"
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/178inaba/atlio/internal/pageref"
@@ -20,9 +22,9 @@ const defaultAttachmentsLimit = 100
 func newAttachmentsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "attachments",
-		Short: "List and download a page's attachments",
+		Short: "List, download and upload a page's attachments",
 	}
-	cmd.AddCommand(newAttachmentsListCmd(g), newAttachmentsDownloadCmd(g))
+	cmd.AddCommand(newAttachmentsListCmd(g), newAttachmentsDownloadCmd(g), newAttachmentsUploadCmd(g))
 	return cmd
 }
 
@@ -73,9 +75,7 @@ error rather than a silent success.
 
 An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
-cannot leave some files replaced and others not.
-
-Read-only against Confluence: atlio never uploads an attachment.`,
+cannot leave some files replaced and others not.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsDownload(cmd, args, g, pattern, outDir, outFormat)
@@ -91,6 +91,49 @@ Read-only against Confluence: atlio never uploads an attachment.`,
 	if err := cmd.MarkFlagRequired("pattern"); err != nil {
 		panic(err)
 	}
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+func newAttachmentsUploadCmd(g *globalFlags) *cobra.Command {
+	var (
+		replace   bool
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "upload <page-url|page-id> <file>...",
+		Short: "Attach local files to a page",
+		Long: `Attach one or more local files to a page, each under its base name
+(./out/shot.png is attached as shot.png).
+
+Uploading does not change the page body, so the file does not appear on the
+page yet. To show an image, read the page, add an element naming the
+attachment where it should appear, and update:
+
+  atlio confluence attachments upload <page> shot.png
+  atlio confluence read <page> -o page.xml
+  # add <ac:image><ri:attachment ri:filename="shot.png" /></ac:image> to page.xml
+  atlio confluence update -f page.xml
+
+A file whose name the page already has an attachment under is refused, and
+then none of the files are attached. --replace uploads it as a new version of
+that attachment instead, keeping its history, and creates the rest. The page
+shows the new version without a ` + "`confluence update`" + `, so retaking a screenshot
+that is already on the page is this one command.
+
+All files go in one request, and --timeout is the deadline for the whole
+upload: raise it for a large file. The site's attachment size limit is not
+checked locally; a file over it fails at the server.`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAttachmentsUpload(cmd, args, g, replace, outFormat)
+		},
+	}
+
+	cmd.Flags().BoolVar(&replace, "replace", false,
+		"add a new version to an attachment the page already has under the same name, instead of refusing")
 	addFormatFlag(cmd, &outFormat)
 
 	return cmd
@@ -220,8 +263,119 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 	return writeList(cmd, outFormat, "downloaded attachments", items, notice)
 }
 
+// uploadedItem is one attachment `upload` left on the page, as the server
+// reports it. Version tells a new attachment (1) from a replaced one, and
+// MediaType is Confluence's own reading of the file, which is what decides
+// whether <ac:image> renders it.
+type uploadedItem struct {
+	Filename  string `json:"filename"`
+	MediaType string `json:"media_type"`
+	FileSize  int64  `json:"file_size"`
+	Version   int    `json:"version"`
+}
+
+func (u uploadedItem) markdown() string {
+	return fmt.Sprintf("- **%s** (%s, %d bytes, version %d)", u.Filename, u.MediaType, u.FileSize, u.Version)
+}
+
+func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, replace bool, outFormat format.Format) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+
+	files, err := openUploads(args[1:])
+	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, f := range files {
+			_ = f.Content.(*os.File).Close()
+		}
+	}()
+
+	client, pageID, err := resolvePageClient(args[0], g.profile)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := commandContext(cmd, g.timeout)
+	defer cancel()
+
+	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
+	if err != nil {
+		// Worded as a condition: a 400 is how Confluence refuses a name the
+		// page already has, but not the only thing it can mean.
+		if apiErr, ok := errors.AsType[*atlassian.APIError](err); ok && !replace && apiErr.Status == http.StatusBadRequest {
+			return fmt.Errorf("%w (if the page already has an attachment with this name, "+
+				"pass --replace to upload a new version of it)", err)
+		}
+		return err
+	}
+
+	items := make([]uploadedItem, 0, len(uploaded))
+	for _, u := range uploaded {
+		items = append(items, uploadedItem{Filename: u.Title, MediaType: u.MediaType, FileSize: u.FileSize, Version: u.Version})
+	}
+	return writeList(cmd, outFormat, "uploaded attachments", items, "")
+}
+
+// openUploads opens every file to upload, attached under its base name, and
+// refuses the whole run — naming every offending argument — if any cannot be
+// read or two would be the same attachment.
+//
+// Every check runs before any request, as in planDownloads, so a run never
+// attaches some files and then stops at a bad one. Opening rather than only
+// stat-ing is what makes "cannot be read" a local finding, and the files are
+// kept open for the upload so the check holds for what is sent. The directory
+// check is a Stat of its own because opening a directory succeeds on Unix.
+func openUploads(paths []string) ([]confluence.UploadFile, error) {
+	var (
+		files    []confluence.UploadFile
+		problems []string
+	)
+	byName := map[string][]string{}
+
+	for _, p := range paths {
+		name := filepath.Base(p)
+		byName[name] = append(byName[name], p)
+
+		info, err := os.Stat(p)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		if info.IsDir() {
+			problems = append(problems, p+" is a directory")
+			continue
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		files = append(files, confluence.UploadFile{Name: name, Content: f})
+	}
+
+	// Ordered by first appearance, so the message follows the command line.
+	for _, p := range paths {
+		same := byName[filepath.Base(p)]
+		if len(same) > 1 && same[0] == p {
+			problems = append(problems, fmt.Sprintf("%s would all be attached as %s",
+				strings.Join(same, ", "), filepath.Base(p)))
+		}
+	}
+
+	if len(problems) > 0 {
+		for _, f := range files {
+			_ = f.Content.(*os.File).Close()
+		}
+		return nil, fmt.Errorf("cannot upload (nothing was sent): %s", strings.Join(problems, "; "))
+	}
+	return files, nil
+}
+
 // resolvePageClient parses the page argument and builds the client for the site
-// it names. Both subcommands go through here, so a page URL and a bare page ID
+// it names. Every subcommand goes through here, so a page URL and a bare page ID
 // are interchangeable on each of them with the same profile resolution.
 func resolvePageClient(arg, profile string) (*confluence.Client, string, error) {
 	ref, err := pageref.Parse(arg)

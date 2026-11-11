@@ -75,6 +75,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"confluence attachments":          false,
 		"confluence attachments list":     true,
 		"confluence attachments download": true,
+		"confluence attachments upload":   true,
 		"confluence plantuml":             false,
 		"confluence plantuml list":        true,
 		"confluence plantuml get":         true,
