@@ -19,11 +19,11 @@ import (
 )
 
 // runLogin drives auth login with the given prompt answers.
-func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (atlioRun, error) {
+func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cliRun, error) {
 	t.Helper()
 
 	startAPI(t, handler)
-	return runAtlioWithStdin(t, answers, "auth", "login")
+	return runCLIWithStdin(t, answers, "auth", "login")
 }
 
 func okCurrentUser(w http.ResponseWriter, _ *http.Request) {

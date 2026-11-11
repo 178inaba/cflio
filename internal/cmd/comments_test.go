@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (atlioRun, error) {
+func runCommentsCmd(t *testing.T, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "comments list", arg, limit, extra...)
 }
@@ -337,7 +337,7 @@ func TestCommentsCreateSendsTheFileUnchanged(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runAtlio(t, "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
+	run, err := runCLI(t, "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -360,7 +360,7 @@ func TestCommentsCreateReadsTheBodyFromStdin(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	if _, err := runAtlioWithStdin(t, body, "comments", "create", testPageURL, "-f", "-"); err != nil {
+	if _, err := runCLIWithStdin(t, body, "comments", "create", testPageURL, "-f", "-"); err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
 	if got := commentBodySent(t, raw); got != body {
@@ -377,7 +377,7 @@ func TestCommentsCreateAcceptsABarePageID(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runAtlio(t, "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
+	run, err := runCLI(t, "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -396,7 +396,7 @@ func TestCommentsCreateJSONOutput(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runAtlio(t, "comments", "create", testPageURL,
+	run, err := runCLI(t, "comments", "create", testPageURL,
 		"-f", writeCommentFile(t, "<p>note</p>"), "--format", "json")
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
@@ -424,7 +424,7 @@ func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
 	startAPI(t, neverCalled(t, "despite an unreadable body file"))
 
 	missing := filepath.Join(t.TempDir(), "missing.xml")
-	if _, err := runAtlio(t, "comments", "create", testPageURL, "-f", missing); err == nil {
+	if _, err := runCLI(t, "comments", "create", testPageURL, "-f", missing); err == nil {
 		t.Error("comments create error = nil for a missing file, want an error")
 	}
 }

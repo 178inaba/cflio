@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (atlioRun, error) {
+func runChildrenCmd(t *testing.T, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
 	return runLimitCmd(t, "children", arg, limit, extra...)
 }

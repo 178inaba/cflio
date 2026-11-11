@@ -89,11 +89,11 @@ func webUIFor(title string) string {
 	return "/spaces/DEV/pages/123456/" + strings.ReplaceAll(title, " ", "+")
 }
 
-func runUpdate(t *testing.T, path string, extra ...string) (atlioRun, error) {
+func runUpdate(t *testing.T, path string, extra ...string) (cliRun, error) {
 	t.Helper()
 
 	args := []string{"update", "-f", path}
-	return runAtlio(t, append(args, extra...)...)
+	return runCLI(t, append(args, extra...)...)
 }
 
 func TestUpdateSendsTheFileBackUnchanged(t *testing.T) {
@@ -553,7 +553,7 @@ func TestUpdateKeepsTheRecordedSubtype(t *testing.T) {
 	stub := &updateStub{serverVersion: 7}
 	startAPI(t, stub.handler(t))
 
-	if _, err := runAtlio(t, "update", "-f", file); err != nil {
+	if _, err := runCLI(t, "update", "-f", file); err != nil {
 		t.Fatalf("update error = %v", err)
 	}
 

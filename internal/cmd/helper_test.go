@@ -73,22 +73,22 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
-// atlioRun is what one invocation of the command tree produced. The two
+// cliRun is what one invocation of the command tree produced. The two
 // streams are kept apart so a test can assert which one a message reached.
-type atlioRun struct {
+type cliRun struct {
 	stdout, stderr string
 }
 
-// runAtlio builds a fresh command tree and runs args through it, returning
+// runCLI builds a fresh command tree and runs args through it, returning
 // what it wrote. Every case gets its own tree, so no flag value survives
 // into the next test.
-func runAtlio(t *testing.T, args ...string) (atlioRun, error) {
+func runCLI(t *testing.T, args ...string) (cliRun, error) {
 	t.Helper()
-	return runAtlioWithStdin(t, "", args...)
+	return runCLIWithStdin(t, "", args...)
 }
 
-// runAtlioWithStdin is runAtlio for the commands that prompt.
-func runAtlioWithStdin(t *testing.T, stdin string, args ...string) (atlioRun, error) {
+// runCLIWithStdin is runCLI for the commands that prompt.
+func runCLIWithStdin(t *testing.T, stdin string, args ...string) (cliRun, error) {
 	t.Helper()
 
 	root, res := newRootCmd(&globalFlags{})
@@ -112,7 +112,7 @@ func runAtlioWithStdin(t *testing.T, stdin string, args ...string) (atlioRun, er
 		// error rather than out of band (see runResult.unknownCommand).
 		err = res.unknownCommand
 	}
-	return atlioRun{stdout: out.String(), stderr: errOut.String()}, err
+	return cliRun{stdout: out.String(), stderr: errOut.String()}, err
 }
 
 // runLimitCmd runs one of the listing commands with an explicit --limit. The
@@ -121,10 +121,10 @@ func runAtlioWithStdin(t *testing.T, stdin string, args ...string) (atlioRun, er
 //
 // --limit=N rather than --limit N: the range check is tested with negative
 // values, which would otherwise be read as flags rather than as the value.
-func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (atlioRun, error) {
+func runLimitCmd(t *testing.T, name, arg string, limit int, extra ...string) (cliRun, error) {
 	t.Helper()
 
 	args := append(strings.Fields(name), fmt.Sprintf("--limit=%d", limit))
 	args = append(args, extra...)
-	return runAtlio(t, append(args, arg)...)
+	return runCLI(t, append(args, arg)...)
 }

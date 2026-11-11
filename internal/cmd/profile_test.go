@@ -12,7 +12,7 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
-	run, err := runAtlio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
@@ -39,7 +39,7 @@ func TestProfileListShowsSitesAndMarksTheDefault(t *testing.T) {
 func TestProfileListWithoutProfilesPointsAtAuthLogin(t *testing.T) {
 	isolateConfig(t)
 
-	run, err := runAtlio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
@@ -52,7 +52,7 @@ func TestProfileListNeverPrintsTokens(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	run, err := runAtlio(t, "profile", "list")
+	run, err := runCLI(t, "profile", "list")
 	if err != nil {
 		t.Fatalf("profile list error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestProfileUseSwitchesTheDefault(t *testing.T) {
 	seedProfile(t, "example", testSite)
 	seedProfile(t, "other", "https://other.atlassian.net/wiki")
 
-	if _, err := runAtlio(t, "profile", "use", "other"); err != nil {
+	if _, err := runCLI(t, "profile", "use", "other"); err != nil {
 		t.Fatalf("profile use error = %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestProfileUseUnknownProfileListsTheRegisteredOnes(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 
-	_, err := runAtlio(t, "profile", "use", "nope")
+	_, err := runCLI(t, "profile", "use", "nope")
 	if err == nil {
 		t.Fatal("profile use error = nil, want an error")
 	}

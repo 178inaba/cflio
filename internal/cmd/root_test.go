@@ -167,7 +167,7 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateConfig(t)
 
-			_, err := runAtlio(t, tt.args...)
+			_, err := runCLI(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -326,7 +326,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			run, err := runAtlio(t, tt.args...)
+			run, err := runCLI(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -344,7 +344,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 // TestGroupCommandWithoutArgumentsPrintsHelp pins the invocations the report
 // above must leave alone: a group command with nothing after it is a request
 // for help, not a typo. A run that ends without an error is one the help
-// function recorded nothing for, since runAtlio merges the two.
+// function recorded nothing for, since runCLI merges the two.
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	for _, name := range []string{"", "attachments", "comments", "auth", "profile", "completion"} {
 		t.Run("atlio "+name, func(t *testing.T) {
@@ -353,7 +353,7 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 				args = append(args, name)
 			}
 
-			run, err := runAtlio(t, args...)
+			run, err := runCLI(t, args...)
 			if err != nil {
 				t.Fatalf("%v error = %v, want nil", args, err)
 			}
@@ -366,7 +366,7 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 
 			// Both spellings render the same help, so pinning them together
 			// keeps a change to either from passing unnoticed.
-			withFlag, err := runAtlio(t, append(args, "--help")...)
+			withFlag, err := runCLI(t, append(args, "--help")...)
 			if err != nil {
 				t.Fatalf("%v --help error = %v, want nil", args, err)
 			}
@@ -385,7 +385,7 @@ func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 // argument check decides them either way. Asking for help is a request for
 // help even when the arguments carry a typo alongside it.
 func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
-	run, err := runAtlio(t, "auth", "bogus", "--help")
+	run, err := runCLI(t, "auth", "bogus", "--help")
 	if err != nil {
 		t.Fatalf("atlio auth bogus --help error = %v, want nil", err)
 	}
@@ -401,7 +401,7 @@ func TestHelpFlagWinsOverAnUnknownSubcommand(t *testing.T) {
 // root, Find fails before the help function is ever reached, so the error
 // comes back from Execute itself rather than travelling beside it.
 func TestRootRejectsAnUnknownCommand(t *testing.T) {
-	run, err := runAtlio(t, "bogus")
+	run, err := runCLI(t, "bogus")
 	if err == nil {
 		t.Fatal("atlio bogus error = nil, want an error")
 	}
@@ -480,7 +480,7 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			run, err := runAtlio(t, tt.args...)
+			run, err := runCLI(t, tt.args...)
 			if err == nil {
 				t.Fatalf("%v error = nil, want an error", tt.args)
 			}
@@ -502,7 +502,7 @@ func TestHelpRejectsAnUnresolvableTopic(t *testing.T) {
 func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 	for _, topic := range [][]string{nil, {"auth"}, {"auth", "login"}, {"read"}} {
 		t.Run("atlio help "+strings.Join(topic, " "), func(t *testing.T) {
-			run, err := runAtlio(t, append([]string{"help"}, topic...)...)
+			run, err := runCLI(t, append([]string{"help"}, topic...)...)
 			if err != nil {
 				t.Fatalf("help %v error = %v, want nil", topic, err)
 			}
@@ -510,7 +510,7 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 				t.Errorf("help %v stderr = %q, want nothing", topic, run.stderr)
 			}
 
-			withFlag, err := runAtlio(t, append(topic, "--help")...)
+			withFlag, err := runCLI(t, append(topic, "--help")...)
 			if err != nil {
 				t.Fatalf("%v --help error = %v, want nil", topic, err)
 			}
@@ -535,7 +535,7 @@ func TestHelpTopicCompletion(t *testing.T) {
 		"help", "plantuml", "profile", "read", "search", "update",
 	}
 
-	run, err := runAtlio(t, "__complete", "help", "")
+	run, err := runCLI(t, "__complete", "help", "")
 	if err != nil {
 		t.Fatalf("atlio __complete help \"\" error = %v, want nil", err)
 	}
@@ -594,7 +594,7 @@ func TestResolveVersion(t *testing.T) {
 // resolveVersion could be correct and still be reported by nothing, since it is
 // the Version field being set that makes cobra register the flag at all.
 func TestVersionFlag(t *testing.T) {
-	run, err := runAtlio(t, "--version")
+	run, err := runCLI(t, "--version")
 	if err != nil {
 		t.Fatalf("atlio --version error = %v, want nil", err)
 	}

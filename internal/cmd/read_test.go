@@ -34,7 +34,7 @@ func pageResponse(t *testing.T, body, webui string) string {
 
 // runRead runs `read`, leaving --output off when outPath is empty so the
 // default naming is exercised.
-func runRead(t *testing.T, arg, outPath string, extra ...string) (atlioRun, error) {
+func runRead(t *testing.T, arg, outPath string, extra ...string) (cliRun, error) {
 	t.Helper()
 
 	args := []string{"read"}
@@ -42,7 +42,7 @@ func runRead(t *testing.T, arg, outPath string, extra ...string) (atlioRun, erro
 		args = append(args, "--output", outPath)
 	}
 	args = append(args, extra...)
-	return runAtlio(t, append(args, arg)...)
+	return runCLI(t, append(args, arg)...)
 }
 
 func TestReadWritesTheBodyByteForByte(t *testing.T) {
