@@ -47,7 +47,7 @@ homebrew_casks:
       post:
         # The binary is neither signed nor notarized, so without this Gatekeeper
         # refuses to run what the cask just installed.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cflio"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/cflio"]
           end
