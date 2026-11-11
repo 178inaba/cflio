@@ -74,7 +74,12 @@ you typed, not as formatting.
 ` + "`-f -`" + ` reads the body from stdin instead of from a file.
 
 Top-level comments only. This command posts no replies, and no inline
-comments, which have to be anchored to a span of the body.`,
+comments, which have to be anchored to a span of the body.
+
+Exit code 124 does not mean the comment was not posted: the deadline can
+expire after the server has posted it. Before running create again, check
+with ` + "`atlio confluence comments list <page>`" + `; if the comment is there,
+nothing is left to do.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommentsCreate(cmd, args, g, file, outFormat)

@@ -66,6 +66,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"confluence":                      false,
 		"confluence read":                 true,
 		"confluence update":               true,
+		"confluence create":               true,
 		"confluence search":               true,
 		"confluence children":             true,
 		"confluence comments":             false,
@@ -149,6 +150,10 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 			// reported. Supplying -f here would drop that guarantee.
 			name: "update, before cobra reports a missing required flag",
 			args: []string{"confluence", "update", "--format", "bogus"},
+		},
+		{
+			name: "create, before cobra reports a missing required flag",
+			args: []string{"confluence", "create", "--format", "bogus"},
 		},
 		{
 			name: "plantuml list, before cobra reports a missing required flag",
