@@ -371,7 +371,7 @@ func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (
 
 // Attachment is one file attached to a page. Title is the filename, which is
 // what `confluence attachments download` matches its glob against. DownloadLink
-// is relative to the site base URL, in the form
+// is relative to the client's base URL (<site>/wiki), in the form
 // /rest/api/content/{pageID}/child/attachment/{attachmentID}/download.
 //
 // The API's own attachment id is deliberately not modelled: DownloadLink

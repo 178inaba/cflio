@@ -36,8 +36,9 @@ type Client struct {
 // Option configures a Client constructed by New.
 type Option func(*Client)
 
-// WithHTTPClient overrides the HTTP client. Tests use this to point at an
-// httptest server; production callers should leave it unset.
+// WithHTTPClient overrides the HTTP client. Tests use this to answer requests
+// from an httptest server or a RoundTripper of their own; production callers
+// should leave it unset.
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }

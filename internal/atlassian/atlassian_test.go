@@ -360,8 +360,12 @@ func TestDownloadSendsCredentialsOnlyToTheSite(t *testing.T) {
 			if len(transport.seen) != 1 {
 				t.Fatalf("requests = %d, want 1", len(transport.seen))
 			}
-			if got := transport.seen[0].Header.Get("Authorization"); (got == wantAuth) != tt.wantAuth {
-				t.Errorf("Authorization = %q, want sent = %v (host %s)", got, tt.wantAuth, transport.seen[0].URL.Host)
+			want := ""
+			if tt.wantAuth {
+				want = wantAuth
+			}
+			if got := transport.seen[0].Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q (host %s)", got, want, transport.seen[0].URL.Host)
 			}
 		})
 	}

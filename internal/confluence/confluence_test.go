@@ -457,7 +457,7 @@ func TestDownloadAttachmentStreamsTheBodyUnchanged(t *testing.T) {
 	}
 
 	if gotPath != "/wiki/rest/api/content/10/child/attachment/att1/download" {
-		t.Errorf("path = %q, want the download link joined onto the site base", gotPath)
+		t.Errorf("path = %q, want the download link joined onto the base URL", gotPath)
 	}
 	if !bytes.Equal(buf.Bytes(), pngBytes) {
 		t.Errorf("body = %v, want the served bytes verbatim %v", buf.Bytes(), pngBytes)
