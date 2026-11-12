@@ -14,6 +14,7 @@ import (
 	"github.com/178inaba/atlio/internal/atlassian"
 	"github.com/178inaba/atlio/internal/config"
 	"github.com/178inaba/atlio/internal/confluence"
+	"github.com/178inaba/atlio/internal/jira"
 )
 
 const (
@@ -100,6 +101,12 @@ func startAPI(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 		return confluence.New(site, email, token, atlassian.WithHTTPClient(httpClient))
 	}
 	t.Cleanup(func() { confluenceFactory = original })
+
+	originalJira := jiraFactory
+	jiraFactory = func(site, email, token string) (*jira.Client, error) {
+		return jira.New(site, email, token, atlassian.WithHTTPClient(httpClient))
+	}
+	t.Cleanup(func() { jiraFactory = originalJira })
 
 	return srv
 }
