@@ -594,7 +594,7 @@ func TestCreatingCommandsDocumentTheCheckAfterATimeout(t *testing.T) {
 		},
 		{
 			args: []string{"confluence", "comments", "create", "--help"},
-			want: []string{"124", "confluence comments list"},
+			want: []string{"124", "confluence comments list", "--limit"},
 		},
 	}
 

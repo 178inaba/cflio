@@ -45,8 +45,9 @@ too: the sidecar has to be written beside a file.
 Exit code 124 does not mean the page was not created: the deadline can
 expire after the server has made it. Running create again then fails on the
 duplicate title rather than making a second page, and still leaves no
-checkout -- so a duplicate-title error right after a 124 means the first
-create landed. Before running create again, check with
+checkout. That error alone does not say the first create landed: the title
+may already be taken elsewhere in the space. Before running create again,
+check with
 ` + "`atlio confluence children <parent>`" + ` (raise --limit if it says more child
 pages are available); if the page is there, run ` + "`atlio confluence read`" + ` on
 it to get a checkout instead.`,

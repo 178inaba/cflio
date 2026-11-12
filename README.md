@@ -362,12 +362,13 @@ A command that creates something must not be re-run blindly after a `124`: the d
 after the server has already created the thing. A re-run of `confluence comments create` then posts
 a second comment. A re-run of `confluence create` makes no second page — Confluence refuses a title
 the space already holds — but fails with the duplicate-title `400` and still leaves you without a
-checkout, so a duplicate-title error right after a `124` means the first create landed. Check
-whether the thing exists first, and re-run only if it does not — for `confluence create`, look for
-the page with `atlio confluence children <parent>` (raising `--limit` if it says more child pages
-are available, since it lists the oldest first) and, if it is there, run `confluence read` on it to
-get a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`,
-and if the comment is there nothing is left to do. `confluence update` needs no such check: its
+checkout. That `400` alone does not say the first create landed: the deadline may have expired
+before anything was sent, and the title may already be taken elsewhere in the space. Check whether
+the thing exists first, and re-run only if it does not — for `confluence create`, look for the page
+with `atlio confluence children <parent>` (raising `--limit` if it says more child pages are
+available, since it lists the oldest first) and, if it is there, run `confluence read` on it to get
+a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`
+(raising `--limit` the same way), and if the comment is there nothing is left to do. `confluence update` needs no such check: its
 version lock turns a re-run after a write that did land into the "changed since it was read" refusal
 rather than a second write.
 
