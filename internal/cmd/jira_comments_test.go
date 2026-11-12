@@ -173,29 +173,52 @@ func TestJiraCommentsListJSON(t *testing.T) {
 		t.Fatalf("jira comments list error = %v", err)
 	}
 
-	var got map[string]any
+	// The second comment has no author, and its updated_at equals its
+	// created_at, so both keys are left out.
+	want := `{
+  "comments": [
+    {
+      "id": "10",
+      "author": "Grace",
+      "created_at": "2026-01-01T00:00:00.000+0000",
+      "updated_at": "2026-01-02T00:00:00.000+0000",
+      "body": "Ask @Ada\n\n- first"
+    },
+    {
+      "id": "11",
+      "created_at": "2026-01-03T00:00:00.000+0000",
+      "body": "Unedited"
+    }
+  ]
+}
+`
+	if run.stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", run.stdout, want)
+	}
+}
+
+func TestJiraCommentsListJSONCarriesTheLimitNotice(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	serveComments(t, numberedComments(5), 5, 100)
+
+	run, err := runLimitCmd(t, "jira comments list", "KAN-1", 3, "--format", "json")
+	if err != nil {
+		t.Fatalf("jira comments list error = %v", err)
+	}
+
+	var got struct {
+		Comments []jiraCommentItem `json:"comments"`
+		Notice   string            `json:"notice"`
+	}
 	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, run.stdout)
 	}
-	want := map[string]any{
-		"comments": []any{
-			map[string]any{
-				"id":         "10",
-				"author":     "Grace",
-				"created_at": "2026-01-01T00:00:00.000+0000",
-				"updated_at": "2026-01-02T00:00:00.000+0000",
-				"body":       "Ask @Ada\n\n- first",
-			},
-			// No author, and updated_at left out where it equals created_at.
-			map[string]any{
-				"id":         "11",
-				"created_at": "2026-01-03T00:00:00.000+0000",
-				"body":       "Unedited",
-			},
-		},
+	if len(got.Comments) != 3 {
+		t.Errorf("got %d comments, want 3", len(got.Comments))
 	}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Errorf("JSON =\n%v\nwant\n%v", got, want)
+	if want := "Showing 3 of 5 comments; raise --limit to fetch the rest."; got.Notice != want {
+		t.Errorf("notice = %q, want %q", got.Notice, want)
 	}
 }
 
