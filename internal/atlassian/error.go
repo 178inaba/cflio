@@ -10,8 +10,8 @@ import (
 )
 
 // ErrSentInFull marks a request that failed after its whole body was sent
-// without a non-2xx response to settle it — no response at all, or a 2xx whose
-// body could not be read or parsed — so the server may have carried it out. It
+// without a 4xx refusing it — no response at all, a 2xx whose body could not be
+// read or parsed, or a 5xx — so the server may have carried it out. It
 // is wrapped alongside the failure rather than in place of it, so an expired
 // deadline still reads as context.DeadlineExceeded.
 var ErrSentInFull = errors.New("the whole request was sent before it failed, so the server may have carried it out")

@@ -307,11 +307,11 @@ for a large file. The site's attachment size limit is not checked locally; a fil
 the server. The output lists each attachment with the media type Confluence read it as, its size,
 and its version: `1` for a new attachment, higher for a replaced one.
 
-An upload that fails after the whole request was sent — typically the deadline expiring while the
-response is awaited — may have been stored anyway, and its error says so. Check with
-`confluence attachments list` before running it again: without `--replace` a repeat is refused if the
-files did land, and with `--replace` it adds another, identical version. The exit code is still the
-one the failure calls for, `124` for the deadline.
+An upload that fails after the whole request was sent — the deadline expiring while the response is
+awaited, or a `5xx` answer — may have been stored anyway, and its error says so; only a `4xx` says
+Confluence refused it. Check with `confluence attachments list` before running it again: without
+`--replace` a repeat is refused if the files did land, and with `--replace` it adds another,
+identical version. The exit code is still the one the failure calls for, `124` for the deadline.
 
 ### PlantUML diagrams
 

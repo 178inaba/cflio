@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -499,9 +500,9 @@ func TestSendMultipartReturnsTheAPIErrorWhenTheServerAnswersWithoutReading(t *te
 	if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != http.StatusBadRequest {
 		t.Fatalf("SendMultipart() error = %v, want an *APIError with status 400", err)
 	}
-	// A response says what happened, so nothing about the outcome is unknown.
+	// A 4xx refuses the request, so nothing about the outcome is unknown.
 	if errors.Is(err, ErrSentInFull) {
-		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull once the server answered", err)
+		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull once the server refused it", err)
 	}
 }
 
@@ -596,5 +597,39 @@ func TestSendMultipartMarksAFailureAfterTheWholeBodyWasSent(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("SendMultipart() error = %v, want it to still wrap context.DeadlineExceeded", err)
+	}
+}
+
+// TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest covers the
+// responses to a body the server read to its end: a 4xx refuses the request,
+// while no 5xx definition says whether the request was carried out.
+func TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		unknown bool
+	}{
+		{http.StatusBadRequest, false},
+		{http.StatusNotFound, false},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+		{http.StatusGatewayTimeout, true},
+	} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(tc.status)
+			})
+
+			err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
+				writeFilePart("a.png", fileBytes), nil)
+
+			if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != tc.status {
+				t.Fatalf("SendMultipart() error = %v, want an *APIError with status %d", err, tc.status)
+			}
+			if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
+				t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
+			}
+		})
 	}
 }
