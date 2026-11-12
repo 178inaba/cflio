@@ -18,7 +18,7 @@ func newJiraCmd(g *globalFlags) *cobra.Command {
 		Use:   "jira",
 		Short: "Read Jira issues",
 	}
-	cmd.AddCommand(newJiraIssueCmd(g))
+	cmd.AddCommand(newJiraIssueCmd(g), newJiraSearchCmd(g))
 	return cmd
 }
 

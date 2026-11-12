@@ -84,6 +84,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"jira":                            false,
 		"jira issue":                      false,
 		"jira issue read":                 true,
+		"jira search":                     true,
 		"auth":                            false,
 		"auth login":                      false,
 		"profile":                         false,
@@ -162,6 +163,10 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		{
 			name: "jira issue read",
 			args: []string{"jira", "issue", "read", "--format", "bogus", "KAN-1"},
+		},
+		{
+			name: "jira search",
+			args: []string{"jira", "search", "--format", "bogus", "project = KAN"},
 		},
 		{
 			name: "plantuml list, before cobra reports a missing required flag",
