@@ -226,6 +226,63 @@ func (c *Client) Search(ctx context.Context, jql string, limit int) ([]SearchIss
 	}
 }
 
+// Comment is one comment on an issue.
+type Comment struct {
+	ID string `json:"id"`
+	// Author is nil for an anonymous comment and for one whose author Jira
+	// no longer reports.
+	Author *Person `json:"author"`
+	// Body is the comment's ADF document as the API returned it.
+	Body    jsontext.Value `json:"body"`
+	Created string         `json:"created"`
+	Updated string         `json:"updated"`
+}
+
+// defaultCommentsPageSize is the page size Jira documents as maxResults'
+// default, not a documented maximum. A server that returns fewer loses
+// nothing: startAt advances by what was received.
+const defaultCommentsPageSize = 100
+
+// Comments reads an issue's comments, oldest first, up to limit, and the total
+// Jira reports for the issue.
+func (c *Client) Comments(ctx context.Context, key string, limit int) ([]Comment, int, error) {
+	path := "/rest/api/3/issue/" + url.PathEscape(key) + "/comment"
+	var all []Comment
+	total := 0
+
+	for len(all) < limit {
+		query := url.Values{
+			"orderBy":    {"created"},
+			"startAt":    {strconv.Itoa(len(all))},
+			"maxResults": {strconv.Itoa(min(limit-len(all), defaultCommentsPageSize))},
+		}
+		var page struct {
+			Comments []Comment `json:"comments"`
+			Total    int       `json:"total"`
+		}
+		if err := c.api.Get(ctx, path, query, &page); err != nil {
+			return nil, 0, err
+		}
+
+		total = page.Total
+		all = append(all, page.Comments...)
+		if len(page.Comments) == 0 {
+			break
+		}
+		// A total of zero is a response that left it out, not an issue with
+		// no comments — that one came back as an empty page above — so it
+		// cannot end the listing.
+		if total > 0 && len(all) >= total {
+			break
+		}
+	}
+
+	if len(all) > limit {
+		all = all[:limit]
+	}
+	return all, total, nil
+}
+
 // Field is one field of an issue with its value as the API returned it.
 type Field struct {
 	ID    string
