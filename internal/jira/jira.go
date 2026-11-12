@@ -164,6 +164,68 @@ func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	return issue, nil
 }
 
+// searchFields names the fields Search asks for: what `jira search` prints.
+// Without them the endpoint returns issue IDs only.
+const searchFields = "summary,issuetype,status,assignee,updated"
+
+// maxSearchPageSize is the most issues Search asks for in one request. Jira
+// may still return fewer, so paging is driven by the token, not by this.
+const maxSearchPageSize = 100
+
+// SearchIssue is one issue as Search found it: its key and the fields
+// searchFields asks for.
+type SearchIssue struct {
+	Key    string `json:"key"`
+	Fields struct {
+		Summary   string  `json:"summary"`
+		IssueType Named   `json:"issuetype"`
+		Status    Named   `json:"status"`
+		Assignee  *Person `json:"assignee"`
+		Updated   string  `json:"updated"`
+	} `json:"fields"`
+}
+
+// Search returns up to limit issues the JQL query matches, in the order Jira
+// returns them, and whether more matched beyond limit. The response carries
+// no total, so one issue past limit is asked for to tell a listing cut short
+// from one that ended exactly there.
+func (c *Client) Search(ctx context.Context, jql string, limit int) ([]SearchIssue, bool, error) {
+	var all []SearchIssue
+	token := ""
+	for {
+		query := url.Values{
+			"jql":        {jql},
+			"fields":     {searchFields},
+			"maxResults": {strconv.Itoa(min(limit-len(all)+1, maxSearchPageSize))},
+		}
+		if token != "" {
+			query.Set("nextPageToken", token)
+		}
+
+		var page struct {
+			Issues        []SearchIssue `json:"issues"`
+			NextPageToken string        `json:"nextPageToken"`
+		}
+		if err := c.api.Get(ctx, "/rest/api/3/search/jql", query, &page); err != nil {
+			return nil, false, err
+		}
+
+		for _, issue := range page.Issues {
+			if len(all) == limit {
+				return all, true, nil
+			}
+			all = append(all, issue)
+		}
+
+		// The last page omits the token or sends it as null; v2 decodes both
+		// as the empty string.
+		token = page.NextPageToken
+		if token == "" {
+			return all, false, nil
+		}
+	}
+}
+
 // Field is one field of an issue with its value as the API returned it.
 type Field struct {
 	ID    string

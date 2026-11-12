@@ -12,8 +12,8 @@ conversion that macros do not survive.
 `atlio` moves the round-trip onto the filesystem: `confluence read` downloads a page's body to a
 local file, the agent edits that file with its regular file-editing tools, and `confluence update`
 writes it back. Only the diff costs tokens. Jira issues travel the same way in one direction:
-`jira issue read` writes an issue's rich-text fields to a file and prints its metadata. Jira is
-read-only.
+`jira issue read` writes an issue's rich-text fields to a file and prints its metadata, and
+`jira search` lists the issues a JQL query matches. Jira is read-only.
 
 - **The body never passes through the model.** Bodies go to and from files; stdout carries metadata
   and exploration results only.
@@ -127,6 +127,9 @@ atlio confluence update -f page.xml
 # Read a Jira issue: its rich-text fields as Markdown, its metadata on stdout
 atlio jira issue read https://example.atlassian.net/browse/KAN-1 --markdown
 atlio jira issue read KAN-1
+
+# Find issues with JQL
+atlio jira search 'project = KAN and status != Done order by updated desc'
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
@@ -417,14 +420,24 @@ An issue is named by its key (`KAN-1`, any case) or by a URL copied from the bro
 
 A moved issue is answered under its new key, and the output and the default filename use that key.
 
+### Searching Jira
+
+`jira search` lists the issues a JQL query matches — key, summary, type, status, assignee, last
+update and URL — up to `--limit` (20 by default). The query goes to Jira as typed; atlio neither
+checks nor rewrites it.
+
+A query needs at least one search restriction. Jira rejects one that only orders, such as
+`order by created desc` alone, and the error carries Jira's own message. Jira reports no total for
+a search, so a listing cut short by `--limit` says only that more issues are available.
+
 ### Multiple sites
 
 A command given a page or issue URL picks the matching profile automatically, and
 `confluence update` does the same from the URL its sidecar recorded. A URL from an unregistered site
-fails immediately rather than falling back to the default profile. `confluence search`, and commands
-given a bare page ID or issue key, use the default profile; pass `--profile <name>` to choose
-another, or `atlio profile use <name>` to change the default. An explicit `--profile` that disagrees
-with the URL's site is an error rather than a silent choice.
+fails immediately rather than falling back to the default profile. `confluence search`,
+`jira search`, and commands given a bare page ID or issue key, use the default profile; pass
+`--profile <name>` to choose another, or `atlio profile use <name>` to change the default. An
+explicit `--profile` that disagrees with the URL's site is an error rather than a silent choice.
 
 ### Timeouts and exit codes
 
