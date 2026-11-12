@@ -473,8 +473,7 @@ func writeReadResult(cmd *cobra.Command, outFormat format.Format, result readRes
 		fmt.Fprintf(&out, "Sidecar:  %s\n", result.SidecarPath)
 	}
 	if result.UnsupportedCount > 0 {
-		fmt.Fprintf(&out, "Degraded: %d (%s)\n",
-			result.UnsupportedCount, strings.Join(result.Unsupported, ", "))
+		out.WriteString(degradedLine(result.Unsupported, result.UnsupportedCount))
 	}
 	// "not looked up" rather than "lookup failed": the same count covers the
 	// references that were never queried at all.

@@ -163,7 +163,7 @@ func writeJiraComments(cmd *cobra.Command, outFormat format.Format, payload jira
 		out.WriteString("\n" + payload.Notice + "\n")
 	}
 	if payload.UnsupportedCount > 0 {
-		fmt.Fprintf(&out, "\nDegraded: %d (%s)\n", payload.UnsupportedCount, strings.Join(payload.Unsupported, ", "))
+		out.WriteString("\n" + degradedLine(payload.Unsupported, payload.UnsupportedCount))
 	}
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())

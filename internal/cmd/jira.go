@@ -319,7 +319,7 @@ func writeJiraIssueResult(cmd *cobra.Command, outFormat format.Format, result ji
 		line("Body", fmt.Sprintf("%s (%d bytes)", b.BodyPath, b.Bytes))
 	}
 	if result.UnsupportedCount > 0 {
-		fmt.Fprintf(&out, "Degraded: %d (%s)\n", result.UnsupportedCount, strings.Join(result.Unsupported, ", "))
+		out.WriteString(degradedLine(result.Unsupported, result.UnsupportedCount))
 	}
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), out.String())
