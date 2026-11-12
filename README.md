@@ -553,7 +553,8 @@ docker compose run --rm lint --fix
   replies; replies to replies are not fetched. Its authors appear as Atlassian account IDs, and
   references inside a comment body are not resolved — only `confluence read --markdown` resolves
   mentions and page links. `jira comments list` shows display names, and a comment with no author
-  as `Anonymous`.
+  as `Anonymous`; it has no unconverted form, since `jira issue read` writes the issue's own fields
+  and not its comments.
 - **Converted output never feeds an update.** Every converted output — comment bodies,
   `confluence read --markdown` and `jira issue read --markdown` — is for reading only. A body that
   will be written back is never converted.
