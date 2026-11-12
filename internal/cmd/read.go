@@ -104,20 +104,15 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 			"so it cannot link the downloaded files")
 	}
 
-	ref, err := pageref.Parse(args[0])
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	page, err := client.GetPage(ctx, ref.PageID, true)
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
+	if err != nil {
+		return err
+	}
+
+	page, err := client.GetPage(ctx, pageID, true)
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
-	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
@@ -112,26 +111,21 @@ func runCreatePage(cmd *cobra.Command, g *globalFlags, parent, title, file strin
 			"or pass a file with no sidecar to create a new one", sidecar.Path(file), file)
 	}
 
-	ref, err := pageref.Parse(parent)
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	parentPage, err := client.GetPage(ctx, ref.PageID, false)
+	client, pageID, err := resolvePage(ctx, parent, g.profile)
+	if err != nil {
+		return err
+	}
+
+	parentPage, err := client.GetPage(ctx, pageID, false)
 	if err != nil {
 		return err
 	}
 
 	created, err := client.CreatePage(ctx, confluence.NewCreatePageRequest(
-		parentPage.SpaceID, ref.PageID, title, string(body)))
+		parentPage.SpaceID, pageID, title, string(body)))
 	if err != nil {
 		return err
 	}

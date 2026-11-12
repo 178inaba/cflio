@@ -643,6 +643,22 @@ func TestAttachmentsUploadAcceptsABarePageID(t *testing.T) {
 	}
 }
 
+func TestAttachmentsUploadAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	requests, handler := uploadAPI(t)
+	startAPI(t, withSpaceLookup(t, handler))
+
+	file := writeTempFile(t, "a.png", string(pngBytes))
+
+	if _, err := runCLI(t, "confluence", "attachments", "upload", testSpaceOverviewURL, file); err != nil {
+		t.Fatalf("attachments upload error = %v", err)
+	}
+	if len(*requests) != 1 || (*requests)[0].path != uploadPath {
+		t.Errorf("requests = %+v, want one to the homepage's %s", *requests, uploadPath)
+	}
+}
+
 func TestAttachmentsUploadPointsAtReplaceWhenThePostIsRefused(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
@@ -847,5 +863,37 @@ func TestAttachmentsUploadSaysAServerErrorAfterTheWholeBodyMayHaveLanded(t *test
 	}
 	if strings.Contains(err.Error(), "--replace") {
 		t.Errorf("error = %v, want no --replace hint for a 5xx", err)
+	}
+}
+
+func TestAttachmentsListAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	_, handler := attachmentsAPI(t, attachment{title: "logo.png", mediaType: "image/png", size: 3})
+	startAPI(t, withSpaceLookup(t, handler))
+
+	run, err := runAttachmentsListCmd(t, testSpaceOverviewURL, 100)
+	if err != nil {
+		t.Fatalf("attachments list error = %v", err)
+	}
+	if !strings.Contains(run.stdout, "logo.png") {
+		t.Errorf("output = %q, want the homepage's attachments", run.stdout)
+	}
+}
+
+func TestAttachmentsDownloadAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	downloads, handler := attachmentsAPI(t, attachment{title: "logo.png", mediaType: "image/png", size: len(pngBytes)})
+	startAPI(t, withSpaceLookup(t, handler))
+
+	if _, err := runCLI(t, "confluence", "attachments", "download", testSpaceOverviewURL,
+		"--pattern", "*.png", "-o", t.TempDir()); err != nil {
+		t.Fatalf("attachments download error = %v", err)
+	}
+	if *downloads != 1 {
+		t.Errorf("downloads = %d, want the homepage's one attachment", *downloads)
 	}
 }

@@ -417,8 +417,8 @@ func TestReadMarkdownResolvesMentionsAndPageLinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pageref.Parse(%q) error = %v, want the emitted link to be readable", target, err)
 	}
-	if ref.PageID != "777" {
-		t.Errorf("parsed page id = %q, want the resolved page 777", ref.PageID)
+	if ref.Target != pageref.PageID("777") {
+		t.Errorf("parsed target = %#v, want the resolved page 777", ref.Target)
 	}
 }
 

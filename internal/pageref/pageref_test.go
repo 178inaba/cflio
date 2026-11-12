@@ -14,32 +14,32 @@ func TestParse(t *testing.T) {
 		{
 			name: "bare page id",
 			arg:  "123456",
-			want: Ref{PageID: "123456"},
+			want: Ref{Target: PageID("123456")},
 		},
 		{
 			name: "browser url with the title slug",
 			arg:  "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Some+Page+Title",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		{
 			name: "url without the title slug",
 			arg:  "https://example.atlassian.net/wiki/spaces/DEV/pages/123456",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		{
 			name: "url with a trailing slash",
 			arg:  "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		{
 			name: "url with a query string and fragment",
 			arg:  "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title?focusedCommentId=9#heading",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		{
 			name: "personal space url",
 			arg:  "https://example.atlassian.net/wiki/spaces/~1234abcd/pages/999/Notes",
-			want: Ref{PageID: "999", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("999")},
 		},
 		{
 			// The form PageURL and ChildPageURL fall back to, so
@@ -47,12 +47,12 @@ func TestParse(t *testing.T) {
 			// space key.
 			name: "page-id query form",
 			arg:  "https://example.atlassian.net/wiki/pages/viewpage.action?pageId=123456",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		{
 			name: "surrounding whitespace is tolerated",
 			arg:  "  https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title \n",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
 		},
 		// The tokens below were encoded independently of the decoder under
 		// test — a round-trip would only confirm it agrees with itself — and
@@ -60,28 +60,71 @@ func TestParse(t *testing.T) {
 		{
 			name: "short link",
 			arg:  "https://example.atlassian.net/wiki/x/OT",
-			want: Ref{PageID: "12345", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("12345")},
 		},
 		{
 			name: "short link whose page id does not fit in 32 bits",
 			arg:  "https://example.atlassian.net/wiki/x/ywT7cR8B",
-			want: Ref{PageID: "1234567890123", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("1234567890123")},
 		},
 		{
 			name: "short link using both substituted characters",
 			arg:  "https://example.atlassian.net/wiki/x/-_d2SBc",
-			want: Ref{PageID: "99999999999", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("99999999999")},
 		},
 		{
 			// An ID whose top byte is set leaves the trim nothing to take.
 			name: "short link whose token is as long as they get",
 			arg:  "https://example.atlassian.net/wiki/x/FYHpffQQIhE",
-			want: Ref{PageID: "1234567890123456789", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("1234567890123456789")},
 		},
 		{
 			name: "short link with a trailing slash",
 			arg:  "https://example.atlassian.net/wiki/x/QOIB/",
-			want: Ref{PageID: "123456", Host: "example.atlassian.net"},
+			want: Ref{Host: "example.atlassian.net", Target: PageID("123456")},
+		},
+		// A space's overview and the space URL both open its homepage.
+		{
+			name: "space overview url",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/overview",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "DEV"}},
+		},
+		{
+			name: "space overview url with a trailing slash",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/overview/",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "DEV"}},
+		},
+		{
+			name: "space url",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "DEV"}},
+		},
+		{
+			name: "space url with a trailing slash",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "DEV"}},
+		},
+		{
+			name: "personal space overview url, percent-encoded",
+			arg:  "https://example.atlassian.net/wiki/spaces/%7E557058abc/overview",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "~557058abc"}},
+		},
+		{
+			// The sidebar's space link carries the homepage's ID, which
+			// saves the lookup.
+			name: "space overview url carrying the homepage id",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/overview?homepageId=163938",
+			want: Ref{Host: "example.atlassian.net", Target: PageID("163938")},
+		},
+		{
+			name: "space url carrying the homepage id",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/?homepageId=163938",
+			want: Ref{Host: "example.atlassian.net", Target: PageID("163938")},
+		},
+		{
+			name: "space overview url with a non-numeric homepage id",
+			arg:  "https://example.atlassian.net/wiki/spaces/DEV/overview?homepageId=abc",
+			want: Ref{Host: "example.atlassian.net", Target: SpaceHomepage{Key: "DEV"}},
 		},
 	}
 
@@ -143,8 +186,13 @@ func TestParseErrors(t *testing.T) {
 			wantContains: "page URL or page ID",
 		},
 		{
-			name:         "url without a page segment",
-			arg:          "https://example.atlassian.net/wiki/spaces/DEV/overview",
+			name:         "space pages list with no id",
+			arg:          "https://example.atlassian.net/wiki/spaces/DEV/pages",
+			wantContains: "page URL or page ID",
+		},
+		{
+			name:         "spaces path with no key",
+			arg:          "https://example.atlassian.net/wiki/spaces/",
 			wantContains: "page URL or page ID",
 		},
 		{
@@ -169,6 +217,18 @@ func TestParseErrors(t *testing.T) {
 				t.Errorf("Parse(%q) error = %q, want it to contain %q", tt.arg, err, tt.wantContains)
 			}
 		})
+	}
+}
+
+// The refusal lists the forms Parse accepts, so it has to name the space
+// homepage URL for a caller to learn that one works.
+func TestParseErrorListsTheSpaceHomepageURL(t *testing.T) {
+	_, err := Parse("https://example.atlassian.net/wiki/spaces/DEV/blog/2026/01/01/123456/Post")
+	if err == nil {
+		t.Fatal("Parse() error = nil, want an error")
+	}
+	if want := "/wiki/spaces/DEV/overview"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err, want)
 	}
 }
 
@@ -272,7 +332,7 @@ func TestChildPageURL(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse(%q) error = %v", got, err)
 			}
-			if ref.PageID != "11" || ref.Host != "example.atlassian.net" {
+			if want := (Ref{Host: "example.atlassian.net", Target: PageID("11")}); ref != want {
 				t.Errorf("Parse(%q) = %+v, want page 11 on example.atlassian.net", got, ref)
 			}
 		})

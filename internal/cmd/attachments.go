@@ -11,7 +11,6 @@ import (
 
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
-	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/spf13/cobra"
 )
 
@@ -163,13 +162,13 @@ func runAttachmentsList(cmd *cobra.Command, args []string, g *globalFlags, limit
 		return err
 	}
 
-	client, pageID, err := resolvePageClient(args[0], g.profile)
+	ctx, cancel := commandContext(cmd, g.timeout)
+	defer cancel()
+
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := commandContext(cmd, g.timeout)
-	defer cancel()
 
 	attachments, hasMore, err := client.PageAttachments(ctx, pageID, limit)
 	if err != nil {
@@ -213,15 +212,15 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 		return err
 	}
 
-	client, pageID, err := resolvePageClient(args[0], g.profile)
-	if err != nil {
-		return err
-	}
-
 	// One context for the listing and every transfer: --timeout is the
 	// deadline for the invocation, not for each request in it.
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
+
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
+	if err != nil {
+		return err
+	}
 
 	// maxLimit rather than a --limit of its own: a matching attachment left
 	// outside the window would be a wrong answer, not a truncated listing, and
@@ -295,7 +294,10 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 	}
 	defer closeFiles(opened)
 
-	client, pageID, err := resolvePageClient(args[0], g.profile)
+	ctx, cancel := commandContext(cmd, g.timeout)
+	defer cancel()
+
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
 	if err != nil {
 		return err
 	}
@@ -304,9 +306,6 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 	for _, f := range opened {
 		files = append(files, confluence.UploadFile{Name: filepath.Base(f.Name()), Content: f})
 	}
-
-	ctx, cancel := commandContext(cmd, g.timeout)
-	defer cancel()
 
 	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
 	if err != nil {
@@ -413,22 +412,6 @@ func closeFiles(files []*os.File) {
 	for _, f := range files {
 		_ = f.Close()
 	}
-}
-
-// resolvePageClient parses the page argument and builds the client for the site
-// it names. Every subcommand goes through here, so a page URL and a bare page ID
-// are interchangeable on each of them with the same profile resolution.
-func resolvePageClient(arg, profile string) (*confluence.Client, string, error) {
-	ref, err := pageref.Parse(arg)
-	if err != nil {
-		return nil, "", err
-	}
-
-	client, err := resolveConfluence(profile, ref.Host)
-	if err != nil {
-		return nil, "", err
-	}
-	return client, ref.PageID, nil
 }
 
 // matchAttachments keeps the attachments whose filename matches pattern.
