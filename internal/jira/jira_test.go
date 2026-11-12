@@ -297,3 +297,30 @@ func TestSearchSizesPagesToTheLimit(t *testing.T) {
 		t.Errorf("Search() issues run %s..%s, want KAN-1..KAN-150 decoded in order", issues[0].Key, issues[149].Key)
 	}
 }
+
+// A page that ends exactly at the limit with a token still attached says
+// nothing about whether more issues match: only an issue past the limit
+// does, so the token is followed and an empty last page reports none.
+func TestSearchReportsMoreOnlyWhenAnIssuePastTheLimitArrives(t *testing.T) {
+	var maxResults []string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		maxResults = append(maxResults, r.URL.Query().Get("maxResults"))
+		if r.URL.Query().Get("nextPageToken") == "" {
+			// Jira may return fewer issues than asked for.
+			_, _ = fmt.Fprint(w, searchPage(1, 2, "page-2"))
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"issues":[]}`)
+	})
+
+	issues, hasMore, err := client.Search(t.Context(), "project = KAN", 2)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if want := []string{"3", "1"}; !slices.Equal(maxResults, want) {
+		t.Errorf("maxResults per request = %v, want %v", maxResults, want)
+	}
+	if len(issues) != 2 || hasMore {
+		t.Errorf("Search() = %d issues, hasMore %t; want 2 issues and no more", len(issues), hasMore)
+	}
+}
