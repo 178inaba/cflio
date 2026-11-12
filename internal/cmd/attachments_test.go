@@ -670,24 +670,37 @@ func TestAttachmentsUploadPointsAtReplaceWhenThePostIsRefused(t *testing.T) {
 }
 
 func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
+	// Each in a directory of its own, so no path is a prefix of another and a
+	// problem cannot be found in the message by way of a different one.
 	dir := t.TempDir()
 	valid := writeTempFile(t, "a.png", string(pngBytes))
-	missing := filepath.Join(dir, "missing.png")
+	missing := filepath.Join(t.TempDir(), "missing.png")
 	sameName := writeTempFile(t, "other/a.png", "x")
 
+	isMissing := "open " + missing
+	isDir := dir + " is a directory"
+	collides := valid + ", " + sameName + " would all be attached as a.png"
+
 	tests := []struct {
-		name     string
-		files    []string
-		wantArgs []string
+		name  string
+		files []string
+		// want lists one fragment per problem, each of which must appear
+		// exactly once.
+		want []string
 	}{
-		{name: "a missing file", files: []string{missing}, wantArgs: []string{missing}},
-		{name: "a directory", files: []string{dir}, wantArgs: []string{dir}},
-		{name: "two files with the same base name", files: []string{valid, sameName}, wantArgs: []string{valid, sameName}},
-		{name: "a valid file beside a missing one", files: []string{valid, missing}, wantArgs: []string{missing}},
+		{name: "a missing file", files: []string{missing}, want: []string{isMissing}},
+		{name: "a directory", files: []string{dir}, want: []string{isDir}},
+		{name: "two files with the same base name", files: []string{valid, sameName}, want: []string{collides}},
 		{
-			name:     "every problem at once",
-			files:    []string{missing, dir, valid, sameName},
-			wantArgs: []string{missing, dir, valid, sameName},
+			name:  "one file given twice",
+			files: []string{valid, valid},
+			want:  []string{valid + ", " + valid + " would all be attached as a.png"},
+		},
+		{name: "a valid file beside a missing one", files: []string{valid, missing}, want: []string{isMissing}},
+		{
+			name:  "every problem at once",
+			files: []string{missing, dir, valid, sameName},
+			want:  []string{isMissing, isDir, collides},
 		},
 	}
 
@@ -702,12 +715,34 @@ func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
 			if err == nil {
 				t.Fatal("attachments upload error = nil, want the files rejected")
 			}
-			for _, arg := range tt.wantArgs {
-				if !strings.Contains(err.Error(), arg) {
-					t.Errorf("error = %q, want it to name %s", err, arg)
+			for _, fragment := range tt.want {
+				if n := strings.Count(err.Error(), fragment); n != 1 {
+					t.Errorf("error = %q, want %q in it once (got %d)", err, fragment, n)
 				}
 			}
 		})
+	}
+}
+
+func TestAttachmentsUploadRejectsAFileItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file whatever its mode")
+	}
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	startAPI(t, neverCalled(t, "despite a file that cannot be read"))
+
+	unreadable := writeTempFile(t, "a.png", string(pngBytes))
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+
+	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, unreadable)
+	if err == nil {
+		t.Fatal("attachments upload error = nil, want the unreadable file rejected")
+	}
+	if !strings.Contains(err.Error(), "open "+unreadable) {
+		t.Errorf("error = %q, want it to name %s", err, unreadable)
 	}
 }
 

@@ -302,8 +302,8 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 
 	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
 	if err != nil {
-		if !replace && errors.Is(err, confluence.ErrUploadRefused) {
-			return fmt.Errorf("%w; pass --replace to upload a new version of it instead", err)
+		if errors.Is(err, confluence.ErrUploadRefused) {
+			return fmt.Errorf("%w; pass --replace to upload a new version of that attachment instead", err)
 		}
 		return err
 	}
@@ -353,11 +353,14 @@ func openUploads(paths []string) ([]*os.File, error) {
 	}
 
 	// Ordered by first appearance, so the message follows the command line.
+	// Each name is dropped once reported, which is what keeps one path given
+	// twice from being reported twice.
 	for _, p := range paths {
-		same := byName[filepath.Base(p)]
-		if len(same) > 1 && same[0] == p {
+		name := filepath.Base(p)
+		if same := byName[name]; len(same) > 1 {
 			problems = append(problems, fmt.Sprintf("%s would all be attached as %s",
-				strings.Join(same, ", "), filepath.Base(p)))
+				strings.Join(same, ", "), name))
+			delete(byName, name)
 		}
 	}
 
