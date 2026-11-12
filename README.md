@@ -440,9 +440,7 @@ retrying — with a larger `--timeout`, and for a command that creates something
 below; every other one needs the `Error:` line read instead. A
 deadline that expires while `confluence read --markdown` is resolving references or downloading
 attachments is the exception: it is absorbed like any other lookup failure, so the reference is
-counted in `Unchecked: N` above and the run still exits `0`. An upload is the other: one whose
-deadline expired after the whole request was sent may already have landed, so check before retrying
-(see [Putting an image on a page](#putting-an-image-on-a-page)).
+counted in `Unchecked: N` above and the run still exits `0`.
 
 A command that creates something must not be re-run blindly after a `124`: the deadline can expire
 after the server has already created the thing. A re-run of `confluence comments create` then posts
@@ -454,7 +452,10 @@ the thing exists first, and re-run only if it does not — for `confluence creat
 with `atlio confluence children <parent>` (raising `--limit` if it says more child pages are
 available, since it lists the oldest first) and, if it is there, run `confluence read` on it to get
 a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`
-(raising `--limit` the same way), and if the comment is there nothing is left to do. `confluence update` needs no such check: its
+(raising `--limit` the same way), and if the comment is there nothing is left to do; for
+`confluence attachments upload`, whose error says when the files may have landed, look with
+`atlio confluence attachments list <page>` (see
+[Putting an image on a page](#putting-an-image-on-a-page)). `confluence update` needs no such check: its
 version lock turns a re-run after a write that did land into the "changed since it was read" refusal
 rather than a second write.
 
