@@ -130,6 +130,9 @@ atlio jira issue read KAN-1
 
 # Find issues with JQL
 atlio jira search 'project = KAN and status != Done order by updated desc'
+
+# Read what people said on it
+atlio jira comments list KAN-1
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
@@ -430,6 +433,26 @@ A query needs at least one search restriction. Jira rejects one that only orders
 `order by created desc` alone, and the error carries Jira's own message. Jira reports no total for
 a search, so a listing cut short by `--limit` says only that more issues are available.
 
+### Reading an issue's comments
+
+`jira comments list` prints an issue's comments on stdout, oldest first: each one's author, when it
+was posted, when it was last edited if it was, and its body converted from ADF to Markdown. The
+issue is named as for `jira issue read`.
+
+At most `--limit` comments are printed (25 by default). When the issue has more, the output ends
+with how many there are in all:
+
+```
+Showing 25 of 40 comments; raise --limit to fetch the rest.
+```
+
+What the conversion could not represent is reported once for the whole listing, summed over every
+printed comment:
+
+```
+Degraded: 2 (mediaSingle)
+```
+
 ### Multiple sites
 
 A command given a page or issue URL picks the matching profile automatically, and
@@ -523,12 +546,14 @@ docker compose run --rm lint --fix
   are an API token without scopes; a scoped token is refused on the site URL.
 - **Jira is read-only.** Nothing atlio sends to Jira changes anything in it: every request is a
   `GET`. Creating or editing issues, commenting and transitions are not supported.
-- **Comment display is best-effort.** The comment API offers no rendered representation, so comment
-  bodies are converted from storage XHTML to Markdown locally, by the same converter
-  `confluence read --markdown` uses. `confluence comments list` shows root comments and their direct
-  replies; replies to replies are not fetched. Authors appear as Atlassian account IDs, and
+- **Comment display is best-effort.** Comment bodies are converted to Markdown locally: Confluence
+  comments from storage XHTML, by the same converter `confluence read --markdown` uses, since the
+  comment API offers no rendered representation; Jira comments from ADF, by the converter
+  `jira issue read --markdown` uses. `confluence comments list` shows root comments and their direct
+  replies; replies to replies are not fetched. Its authors appear as Atlassian account IDs, and
   references inside a comment body are not resolved — only `confluence read --markdown` resolves
-  mentions and page links.
+  mentions and page links. `jira comments list` shows display names, and a comment with no author
+  as `Anonymous`.
 - **Converted output never feeds an update.** Every converted output — comment bodies,
   `confluence read --markdown` and `jira issue read --markdown` — is for reading only. A body that
   will be written back is never converted.

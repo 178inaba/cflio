@@ -85,6 +85,8 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"jira issue":                      false,
 		"jira issue read":                 true,
 		"jira search":                     true,
+		"jira comments":                   false,
+		"jira comments list":              true,
 		"auth":                            false,
 		"auth login":                      false,
 		"profile":                         false,
@@ -169,6 +171,10 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 			args: []string{"jira", "search", "--format", "bogus", "project = KAN"},
 		},
 		{
+			name: "jira comments list",
+			args: []string{"jira", "comments", "list", "--format", "bogus", "KAN-1"},
+		},
+		{
 			name: "plantuml list, before cobra reports a missing required flag",
 			args: []string{"confluence", "plantuml", "list", "--format", "bogus"},
 		},
@@ -222,6 +228,10 @@ func TestWritersRejectAFormatThatBypassedSet(t *testing.T) {
 		{
 			name:  "writeJiraIssueResult",
 			write: func(cmd *cobra.Command) error { return writeJiraIssueResult(cmd, bogus, jiraIssueResult{}) },
+		},
+		{
+			name:  "writeJiraComments",
+			write: func(cmd *cobra.Command) error { return writeJiraComments(cmd, bogus, jiraCommentsPayload{}) },
 		},
 		{
 			name:  "writeUpdateResult",
@@ -336,6 +346,11 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantErr: `unknown command "bogus" for "atlio jira issue"`,
 		},
 		{
+			name:    "jira comments",
+			args:    []string{"jira", "comments", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio jira comments"`,
+		},
+		{
 			name:    "profile",
 			args:    []string{"profile", "bogus"},
 			wantErr: `unknown command "bogus" for "atlio profile"`,
@@ -393,7 +408,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	for _, name := range []string{
 		"", "confluence", "confluence attachments", "confluence comments", "confluence plantuml",
-		"jira", "jira issue", "auth", "profile", "completion",
+		"jira", "jira issue", "jira comments", "auth", "profile", "completion",
 	} {
 		t.Run("atlio "+name, func(t *testing.T) {
 			args := strings.Fields(name)
