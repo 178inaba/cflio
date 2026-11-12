@@ -180,8 +180,8 @@ type Page struct {
 	// space's ID, and `confluence create` reads it off the parent.
 	SpaceID string `json:"spaceId"`
 	// Subtype is "live" for a live doc and absent for a classic page. It is
-	// what tells the two apart offline, once `confluence read` has recorded it
-	// in the sidecar: a live doc's editor rewrites the storage body behind
+	// what tells the two apart offline, once `confluence read` or
+	// `confluence create` has recorded it in the sidecar: a live doc's editor rewrites the storage body behind
 	// atlio's back, which some edits have to refuse rather than silently lose.
 	Subtype string  `json:"subtype"`
 	Version Version `json:"version"`
