@@ -103,8 +103,9 @@ func newAttachmentsUploadCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upload <page-url|page-id> <file>...",
 		Short: "Attach local files to a page",
-		Long: `Attach one or more local files to a page, each under its base name
-(./out/shot.png is attached as shot.png).
+		Long: `Attach one or more regular files to a page, each under its base name
+(./out/shot.png is attached as shot.png). A FIFO, a device or a directory is
+refused before anything is sent.
 
 Uploading does not change the page body, so the file does not appear on the
 page yet. To show an image, read the page, add an element naming the
@@ -123,7 +124,13 @@ that is already on the page is this one command.
 
 All files go in one request, and --timeout is the deadline for the whole
 upload: raise it for a large file. The site's attachment size limit is not
-checked locally; a file over it fails at the server.`,
+checked locally; a file over it fails at the server.
+
+An upload that fails after the whole request was sent — the deadline expiring
+while the response is awaited, say — may have been stored anyway, and its
+error says so. Check with ` + "`atlio confluence attachments list`" + ` before running
+it again: without --replace a repeat is refused if the files did land, and
+with --replace it adds another, identical version.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsUpload(cmd, args, g, replace, outFormat)
@@ -302,8 +309,11 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 
 	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
 	if err != nil {
-		if errors.Is(err, confluence.ErrUploadRefused) {
+		switch {
+		case errors.Is(err, confluence.ErrUploadRefused):
 			return fmt.Errorf("%w; pass --replace to upload a new version of that attachment instead", err)
+		case errors.Is(err, confluence.ErrUploadUnconfirmed):
+			return fmt.Errorf("%w; check with `atlio confluence attachments list %s` before uploading again", err, args[0])
 		}
 		return err
 	}
@@ -322,9 +332,12 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 // Every check runs before any request, as in planDownloads, so a run never
 // attaches some files and then stops at a bad one. Opening rather than only
 // stat-ing is what makes "cannot be read" a local finding, and the files are
-// kept open for the upload so every check holds for what is sent — the
-// directory check included, which is why it reads the open handle: opening a
-// directory succeeds on Unix.
+// kept open for the upload so the checks hold for what is sent.
+//
+// Only a regular file is accepted, and that is decided from a Stat before the
+// open: opening a FIFO blocks until a writer appears, before --timeout is
+// running, and a device can stream without end. SameFile on the open handle
+// then rules out the path having been swapped for something else in between.
 func openUploads(paths []string) ([]*os.File, error) {
 	var (
 		files    []*os.File
@@ -335,18 +348,9 @@ func openUploads(paths []string) ([]*os.File, error) {
 	for _, p := range paths {
 		byName[filepath.Base(p)] = append(byName[filepath.Base(p)], p)
 
-		f, err := os.Open(p)
-		if err != nil {
-			problems = append(problems, err.Error())
-			continue
-		}
-		if info, err := f.Stat(); err != nil {
-			_ = f.Close()
-			problems = append(problems, err.Error())
-			continue
-		} else if info.IsDir() {
-			_ = f.Close()
-			problems = append(problems, p+" is a directory")
+		f, problem := openRegular(p)
+		if problem != "" {
+			problems = append(problems, problem)
 			continue
 		}
 		files = append(files, f)
@@ -369,6 +373,35 @@ func openUploads(paths []string) ([]*os.File, error) {
 		return nil, fmt.Errorf("cannot upload (nothing was sent): %s", strings.Join(problems, "; "))
 	}
 	return files, nil
+}
+
+// openRegular opens p for upload, or describes why it cannot be one.
+func openRegular(p string) (*os.File, string) {
+	info, err := os.Stat(p)
+	if err != nil {
+		return nil, err.Error()
+	}
+	switch {
+	case info.IsDir():
+		return nil, p + " is a directory"
+	case !info.Mode().IsRegular():
+		return nil, p + " is not a regular file"
+	}
+
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err.Error()
+	}
+	opened, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err.Error()
+	}
+	if !os.SameFile(info, opened) {
+		_ = f.Close()
+		return nil, p + " changed while it was being checked"
+	}
+	return f, ""
 }
 
 // closeFiles closes files opened only for reading, where a failed close loses

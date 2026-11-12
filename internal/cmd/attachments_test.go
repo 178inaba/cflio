@@ -678,7 +678,7 @@ func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.png")
 	sameName := writeTempFile(t, "other/a.png", "x")
 
-	isMissing := "open " + missing
+	isMissing := missing
 	isDir := dir + " is a directory"
 	collides := valid + ", " + sameName + " would all be attached as a.png"
 
@@ -789,5 +789,37 @@ func TestAttachmentsUploadReportsADeadlineThatExpiresMidUpload(t *testing.T) {
 	}
 	if code, _ := describeFailure(err, 300*time.Millisecond); code != timeoutExitCode {
 		t.Errorf("exit code = %d for %v, want %d", code, err, timeoutExitCode)
+	}
+	// Cut short mid-body, the upload cannot have landed, so there is nothing
+	// to check before running it again.
+	if err != nil && strings.Contains(err.Error(), "attachments list") {
+		t.Errorf("error = %q, want no may-have-landed note for a body that was not all sent", err)
+	}
+}
+
+// TestAttachmentsUploadSaysATimedOutUploadMayHaveLanded covers the deadline
+// that lands after the whole body was sent, while the response is awaited:
+// Confluence may have stored the files, so the error says how to find out
+// before the run is repeated, and the exit code is still the deadline's.
+func TestAttachmentsUploadSaysATimedOutUploadMayHaveLanded(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	release := make(chan struct{})
+	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-release
+	})
+	defer close(release)
+
+	file := writeTempFile(t, "a.png", string(pngBytes))
+
+	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--timeout=300ms")
+
+	if code, _ := describeFailure(err, 300*time.Millisecond); code != timeoutExitCode {
+		t.Errorf("exit code = %d for %v, want %d", code, err, timeoutExitCode)
+	}
+	if err == nil || !strings.Contains(err.Error(), "atlio confluence attachments list") {
+		t.Errorf("error = %v, want it to point at attachments list before a retry", err)
 	}
 }
