@@ -133,6 +133,10 @@ atlio jira search 'project = KAN and status != Done order by updated desc'
 
 # Read what people said on it
 atlio jira comments list KAN-1
+
+# ...and see the screenshots attached to it
+atlio jira attachments list KAN-1
+atlio jira attachments download KAN-1 --pattern '*.png' -o ./assets
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
@@ -415,7 +419,8 @@ Degraded: 2 (extension, mediaSingle)
 
 Images are among them: an image in a description references its file by an ID Jira does not map
 to the issue's attachments, so it becomes a placeholder, and the `Attachment:` lines in the output
-are how you learn which files exist. If you need what degraded, read `<KEY>.adf.json`.
+are how you learn which files exist; download one to see it (below). If you need what degraded,
+read `<KEY>.adf.json`.
 
 An issue is named by its key (`KAN-1`, any case) or by a URL copied from the browser:
 
@@ -455,6 +460,30 @@ printed comment:
 ```
 Degraded: 2 (mediaSingle)
 ```
+
+### Reading an issue's attachments
+
+An image pasted into an issue can only be seen by downloading its attachment. The
+`jira attachments` commands work the way `confluence attachments list` and `download` do, and
+take an issue key or URL like `jira issue read`. `jira attachments list` shows every attachment's
+filename, media type and size; Jira returns them all at once, so there is no `--limit`.
+`jira attachments download` writes the ones whose filename matches a glob:
+
+```sh
+atlio jira attachments download KAN-1 --pattern '*.png' -o ./assets
+```
+
+The contract is `confluence attachments download`'s: `--pattern` is **required** and
+case-sensitive (`--pattern '*'` is the only "download everything"), matching nothing is an error
+that says how many attachments the issue has, an existing file is never replaced — the command
+fails before downloading anything and names it — and `-o` defaults to the working directory and is
+created if it does not exist.
+
+Jira lets two attachments on one issue share a filename, and `--pattern` cannot pick one of them.
+When two matched attachments have filenames that are equal ignoring case (`a.png` and `A.png` are
+one file on macOS's default filesystem), each is written with its attachment ID before the
+extension — `screen.png` becomes `screen-10002.png` — so both are downloaded. The output's
+`filename` is still the attachment's own name, and `path` is the file written.
 
 ### Multiple sites
 
