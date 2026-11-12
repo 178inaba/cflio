@@ -144,6 +144,11 @@ type credentialChecks struct {
 // succeeded counts, since a site without a product answers its endpoint with
 // whatever it likes. When neither accepts them, both answers are returned
 // joined, so the status of each survives and a deadline still reads as one.
+//
+// A check cut short by the deadline is not an answer, though: it says nothing
+// about whether the site has that product. So when the deadline expired and
+// a check failed, the login fails too rather than recording a product as
+// absent, and exits with the timeout's code.
 func verifyCredentials(ctx context.Context, site, email, token string) (credentialChecks, error) {
 	confluenceClient, err := confluenceFactory(site, email, token)
 	if err != nil {
@@ -161,10 +166,13 @@ func verifyCredentials(ctx context.Context, site, email, token string) (credenti
 		{name: "Confluence", err: confluenceErr},
 		{name: "Jira", err: jiraErr},
 	}}
-	if confluenceErr != nil && jiraErr != nil {
-		errs := make([]error, 0, len(checks.products))
+	failed := confluenceErr != nil || jiraErr != nil
+	if (confluenceErr != nil && jiraErr != nil) || (failed && ctx.Err() != nil) {
+		var errs []error
 		for _, c := range checks.products {
-			errs = append(errs, fmt.Errorf("%s: %w", c.name, c.err))
+			if c.err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", c.name, c.err))
+			}
 		}
 		return credentialChecks{}, fmt.Errorf("verify credentials against %s: %w", site, errors.Join(errs...))
 	}

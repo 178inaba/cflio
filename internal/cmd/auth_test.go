@@ -208,6 +208,46 @@ func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	assertNoConfigWritten(t)
 }
 
+// TestAuthLoginFailsWhenTheDeadlineCutsACheckShort covers a check that never
+// answered: it says nothing about whether the site has that product, so the
+// login fails with the timeout's exit code instead of recording the product
+// as absent — even when the other product did answer.
+func TestAuthLoginFailsWhenTheDeadlineCutsACheckShort(t *testing.T) {
+	tests := []struct {
+		name     string
+		answered string
+	}{
+		{name: "the other product answered", answered: confluenceCurrentUserPath},
+		{name: "neither answered"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == tt.answered {
+					okCurrentUser(w, r)
+					return
+				}
+				<-r.Context().Done()
+			})
+
+			run, err := runCLIWithStdin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
+				"--timeout", "200ms", "auth", "login")
+			if err == nil {
+				t.Fatal("auth login error = nil, want the deadline reported")
+			}
+			if code, _ := describeFailure(err, 200*time.Millisecond); code != 124 {
+				t.Errorf("exit code = %d, want 124 (error %v)", code, err)
+			}
+			if strings.Contains(run.stdout, "Registered") {
+				t.Errorf("output = %q, want no success message", run.stdout)
+			}
+			assertNoConfigWritten(t)
+		})
+	}
+}
+
 func TestAuthLoginRequiresEmailAndToken(t *testing.T) {
 	tests := []struct {
 		name    string
