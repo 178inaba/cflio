@@ -359,13 +359,17 @@ attachments is the exception: it is absorbed like any other lookup failure, so t
 counted in `Unchecked: N` above and the run still exits `0`.
 
 A command that creates something must not be re-run blindly after a `124`: the deadline can expire
-after the server has already created the thing, and a re-run makes a second one. Check whether it
-exists first, and re-run only if it does not — for `confluence create`, look for the page with
-`atlio confluence children <parent>` and, if it is there, run `confluence read` on it to get a
-checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`, and
-if the comment is there nothing is left to do. `confluence update` needs no such check: its version
-lock turns a re-run after a write that did land into the "changed since it was read" refusal rather
-than a second write.
+after the server has already created the thing. A re-run of `confluence comments create` then posts
+a second comment. A re-run of `confluence create` makes no second page — Confluence refuses a title
+the space already holds — but fails with the duplicate-title `400` and still leaves you without a
+checkout, so a duplicate-title error right after a `124` means the first create landed. Check
+whether the thing exists first, and re-run only if it does not — for `confluence create`, look for
+the page with `atlio confluence children <parent>` (raising `--limit` if it says more child pages
+are available, since it lists the oldest first) and, if it is there, run `confluence read` on it to
+get a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`,
+and if the comment is there nothing is left to do. `confluence update` needs no such check: its
+version lock turns a re-run after a write that did land into the "changed since it was read" refusal
+rather than a second write.
 
 Ctrl-C and `SIGTERM` are not reported as failures: atlio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over

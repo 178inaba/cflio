@@ -589,7 +589,7 @@ func TestCreatingCommandsDocumentTheCheckAfterATimeout(t *testing.T) {
 			args: []string{"confluence", "create", "--help"},
 			want: []string{
 				"--parent", "--title", "--file", "storage", "sidecar", "already has a sidecar",
-				"confluence update", "124", "confluence children",
+				"confluence update", "124", "duplicate title", "confluence children", "--limit",
 			},
 		},
 		{
