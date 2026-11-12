@@ -19,6 +19,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 )
 
 // MessageFunc extracts human-readable messages from the body of a failed
@@ -163,16 +164,6 @@ func (c *Client) SendMultipart(ctx context.Context, method, path string, header 
 	if err != nil && werr != nil && ctx.Err() == nil && !errors.Is(werr, io.ErrClosedPipe) {
 		return fmt.Errorf("%s %s: write request body: %w", method, path, werr)
 	}
-	// The writer only returns nil once the transport has read the body to its
-	// end, so after that a 4xx settles the outcome by refusing the request, and
-	// a 3xx by leaving it unprocessed. Anything else — no response, a 2xx whose body could not be read
-	// or parsed, or a 5xx, none of whose definitions in RFC 9110 says whether
-	// the request was carried out — leaves it unknown.
-	if err != nil && werr == nil {
-		if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status >= http.StatusInternalServerError {
-			return fmt.Errorf("%w: %w", err, ErrSentInFull)
-		}
-	}
 	return err
 }
 
@@ -242,16 +233,34 @@ func encodeJSON(payload any) (io.Reader, error) {
 	return &buf, nil
 }
 
+// doJSON sends req and decodes the JSON response into out, which may be nil.
+//
+// A request that changes something and fails after its whole body was handed
+// to the transport is marked with ErrSentInFull, unless a 3xx or 4xx settled
+// it: RFC 9110 lets a client repeat a non-idempotent request only once it
+// knows the first was not applied, and only those statuses say so. A GET is
+// never marked, since running it again repeats no effect.
 func (c *Client) doJSON(req *http.Request, path string, out any) error {
 	req.SetBasicAuth(c.email, c.token)
 	req.Header.Set("Accept", "application/json")
 
+	sent := trackSent(req)
+	unknown := func(err error) error {
+		if req.Method == http.MethodGet || !sent.Load() {
+			return err
+		}
+		return fmt.Errorf("%w: %w", err, ErrSentInFull)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", req.Method, path, err)
+		return unknown(fmt.Errorf("%s %s: %w", req.Method, path, err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return unknown(c.responseError(req.Method, path, resp))
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return c.responseError(req.Method, path, resp)
 	}
@@ -265,7 +274,69 @@ func (c *Client) doJSON(req *http.Request, path string, out any) error {
 	// UnmarshalRead reads to EOF and rejects anything after the value, which
 	// is what every endpoint here returns: exactly one JSON document.
 	if err := json.UnmarshalRead(resp.Body, out); err != nil {
-		return fmt.Errorf("parse response from %s %s: %w", req.Method, path, err)
+		return unknown(fmt.Errorf("parse response from %s %s: %w", req.Method, path, err))
 	}
 	return nil
+}
+
+// trackSent wraps req's body so the returned flag is set once the transport
+// has taken the body's last bytes, and returns it unset for a request with no
+// body.
+//
+// The flag is set when those bytes are handed over, before they are written,
+// so it is settled before the server can have the whole body — and so before
+// http.Client.Do can return a response to it. Waiting for the transport to
+// report the write instead would not be: net/http reports it after the
+// response may already be back. Setting it before the write errs toward
+// marking a request whose last bytes then failed to go out, the safe side.
+//
+// "Last bytes" is the read that reaches ContentLength when the length is
+// known: net/http copies exactly that many bytes through a LimitReader and
+// never reads the body to EOF before the request is on the wire. With no
+// length, as for a streamed body, it is the read that returns io.EOF.
+//
+// It must run after http.NewRequestWithContext has set ContentLength and
+// GetBody from the original body, whose concrete type it reads them from.
+// A body GetBody hands out is a new attempt — a resend net/http makes only
+// when nothing of the last one was written, or a 307/308 redirect — so it
+// clears the flag and tracks that attempt instead.
+func trackSent(req *http.Request) *atomic.Bool {
+	sent := new(atomic.Bool)
+	if req.Body == nil || req.Body == http.NoBody {
+		return sent
+	}
+	req.Body = &sentReader{rc: req.Body, want: req.ContentLength, sent: sent}
+	if getBody := req.GetBody; getBody != nil {
+		req.GetBody = func() (io.ReadCloser, error) {
+			body, err := getBody()
+			if err != nil {
+				return nil, err
+			}
+			sent.Store(false)
+			return &sentReader{rc: body, want: req.ContentLength, sent: sent}, nil
+		}
+	}
+	return sent
+}
+
+// sentReader is a request body that records when its last bytes are read. It
+// is read on the transport's write goroutine, hence the atomic.
+type sentReader struct {
+	rc   io.ReadCloser
+	want int64 // the body's length, or <= 0 when it is not known
+	n    int64
+	sent *atomic.Bool
+}
+
+func (r *sentReader) Read(p []byte) (int, error) {
+	n, err := r.rc.Read(p)
+	r.n += int64(n)
+	if (r.want > 0 && r.n >= r.want) || (r.want <= 0 && errors.Is(err, io.EOF)) {
+		r.sent.Store(true)
+	}
+	return n, err
+}
+
+func (r *sentReader) Close() error {
+	return r.rc.Close()
 }
