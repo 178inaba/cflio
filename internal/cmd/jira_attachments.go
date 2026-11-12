@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/178inaba/atlio/internal/format"
@@ -71,7 +72,9 @@ cannot leave some files replaced and others not.
 Jira lets two attachments on one issue share a filename. If two matched
 attachments have filenames that are equal ignoring case (a.png and A.png are
 one file on a case-insensitive filesystem), the command fails before
-downloading anything and names them; narrow --pattern to pick one.
+downloading anything and names them. Narrow --pattern to pick one of a.png
+and A.png; two attachments with exactly the same filename cannot be told
+apart by --pattern, so leave them out of it.
 
 Read-only against Jira: every request is a GET.`,
 		Args: cobra.ExactArgs(1),
@@ -176,11 +179,14 @@ func jiraAttachmentFile(client *jira.Client, a jira.Attachment) attachmentFile {
 // Jira allows two attachments on an issue to share a filename, and a.png and
 // A.png are one file on a case-insensitive filesystem. Either way the second
 // write would fail only after the first had landed, so the run is refused
-// before any transfer, on every platform, to keep a failed run writing
-// nothing. Filenames that differ only in Unicode normalisation are not
-// detected.
+// before any transfer, on every platform, so a collision writes nothing.
+// Filenames that differ only in Unicode normalisation are not detected.
+//
+// The error says which way out applies to each group: a glob can pick one of
+// a.png and A.png, but nothing matched against the filename can tell two
+// identical ones apart.
 func refuseCaseInsensitiveDuplicates(matched []attachmentFile) error {
-	var groups []string
+	var caseOnly, identical []string
 	seen := make([]bool, len(matched))
 	for i, a := range matched {
 		if seen[i] {
@@ -193,14 +199,36 @@ func refuseCaseInsensitiveDuplicates(matched []attachmentFile) error {
 				group = append(group, matched[j].filename)
 			}
 		}
-		if len(group) > 1 {
-			groups = append(groups, strings.Join(group, " and "))
+		switch {
+		case len(group) == 1:
+		case hasRepeat(group):
+			identical = append(identical, strings.Join(group, " and "))
+		default:
+			caseOnly = append(caseOnly, strings.Join(group, " and "))
 		}
 	}
 
-	if len(groups) > 0 {
-		return fmt.Errorf("attachments %s would be written to the same file; narrow --pattern "+
-			"to pick one (nothing was downloaded)", strings.Join(groups, ", "))
+	var reasons []string
+	if len(caseOnly) > 0 {
+		reasons = append(reasons, fmt.Sprintf("attachments %s differ only in case and would be "+
+			"written to the same file; narrow --pattern to pick one", strings.Join(caseOnly, ", ")))
+	}
+	if len(identical) > 0 {
+		reasons = append(reasons, fmt.Sprintf("attachments %s share a filename and cannot be told "+
+			"apart by --pattern; change it to leave them out", strings.Join(identical, ", ")))
+	}
+	if len(reasons) > 0 {
+		return fmt.Errorf("%s (nothing was downloaded)", strings.Join(reasons, "; "))
 	}
 	return nil
+}
+
+// hasRepeat reports whether any filename occurs more than once in names.
+func hasRepeat(names []string) bool {
+	for i, n := range names {
+		if slices.Contains(names[i+1:], n) {
+			return true
+		}
+	}
+	return false
 }

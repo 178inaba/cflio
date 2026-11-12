@@ -145,8 +145,9 @@ adds another, identical version.`,
 	return cmd
 }
 
-// attachmentItem is one rendered attachment. Filename is the API's title,
-// named for what it is. FileSize is the server's own byte count, printed raw
+// attachmentItem is one rendered attachment, whichever product holds it.
+// Filename is named for what it is, whatever the API calls it (Confluence's
+// title). FileSize is the server's own byte count, printed raw
 // the way `confluence read` prints the size of the file it wrote.
 type attachmentItem struct {
 	Filename  string `json:"filename"`
@@ -462,15 +463,15 @@ type plannedDownload struct {
 // attachmentDest resolves the file an attachment is written to under outDir.
 //
 // The filename comes from the server, so it is also what pins the write inside
-// outDir: a title carrying a path would otherwise land somewhere the caller
+// outDir: a filename carrying a path would otherwise land somewhere the caller
 // never named. Base is the local filesystem's idea of a separator, which is
 // the right one — this is a path being built, not a pattern being matched.
-func attachmentDest(title, outDir string) (string, error) {
-	if !isPlainFilename(title) {
+func attachmentDest(filename, outDir string) (string, error) {
+	if !isPlainFilename(filename) {
 		return "", fmt.Errorf("attachment %q is not a plain filename; "+
-			"refusing to write it outside %s", title, outDir)
+			"refusing to write it outside %s", filename, outDir)
 	}
-	return filepath.Join(outDir, title), nil
+	return filepath.Join(outDir, filename), nil
 }
 
 // isPlainFilename reports whether a name the server supplied can be joined to

@@ -235,6 +235,9 @@ func TestJiraAttachmentsDownloadKeepsCredentialsOffTheMediaHost(t *testing.T) {
 	var hosts []string
 	for _, req := range transport.seen {
 		hosts = append(hosts, req.URL.Host+req.URL.Path)
+		if req.Method != http.MethodGet {
+			t.Errorf("request to %s%s method = %s, want GET", req.URL.Host, req.URL.Path, req.Method)
+		}
 		auth := req.Header.Get("Authorization")
 		if req.URL.Host == siteHost && auth == "" {
 			t.Errorf("request to %s%s carries no Authorization, want the site's credentials", req.URL.Host, req.URL.Path)
@@ -319,11 +322,22 @@ func TestJiraAttachmentsDownloadRefusesFilenamesThatCollideIgnoringCase(t *testi
 	tests := []struct {
 		name      string
 		filenames []string
+		// wantHint is the way out the error offers, which differs: no glob
+		// can pick one of two identical filenames.
+		wantHint string
 	}{
-		{name: "the same filename twice", filenames: []string{"screen.png", "screen.png"}},
-		// One file on a case-insensitive filesystem, where the second write
-		// would fail only after the first had landed.
-		{name: "filenames differing only in case", filenames: []string{"a.png", "A.png"}},
+		{
+			name:      "the same filename twice",
+			filenames: []string{"screen.png", "screen.png"},
+			wantHint:  "cannot be told apart by --pattern",
+		},
+		{
+			// One file on a case-insensitive filesystem, where the second
+			// write would fail only after the first had landed.
+			name:      "filenames differing only in case",
+			filenames: []string{"a.png", "A.png"},
+			wantHint:  "narrow --pattern to pick one",
+		},
 	}
 
 	for _, tt := range tests {
@@ -346,6 +360,9 @@ func TestJiraAttachmentsDownloadRefusesFilenamesThatCollideIgnoringCase(t *testi
 				if !strings.Contains(err.Error(), f) {
 					t.Errorf("error = %q, want it to name %s", err, f)
 				}
+			}
+			if !strings.Contains(err.Error(), tt.wantHint) {
+				t.Errorf("error = %q, want it to say %q", err, tt.wantHint)
 			}
 			if len(*content) != 0 {
 				t.Errorf("content requests = %v, want none", *content)
