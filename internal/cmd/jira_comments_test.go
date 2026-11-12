@@ -229,11 +229,11 @@ func TestJiraCommentsListReportsLossesOnceForTheListing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("jira comments list error = %v", err)
 		}
-		if got := strings.Count(run.stdout, "Degraded:"); got != 1 {
-			t.Errorf("stdout has %d Degraded lines, want 1:\n%s", got, run.stdout)
-		}
-		if !strings.HasSuffix(run.stdout, "\nDegraded: 2 (mediaSingle)\n") {
-			t.Errorf("stdout = %q, want it to end with the Degraded line", run.stdout)
+		want := "- Ada at 2026-01-01\n  [unsupported mediaSingle]\n" +
+			"- Ada at 2026-01-02\n  [unsupported mediaSingle]\n" +
+			"\nDegraded: 2 (mediaSingle)\n"
+		if run.stdout != want {
+			t.Errorf("stdout =\n%s\nwant\n%s", run.stdout, want)
 		}
 	})
 

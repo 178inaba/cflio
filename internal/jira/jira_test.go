@@ -426,8 +426,7 @@ func TestCommentsFollowsTheOffsetPagination(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := tt.server
-			client := newTestClient(t, server.handle)
+			client := newTestClient(t, tt.server.handle)
 
 			comments, total, err := client.Comments(t.Context(), "KAN-1", tt.limit)
 			if err != nil {
@@ -439,8 +438,8 @@ func TestCommentsFollowsTheOffsetPagination(t *testing.T) {
 			if total != tt.wantTotal {
 				t.Errorf("total = %d, want %d", total, tt.wantTotal)
 			}
-			if !slices.Equal(server.requests, tt.wantRequests) {
-				t.Errorf("requests =\n%s\nwant\n%s", strings.Join(server.requests, "\n"), strings.Join(tt.wantRequests, "\n"))
+			if !slices.Equal(tt.server.requests, tt.wantRequests) {
+				t.Errorf("requests =\n%s\nwant\n%s", strings.Join(tt.server.requests, "\n"), strings.Join(tt.wantRequests, "\n"))
 			}
 		})
 	}
