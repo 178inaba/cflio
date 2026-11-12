@@ -206,23 +206,37 @@ func TestADFToMarkdownToleratesMissingAttributes(t *testing.T) {
 	}
 }
 
+// TestADFToMarkdownKeepsGoingOnMalformedInput covers input that does not
+// decode cleanly. What decoded is kept, and the failure is always reported as
+// a loss: decoding drops everything after the value it could not place, and a
+// rendering missing its tail must not read as complete.
 func TestADFToMarkdownKeepsGoingOnMalformedInput(t *testing.T) {
 	tests := []struct {
-		name      string
-		doc       string
-		wantText  string
-		wantNames []string
+		name     string
+		doc      string
+		wantText string
 	}{
 		{
-			name:      "a document with no type at the root",
-			doc:       `{"content":[{"type":"paragraph","content":[{"type":"text","text":"rootless"}]}]}`,
-			wantText:  "rootless",
-			wantNames: []string{"invalid-adf"},
+			name:     "a document with no type at the root",
+			doc:      `{"content":[{"type":"paragraph","content":[{"type":"text","text":"rootless"}]}]}`,
+			wantText: "rootless",
 		},
 		{
 			name:     "a document cut off mid-way",
 			doc:      `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"survives"}]},{"type":"para`,
 			wantText: "survives",
+		},
+		{
+			name: "a value of the wrong type",
+			doc: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+				{"type":"paragraph","content":[{"type":"text","text":5}]},
+				{"type":"paragraph","content":[{"type":"text","text":"after"}]}]}`,
+			wantText: "before",
+		},
+		{
+			name:     "attrs that are not an object",
+			doc:      `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"before"}]},{"type":"heading","attrs":[]}]}`,
+			wantText: "before",
 		},
 		{
 			name: "not JSON at all",
@@ -236,10 +250,9 @@ func TestADFToMarkdownKeepsGoingOnMalformedInput(t *testing.T) {
 			if !strings.Contains(got.Markdown, tt.wantText) {
 				t.Errorf("Markdown = %q, want it to contain %q", got.Markdown, tt.wantText)
 			}
-			for _, name := range tt.wantNames {
-				if !slices.Contains(got.Unsupported, name) {
-					t.Errorf("Unsupported = %v, want it to name %q", got.Unsupported, name)
-				}
+			if !slices.Contains(got.Unsupported, "invalid-adf") || got.UnsupportedCount == 0 {
+				t.Errorf("Unsupported = %v (count %d), want the failed decode reported as invalid-adf",
+					got.Unsupported, got.UnsupportedCount)
 			}
 		})
 	}

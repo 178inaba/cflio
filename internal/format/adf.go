@@ -67,10 +67,18 @@ type adfRenderer struct {
 
 func (r *adfRenderer) document(doc []byte) []block {
 	var root adfNode
-	_ = json.Unmarshal(doc, &root)
+	err := json.Unmarshal(doc, &root)
 
 	if root.Type == "doc" {
-		return r.blocks(root.Content)
+		blocks := r.blocks(root.Content)
+		if err != nil {
+			// Decoding stops at the first value it cannot place and drops
+			// everything after it, so a document that rendered at all may
+			// still be missing its tail. Counting that is what keeps a zero
+			// in Degraded meaning the rendering is complete.
+			blocks = append(blocks, block{text: r.placeholder("invalid-adf", "")})
+		}
+		return blocks
 	}
 
 	// Anything else at the root is not a document, but it may still hold
