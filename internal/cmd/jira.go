@@ -18,7 +18,7 @@ func newJiraCmd(g *globalFlags) *cobra.Command {
 		Use:   "jira",
 		Short: "Read Jira issues",
 	}
-	cmd.AddCommand(newJiraIssueCmd(g), newJiraSearchCmd(g), newJiraCommentsCmd(g))
+	cmd.AddCommand(newJiraIssueCmd(g), newJiraSearchCmd(g), newJiraCommentsCmd(g), newJiraAttachmentsCmd(g))
 	return cmd
 }
 
@@ -55,7 +55,9 @@ returned it (./<KEY>.adf.json).
 (./<KEY>.md): the description first, then one section per other field, headed
 by the field's name. That file is for reading only. Whatever the conversion
 could not represent is counted in Degraded; read the default file when the task
-depends on that part.
+depends on that part. An image in a field is among those losses, since it
+cannot be linked to its attachment: download it by filename with
+` + "`atlio jira attachments download`" + ` to see it.
 
 The issue is named by its key (KAN-1) or by a browser URL: /browse/KAN-1, a
 board, backlog or list URL with the issue open in its panel (selectedIssue),

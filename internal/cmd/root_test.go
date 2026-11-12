@@ -87,6 +87,9 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"jira search":                     true,
 		"jira comments":                   false,
 		"jira comments list":              true,
+		"jira attachments":                false,
+		"jira attachments list":           true,
+		"jira attachments download":       true,
 		"auth":                            false,
 		"auth login":                      false,
 		"profile":                         false,
@@ -173,6 +176,14 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 		{
 			name: "jira comments list",
 			args: []string{"jira", "comments", "list", "--format", "bogus", "KAN-1"},
+		},
+		{
+			name: "jira attachments list",
+			args: []string{"jira", "attachments", "list", "--format", "bogus", "KAN-1"},
+		},
+		{
+			name: "jira attachments download, before cobra reports a missing required flag",
+			args: []string{"jira", "attachments", "download", "--format", "bogus", "KAN-1"},
 		},
 		{
 			name: "plantuml list, before cobra reports a missing required flag",
@@ -349,6 +360,11 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			name:    "jira comments",
 			args:    []string{"jira", "comments", "bogus"},
 			wantErr: `unknown command "bogus" for "atlio jira comments"`,
+		},
+		{
+			name:    "jira attachments",
+			args:    []string{"jira", "attachments", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio jira attachments"`,
 		},
 		{
 			name:    "profile",
