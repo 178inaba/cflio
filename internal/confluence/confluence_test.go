@@ -240,6 +240,122 @@ func TestCreatePagePostsAPublishedStorageBodyUnescaped(t *testing.T) {
 	}
 }
 
+func TestSpaceHomepageIDSendsOneKeysLookup(t *testing.T) {
+	requests := 0
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/wiki/api/v2/spaces" {
+			t.Errorf("path = %q, want /wiki/api/v2/spaces", r.URL.Path)
+		}
+		// Only keys: a status filter would hide an archived space's
+		// homepage, and a limit or cursor would make it a listing.
+		query := r.URL.Query()
+		if got := query.Get("keys"); got != "DEV" {
+			t.Errorf("keys = %q, want DEV", got)
+		}
+		if len(query) != 1 {
+			t.Errorf("query = %v, want keys alone", query)
+		}
+		_, _ = fmt.Fprint(w, `{"results":[{"id":"9","key":"DEV","homepageId":"163938"}],
+			"_links":{"next":"/wiki/api/v2/spaces?keys=DEV&cursor=abc"}}`)
+	})
+
+	id, err := client.SpaceHomepageID(t.Context(), "DEV")
+	if err != nil {
+		t.Fatalf("SpaceHomepageID() error = %v", err)
+	}
+	if id != "163938" {
+		t.Errorf("SpaceHomepageID() = %q, want 163938", id)
+	}
+	if requests != 1 {
+		t.Errorf("requests = %d, want 1 even with a next link", requests)
+	}
+}
+
+func TestSpaceHomepageIDPicksTheResultWhoseKeyMatches(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		results string
+		want    string
+	}{
+		{
+			// The keys filter matches regardless of case and answers with
+			// the space's own spelling.
+			name:    "key typed in a different case",
+			key:     "dev",
+			results: `[{"key":"DEV","homepageId":"163938"}]`,
+			want:    "163938",
+		},
+		{
+			name:    "matching result after one that does not match",
+			key:     "DEV",
+			results: `[{"key":"OTHER","homepageId":"1"},{"key":"DEV","homepageId":"163938"}]`,
+			want:    "163938",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"results":%s}`, tt.results)
+			})
+
+			id, err := client.SpaceHomepageID(t.Context(), tt.key)
+			if err != nil {
+				t.Fatalf("SpaceHomepageID(%q) error = %v", tt.key, err)
+			}
+			if id != tt.want {
+				t.Errorf("SpaceHomepageID(%q) = %q, want %q", tt.key, id, tt.want)
+			}
+		})
+	}
+}
+
+func TestSpaceHomepageIDFailsNamingTheKey(t *testing.T) {
+	tests := []struct {
+		name         string
+		results      string
+		wantContains string
+	}{
+		{
+			// What the API answers for a key that does not exist or that
+			// the token cannot see: 200 with nothing in it, not a 404.
+			name:         "no results",
+			results:      `[]`,
+			wantContains: "no space",
+		},
+		{
+			name:         "only a result for another key",
+			results:      `[{"key":"OTHER","homepageId":"1"}]`,
+			wantContains: "no space",
+		},
+		{
+			name:         "space without a homepage",
+			results:      `[{"key":"DEV","homepageId":""}]`,
+			wantContains: "no homepage",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"results":%s}`, tt.results)
+			})
+
+			id, err := client.SpaceHomepageID(t.Context(), "DEV")
+			if err == nil {
+				t.Fatalf("SpaceHomepageID() = %q, want an error", id)
+			}
+			for _, want := range []string{tt.wantContains, `"DEV"`} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestChildPagesFiltersNonPagesAndCountsPagesTowardTheLimit(t *testing.T) {
 	// Two whiteboards are interleaved with the pages, so a client that
 	// counted raw children would return fewer pages than asked for.
