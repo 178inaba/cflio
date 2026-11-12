@@ -14,17 +14,17 @@ description: Read Jira issues, and read, edit and create Confluence Cloud pages,
 
 ## Operating contract
 
-- **Each product's `read` writes to a file, in one of two modes.** Without `--markdown`, the server's own representation unconverted; with `--markdown`, a Markdown conversion for reading only, which costs far fewer tokens to read and cannot be written back.
-- **Markdown mode is lossy, and it says so.** The output reports what the conversion could not represent (`Degraded: 3 (adf-extension, jira)`, or `unsupported_count` in JSON). If that count is non-zero and the task depends on the part that degraded, run the read again without `--markdown` and read that file instead.
-- **`attachments download` takes the files you name.** `--pattern` is required and case-sensitive; scope it to what the task needs rather than reaching for `--pattern '*'`, since every file you pull you then have to read. A pattern matching nothing is an error, not an empty success, and an existing file is refused rather than kept, failing the whole run: pick a different `-o` instead of deleting the user's files.
-- **Never print a downloaded body to stdout** (no `cat` of a downloaded page or issue file into your reply). Summarize or quote the relevant lines instead.
+- **Each product's `read` writes to a file, in one of two modes.** Without `--markdown`, the server's own representation unconverted; with `--markdown`, a Markdown conversion for reading only, which costs far fewer tokens to read and cannot be written back. The two modes write different default files, so running one after the other overwrites nothing.
+- **Markdown mode is lossy, and it says so.** The output reports what the conversion could not represent (a `Degraded:` line with the count and the kinds of content, or `unsupported_count` in JSON). If that count is non-zero and the task depends on the part that degraded, run the read again without `--markdown` and read that file instead.
+- **`attachments download` takes the files you name.** `--pattern` is required and case-sensitive; scope it to what the task needs rather than reaching for `--pattern '*'`, since every file you pull you then have to read. A pattern matching nothing is an error, not an empty success, and an existing file is refused, failing the whole run: pick a different `-o` instead of deleting the user's files.
+- **Never print a downloaded body to stdout** (no `cat` of a downloaded file into your reply). Summarize or quote the relevant lines instead.
 - **Structured output**: add `--format json` when you want to parse a result rather than read it.
 - **A URL copied from the browser is a reference like any other** — pass one straight through rather than asking the user for an ID or another form.
 - **Multiple sites**: a URL selects the right profile automatically. For a command given no URL, which carries no site, pass `--profile <name>` if the user has more than one site registered — check with `atlio profile list`.
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `atlio auth login` (they will need an Atlassian API token; see the repo README).
 - **Exit codes say what to do next.** `0` is success. `124` means the `--timeout` deadline expired — raise `--timeout` and run the command again, unless the command creates something: the deadline can expire after the server already made it, so check first and re-run only if it is not there. `1` is every other failure; read the `Error: …` line on stderr and report it to the user rather than retrying.
 - **`atlio` never retries a failed request on its own.**
-- **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` atlio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — neither of those is one of the codes above, since the process never exits normally.
-- **What atlio does not do, draft for the user to post themselves.**
+- **An interrupt is not a failure.** On Ctrl-C or `SIGTERM` atlio prints nothing and terminates by the signal, which a shell reports as `130` or `143` — neither of those is one of the codes above, since the process never exits normally. An interrupted `read` leaves no body file unless the signal lands during the write itself, so do not treat a missing file as a failed request.
+- **Draft what atlio does not support.** For anything atlio does not support, draft the text for the user to post themselves.
 
 Run `atlio --help` or `atlio <command> --help` for the full flag reference; it is the source of truth for exact flags and defaults, so this document does not duplicate it.
