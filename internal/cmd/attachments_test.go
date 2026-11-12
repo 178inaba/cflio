@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -725,6 +726,9 @@ func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
 }
 
 func TestAttachmentsUploadRejectsAFileItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a mode of 0 does not deny reading on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a file whatever its mode")
 	}
