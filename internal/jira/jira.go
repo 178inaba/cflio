@@ -131,8 +131,12 @@ type Attachment struct {
 }
 
 // GetIssue reads one issue with every field and the display name of each.
+// The comment thread and the work log are left out: neither is read, and a
+// long discussion can outweigh the rest of the issue many times over. Neither
+// value is an ADF document at its top level, so no rich-text field goes with
+// them.
 func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
-	query := url.Values{"fields": {"*all"}, "expand": {"names"}}
+	query := url.Values{"fields": {"*all,-comment,-worklog"}, "expand": {"names"}}
 
 	// fields is kept raw and decoded twice: once into the metadata, and once
 	// into one raw value per field. The raw values are what a rich-text field
@@ -195,37 +199,26 @@ func isADFDocument(v jsontext.Value) bool {
 // compareFieldIDs orders description and environment first, then custom
 // fields by their number, then anything else by its ID.
 func compareFieldIDs(a, b string) int {
-	if c := cmp.Compare(fieldRank(a), fieldRank(b)); c != 0 {
-		return c
-	}
-	if na, ok := customFieldNumber(a); ok {
-		if nb, ok := customFieldNumber(b); ok {
-			return cmp.Compare(na, nb)
-		}
-	}
-	return strings.Compare(a, b)
+	rankA, numA := fieldKey(a)
+	rankB, numB := fieldKey(b)
+	return cmp.Or(cmp.Compare(rankA, rankB), cmp.Compare(numA, numB), strings.Compare(a, b))
 }
 
-func fieldRank(id string) int {
+// fieldKey ranks a field ID for compareFieldIDs, with a custom field's number
+// alongside; num is zero for every other field.
+func fieldKey(id string) (rank int, num int64) {
 	switch id {
 	case "description":
-		return 0
+		return 0, 0
 	case "environment":
-		return 1
+		return 1, 0
 	}
-	if _, ok := customFieldNumber(id); ok {
-		return 2
+	if digits, ok := strings.CutPrefix(id, "customfield_"); ok {
+		if n, err := strconv.ParseInt(digits, 10, 64); err == nil {
+			return 2, n
+		}
 	}
-	return 3
-}
-
-func customFieldNumber(id string) (int64, bool) {
-	digits, ok := strings.CutPrefix(id, "customfield_")
-	if !ok {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(digits, 10, 64)
-	return n, err == nil
+	return 3, 0
 }
 
 // apiErrorMessages parses Jira's error envelope,

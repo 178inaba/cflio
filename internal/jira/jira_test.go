@@ -74,8 +74,8 @@ func TestGetIssueRequestsEveryFieldWithItsName(t *testing.T) {
 	if gotMethod != http.MethodGet || gotPath != "/rest/api/3/issue/KAN-1" {
 		t.Errorf("request = %s %s, want GET /rest/api/3/issue/KAN-1", gotMethod, gotPath)
 	}
-	if gotFields != "*all" || gotExpand != "names" {
-		t.Errorf("query fields=%q expand=%q, want fields=*all expand=names", gotFields, gotExpand)
+	if gotFields != "*all,-comment,-worklog" || gotExpand != "names" {
+		t.Errorf("query fields=%q expand=%q, want fields=*all,-comment,-worklog expand=names", gotFields, gotExpand)
 	}
 	if issue.Key != "KAN-1" || issue.Fields.Summary != "S" || issue.Names["summary"] != "Summary" {
 		t.Errorf("GetIssue() = %+v, want the key, summary and names decoded", issue)
