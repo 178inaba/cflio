@@ -164,8 +164,8 @@ func (c *Client) SendMultipart(ctx context.Context, method, path string, header 
 		return fmt.Errorf("%s %s: write request body: %w", method, path, werr)
 	}
 	// The writer only returns nil once the transport has read the body to its
-	// end, so after that only a 4xx settles the outcome: it refuses the
-	// request. Anything else — no response, a 2xx whose body could not be read
+	// end, so after that a 4xx settles the outcome by refusing the request, and
+	// a 3xx by leaving it unprocessed. Anything else — no response, a 2xx whose body could not be read
 	// or parsed, or a 5xx, none of whose definitions in RFC 9110 says whether
 	// the request was carried out — leaves it unknown.
 	if err != nil && werr == nil {

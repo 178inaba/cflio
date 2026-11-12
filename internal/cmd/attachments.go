@@ -128,9 +128,10 @@ checked locally; a file over it fails at the server.
 
 An upload that fails after the whole request was sent — the deadline expiring
 while the response is awaited, or a 5xx answer — may have been stored anyway,
-and its error says so. Only a 4xx says Confluence refused it. Check with ` + "`atlio confluence attachments list`" + ` before running
-it again: without --replace a repeat is refused if the files did land, and
-with --replace it adds another, identical version.`,
+and its error says so. Only a 4xx says Confluence refused it. Check with
+` + "`atlio confluence attachments list`" + ` before running it again: without
+--replace a repeat is refused if the files did land, and with --replace it
+adds another, identical version.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsUpload(cmd, args, g, replace, outFormat)
