@@ -283,8 +283,9 @@ and is created if it does not exist.
 
 ### Putting an image on a page
 
-`confluence attachments upload` attaches local files to a page, each under its base name
-(`./out/shot.png` becomes `shot.png`). Uploading does not touch the body, so the file does not
+`confluence attachments upload` attaches local regular files to a page, each under its base name
+(`./out/shot.png` becomes `shot.png`); a FIFO, a device or a directory is refused before anything is
+sent. Uploading does not touch the body, so the file does not
 appear on the page yet: showing it is the read/update cycle, with one element naming the attachment
 placed where it should appear.
 
@@ -305,6 +306,12 @@ All the files go in one request, and the default 90 s `--timeout` covers the who
 for a large file. The site's attachment size limit is not checked locally; a file over it fails at
 the server. The output lists each attachment with the media type Confluence read it as, its size,
 and its version: `1` for a new attachment, higher for a replaced one.
+
+An upload that fails after the whole request was sent — typically the deadline expiring while the
+response is awaited — may have been stored anyway, and its error says so. Check with
+`confluence attachments list` before running it again: without `--replace` a repeat is refused if the
+files did land, and with `--replace` it adds another, identical version. The exit code is still the
+one the failure calls for, `124` for the deadline.
 
 ### PlantUML diagrams
 
@@ -433,7 +440,9 @@ retrying — with a larger `--timeout`, and for a command that creates something
 below; every other one needs the `Error:` line read instead. A
 deadline that expires while `confluence read --markdown` is resolving references or downloading
 attachments is the exception: it is absorbed like any other lookup failure, so the reference is
-counted in `Unchecked: N` above and the run still exits `0`.
+counted in `Unchecked: N` above and the run still exits `0`. An upload is the other: one whose
+deadline expired after the whole request was sent may already have landed, so check before retrying
+(see [Putting an image on a page](#putting-an-image-on-a-page)).
 
 A command that creates something must not be re-run blindly after a `124`: the deadline can expire
 after the server has already created the thing. A re-run of `confluence comments create` then posts
