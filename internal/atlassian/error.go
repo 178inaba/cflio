@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 )
 
-// ErrSentInFull marks a request other than a GET that failed after its whole
-// body was sent without a 3xx or 4xx settling it — no response at all, a 2xx
+// ErrSentInFull marks a request with a body — never a GET — that failed after
+// its whole body was sent without a 3xx or 4xx settling it — no response at all, a 2xx
 // whose body could not be read or parsed, or a 5xx — so the server may have
 // carried it out. A 3xx or 4xx is never marked, even when its body cannot be
 // read: the status alone says the request was not carried out. It is wrapped

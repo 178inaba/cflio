@@ -313,7 +313,7 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 		switch {
 		case errors.Is(err, confluence.ErrUploadRefused):
 			return fmt.Errorf("%w; pass --replace to upload a new version of that attachment instead", err)
-		case errors.Is(err, confluence.ErrUploadUnconfirmed):
+		case errors.Is(err, confluence.ErrUnconfirmed):
 			return fmt.Errorf("%w; check with `atlio confluence attachments list` before uploading again", err)
 		}
 		return err

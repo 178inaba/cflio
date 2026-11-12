@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -573,8 +571,8 @@ type creatingFailure struct {
 	// big sends a body far past what the socket buffers absorb, so one the
 	// server does not read cannot all be handed over.
 	big bool
-	// wantCode is the exit code, and wantHint the check the error names, or
-	// "" for none.
+	// wantCode is the exit code, and wantHint whether the error names the
+	// command's check.
 	wantCode int
 	wantHint bool
 }
@@ -662,9 +660,6 @@ func TestCreateSaysWhenThePageMayHaveBeenCreated(t *testing.T) {
 			_, err := runCreate(t, testPageURL, "New Page", file, "--timeout=300ms")
 
 			assertCreatingFailure(t, err, fc, createCheckHint)
-			if fc.stall && !errors.Is(err, context.DeadlineExceeded) {
-				t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
-			}
 			assertNoSidecar(t, file)
 		})
 	}

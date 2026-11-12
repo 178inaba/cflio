@@ -235,18 +235,18 @@ func encodeJSON(payload any) (io.Reader, error) {
 
 // doJSON sends req and decodes the JSON response into out, which may be nil.
 //
-// A request that changes something and fails after its whole body was handed
-// to the transport is marked with ErrSentInFull, unless a 3xx or 4xx settled
-// it: RFC 9110 lets a client repeat a non-idempotent request only once it
-// knows the first was not applied, and only those statuses say so. A GET is
-// never marked, since running it again repeats no effect.
+// A request that fails after its whole body was handed to the transport is
+// marked with ErrSentInFull, unless a 3xx or 4xx settled it: RFC 9110 lets a
+// client repeat a non-idempotent request only once it knows the first was not
+// applied, and only those statuses say so. Only a request with a body can be
+// marked, so a GET, which carries none and repeats no effect, never is.
 func (c *Client) doJSON(req *http.Request, path string, out any) error {
 	req.SetBasicAuth(c.email, c.token)
 	req.Header.Set("Accept", "application/json")
 
 	sent := trackSent(req)
 	unknown := func(err error) error {
-		if req.Method == http.MethodGet || !sent.Load() {
+		if !sent.Load() {
 			return err
 		}
 		return fmt.Errorf("%w: %w", err, ErrSentInFull)
@@ -258,11 +258,12 @@ func (c *Client) doJSON(req *http.Request, path string, out any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= http.StatusInternalServerError {
-		return unknown(c.responseError(req.Method, path, resp))
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return c.responseError(req.Method, path, resp)
+		err := c.responseError(req.Method, path, resp)
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return unknown(err)
+		}
+		return err
 	}
 
 	if out == nil {
@@ -305,7 +306,8 @@ func trackSent(req *http.Request) *atomic.Bool {
 	if req.Body == nil || req.Body == http.NoBody {
 		return sent
 	}
-	req.Body = &sentReader{rc: req.Body, want: req.ContentLength, sent: sent}
+	want := req.ContentLength
+	req.Body = &sentReader{rc: req.Body, want: want, sent: sent}
 	if getBody := req.GetBody; getBody != nil {
 		req.GetBody = func() (io.ReadCloser, error) {
 			body, err := getBody()
@@ -313,7 +315,7 @@ func trackSent(req *http.Request) *atomic.Bool {
 				return nil, err
 			}
 			sent.Store(false)
-			return &sentReader{rc: body, want: req.ContentLength, sent: sent}, nil
+			return &sentReader{rc: body, want: want, sent: sent}, nil
 		}
 	}
 	return sent

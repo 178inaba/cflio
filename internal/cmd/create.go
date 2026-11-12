@@ -134,7 +134,7 @@ func runCreatePage(cmd *cobra.Command, g *globalFlags, parent, title, file strin
 	created, err := client.CreatePage(ctx, confluence.NewCreatePageRequest(
 		parentPage.SpaceID, pageID, title, string(body)))
 	if err != nil {
-		if errors.Is(err, confluence.ErrCreateUnconfirmed) {
+		if errors.Is(err, confluence.ErrUnconfirmed) {
 			return fmt.Errorf("%w; check with `atlio confluence children` before creating it again, "+
 				"and if the page is there, `atlio confluence read` it to get a checkout", err)
 		}
