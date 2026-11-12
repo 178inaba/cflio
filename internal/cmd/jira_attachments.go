@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/178inaba/atlio/internal/format"
-	"github.com/178inaba/atlio/internal/issueref"
 	"github.com/178inaba/atlio/internal/jira"
 	"github.com/spf13/cobra"
 )
@@ -159,22 +158,6 @@ func runJiraAttachmentsDownload(cmd *cobra.Command, arg string, g *globalFlags, 
 		return err
 	}
 	return writeList(cmd, outFormat, "downloaded attachments", items, "")
-}
-
-// resolveIssueClient parses the issue argument and builds the client for the
-// site it names, so a key and a URL select the profile the same way on both
-// subcommands.
-func resolveIssueClient(arg, profile string) (*jira.Client, string, error) {
-	ref, err := issueref.Parse(arg)
-	if err != nil {
-		return nil, "", err
-	}
-
-	client, err := resolveJira(profile, ref.Host)
-	if err != nil {
-		return nil, "", err
-	}
-	return client, ref.Key, nil
 }
 
 // jiraAttachmentFile adapts an issue attachment to the download paths.

@@ -117,14 +117,14 @@ func TestJiraAttachmentsListJSONOutput(t *testing.T) {
 	}
 
 	var got struct {
-		Attachments []map[string]any `json:"attachments"`
+		Attachments []attachmentItem `json:"attachments"`
 	}
 	if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
 		t.Fatalf("Unmarshal(%q) error = %v", run.stdout, err)
 	}
-	want := []map[string]any{{"filename": "screen.png", "media_type": "image/png", "file_size": float64(1234)}}
-	if len(got.Attachments) != 1 || fmt.Sprint(got.Attachments) != fmt.Sprint(want) {
-		t.Errorf("attachments = %v, want %v", got.Attachments, want)
+	want := []attachmentItem{{Filename: "screen.png", MediaType: "image/png", FileSize: 1234}}
+	if !slices.Equal(got.Attachments, want) {
+		t.Errorf("attachments = %+v, want %+v", got.Attachments, want)
 	}
 }
 

@@ -136,12 +136,7 @@ type issueLink struct {
 }
 
 func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath string, markdown bool, outFormat format.Format) error {
-	ref, err := issueref.Parse(arg)
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveJira(g.profile, ref.Host)
+	client, key, err := resolveIssueClient(arg, g.profile)
 	if err != nil {
 		return err
 	}
@@ -149,7 +144,7 @@ func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath st
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	issue, err := client.GetIssue(ctx, ref.Key)
+	issue, err := client.GetIssue(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -178,6 +173,22 @@ func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath st
 	}
 
 	return writeJiraIssueResult(cmd, outFormat, result)
+}
+
+// resolveIssueClient parses the issue argument and builds the client for the
+// site it names. Every command that addresses an issue goes through here, so
+// a key and a URL select the profile the same way on each of them.
+func resolveIssueClient(arg, profile string) (*jira.Client, string, error) {
+	ref, err := issueref.Parse(arg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	client, err := resolveJira(profile, ref.Host)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, ref.Key, nil
 }
 
 func newJiraIssueResult(url string, issue *jira.Issue) jiraIssueResult {
