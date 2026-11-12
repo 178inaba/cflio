@@ -563,6 +563,22 @@ func TestSendMultipartKeepsTheDeadlineWhenTheServerStopsReading(t *testing.T) {
 	}
 }
 
+func TestSendMultipartMarksAnUnreadableSuccessAsSentInFull(t *testing.T) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = fmt.Fprint(w, "<html>not json</html>")
+	})
+
+	var out struct{}
+	err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
+		writeFilePart("a.png", fileBytes), &out)
+
+	// A 2xx means the server accepted the request; only its answer is lost.
+	if !errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want ErrSentInFull for a 2xx that could not be parsed", err)
+	}
+}
+
 func TestSendMultipartMarksAFailureAfterTheWholeBodyWasSent(t *testing.T) {
 	release := make(chan struct{})
 	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {

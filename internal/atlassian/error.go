@@ -1,12 +1,20 @@
 package atlassian
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"unicode/utf8"
 )
+
+// ErrSentInFull marks a request that failed after its whole body was sent
+// without a non-2xx response to settle it — no response at all, or a 2xx whose
+// body could not be read or parsed — so the server may have carried it out. It
+// is wrapped alongside the failure rather than in place of it, so an expired
+// deadline still reads as context.DeadlineExceeded.
+var ErrSentInFull = errors.New("the whole request was sent before it failed, so the server may have carried it out")
 
 const (
 	// maxErrorBody bounds how much of a failed response is read to build the

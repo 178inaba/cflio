@@ -313,7 +313,7 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 		case errors.Is(err, confluence.ErrUploadRefused):
 			return fmt.Errorf("%w; pass --replace to upload a new version of that attachment instead", err)
 		case errors.Is(err, confluence.ErrUploadUnconfirmed):
-			return fmt.Errorf("%w; check with `atlio confluence attachments list %s` before uploading again", err, args[0])
+			return fmt.Errorf("%w; check with `atlio confluence attachments list` before uploading again", err)
 		}
 		return err
 	}
@@ -337,7 +337,9 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 // Only a regular file is accepted, and that is decided from a Stat before the
 // open: opening a FIFO blocks until a writer appears, before --timeout is
 // running, and a device can stream without end. SameFile on the open handle
-// then rules out the path having been swapped for something else in between.
+// then refuses a path that was swapped for another file in between; a swap to
+// a FIFO in that window would still block the open, which only a racing local
+// process could arrange.
 func openUploads(paths []string) ([]*os.File, error) {
 	var (
 		files    []*os.File

@@ -11,8 +11,9 @@ import (
 
 // TestAttachmentsUploadAcceptsOnlyRegularFiles covers the files whose open or
 // read never ends: a FIFO blocks the open until a writer appears, before any
-// deadline is running, and a device such as /dev/zero streams without end. A
-// regression here hangs rather than fails, which the test timeout reports.
+// deadline is running, and a device may stream without end, so /dev/null
+// stands in for every device. A regression on the FIFO hangs rather than
+// fails, which the test timeout reports.
 func TestAttachmentsUploadAcceptsOnlyRegularFiles(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe.png")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
