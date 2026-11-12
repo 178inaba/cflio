@@ -32,13 +32,13 @@ func newUpdateCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update -f <file>",
 		Short: "Write an edited page body back to Confluence",
-		Long: `Write a file previously downloaded with ` + "`atlio confluence read`" + ` back to
-its page.
+		Long: `Write a file back to its page: one downloaded with ` + "`atlio confluence read`" + `,
+or one a page was made from with ` + "`atlio confluence create`" + `.
 
 The page, the profile and the expected version all come from the file's
 sidecar, so an update can never target the wrong page. If the page changed
-on the server since it was read, the update is refused: re-read the page and
-re-apply the edits.
+on the server since the sidecar was written, the update is refused: re-read
+the page and re-apply the edits.
 
 --title renames the page in the same request. The body still travels, so a
 rename on an untouched file resends the same bytes and only the title
@@ -56,7 +56,7 @@ and updated again without re-reading the page.`,
 	// No backticks in flag usage strings: cobra reads the first backtick
 	// pair as the flag's argument placeholder.
 	cmd.Flags().StringVarP(&file, "file", "f", "",
-		"file holding the edited body, as downloaded by atlio confluence read")
+		"file holding the edited body, next to the sidecar atlio confluence read or create wrote")
 	cmd.Flags().StringVar(&message, "message", defaultVersionMessage,
 		"version message recorded in the page's history")
 	cmd.Flags().StringVar(&title, "title", "",

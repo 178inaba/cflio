@@ -1,8 +1,10 @@
 // Package sidecar reads and writes the metadata file that
-// `atlio confluence read` leaves next to a downloaded page body. The sidecar is
-// what makes `confluence update` self-describing: the page it targets, the
-// profile it authenticates with and the version it locks against all come from
-// here, so there is no way to write to a page that was never read.
+// `atlio confluence read` leaves next to a downloaded page body, and that
+// `atlio confluence create` leaves next to the body a page was created from.
+// The sidecar is what makes `confluence update` self-describing: the page it
+// targets, the profile it authenticates with and the version it locks against
+// all come from here, so there is no way to write to a page no sidecar
+// describes.
 package sidecar
 
 import (

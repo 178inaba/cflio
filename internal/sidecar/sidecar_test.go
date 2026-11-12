@@ -290,6 +290,21 @@ func TestExists(t *testing.T) {
 	}
 }
 
+// TestExistsReportsAPathItCannotCheck pins that only "not exist" reads as
+// absent: any other Lstat failure would otherwise let a create go ahead
+// without knowing what is at the path.
+func TestExistsReportsAPathItCannotCheck(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// A regular file used as a directory fails with ENOTDIR, not ENOENT.
+	if got, err := Exists(filepath.Join(file, "page.xml")); err == nil {
+		t.Errorf("Exists() = %v, nil; want an error for a path under a regular file", got)
+	}
+}
+
 func TestCreateThenLoadRoundTrips(t *testing.T) {
 	body := filepath.Join(t.TempDir(), "page.xml")
 	want := testMeta()

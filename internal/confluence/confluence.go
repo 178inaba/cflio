@@ -218,7 +218,7 @@ func (c *Client) GetPage(ctx context.Context, id string, withBody bool) (*Page, 
 }
 
 // UpdatePageRequest is the v2 page-update payload. Every field is required
-// by the API; atlio fills them from the sidecar written at read time.
+// by the API; atlio fills them from the file's sidecar.
 type UpdatePageRequest struct {
 	ID      string      `json:"id"`
 	Status  string      `json:"status"`
@@ -255,9 +255,10 @@ func (c *Client) UpdatePage(ctx context.Context, req UpdatePageRequest) (*Page, 
 // CreatePageRequest is the v2 page-create payload.
 //
 // NewCreatePageRequest fixes the status at "current" and the payload has no
-// subtype field, while CreatePage sends no query parameters: a draft, a live
-// doc or a private page could not be written by `confluence update`
-// afterwards, so there is no way to ask for one here.
+// subtype field, so neither a draft nor a live doc — which `confluence update`
+// could not write afterwards — can be asked for. CreatePage sends no query
+// parameters either, so a private page cannot be asked for: creating one is
+// outside what atlio does.
 type CreatePageRequest struct {
 	SpaceID  string      `json:"spaceId"`
 	Status   string      `json:"status"`
