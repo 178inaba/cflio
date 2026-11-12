@@ -1,4 +1,6 @@
-// Command atlio is a Confluence Cloud CLI built for AI coding agents.
+// Command atlio is an Atlassian Cloud CLI for AI coding agents: it reads Jira
+// issues, and reads and updates Confluence page bodies, through local files,
+// without the body passing through the model.
 package main
 
 import (

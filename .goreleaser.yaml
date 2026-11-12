@@ -42,7 +42,7 @@ homebrew_casks:
     homepage: https://github.com/178inaba/atlio
     # Kept byte-identical with .claude-plugin/plugin.json and
     # .claude-plugin/marketplace.json (see CLAUDE.md).
-    description: "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model."
+    description: "Atlassian Cloud CLI for AI coding agents: read Jira issues, and read and update Confluence page bodies, through local files, without the body passing through the model."
     hooks:
       post:
         # The binary is neither signed nor notarized, so without this Gatekeeper

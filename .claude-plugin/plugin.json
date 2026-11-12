@@ -2,12 +2,12 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "atlio",
   "version": "1.0.6",
-  "description": "Confluence Cloud CLI for AI coding agents: read and update page bodies through local files, losslessly, without the body passing through the model.",
+  "description": "Atlassian Cloud CLI for AI coding agents: read Jira issues, and read and update Confluence page bodies, through local files, without the body passing through the model.",
   "author": {
     "name": "Masahiro Furudate",
     "url": "https://github.com/178inaba"
   },
   "repository": "https://github.com/178inaba/atlio",
   "license": "MIT",
-  "keywords": ["confluence", "atlassian", "cli", "agent-skills"]
+  "keywords": ["confluence", "jira", "atlassian", "cli", "agent-skills"]
 }
