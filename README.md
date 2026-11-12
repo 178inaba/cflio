@@ -504,8 +504,9 @@ A run that ends normally reports which happened in its exit status, so a caller 
 read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
 every other failure. `124` is the code GNU `timeout` uses, and it marks a failure worth retrying with
 a larger `--timeout`. The other failure worth retrying is one whose error says the request may have
-been carried out, under either code; a command that creates something is retried after either only
-once the check below has found nothing. Every other `1` needs the `Error:` line read instead. A
+been carried out, under either code. A command that creates something is retried after such an
+error only once the check below has found nothing; after a `124` whose error does not say so,
+nothing was sent in full and it is retried like any other. Every other `1` needs the `Error:` line read instead. A
 deadline that expires while `confluence read --markdown` is resolving references or downloading
 attachments is the exception: it is absorbed like any other lookup failure, so the reference is
 counted in `Unchecked: N` above and the run still exits `0`.

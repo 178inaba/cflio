@@ -82,9 +82,9 @@ comments, which have to be anchored to a span of the body.
 A failure after the whole request was sent — the deadline expiring while the
 response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
 parsed (exit code 1) — may have posted the comment anyway, and its error
-says so; running create again would then post a second one. Only a 4xx says
-Confluence refused it, and a failure before the request was sent cannot
-have posted anything. When the error says the comment may have been posted,
+says so; running create again would then post a second one. Only a 3xx or
+4xx says it was not carried out, and a failure before the whole request was
+sent cannot have posted anything. When the error says the comment may have been posted,
 check with ` + "`atlio confluence comments list <page>`" + ` before running create
 again (raise --limit if it says more comments are available); if the
 comment is there, nothing is left to do.`,

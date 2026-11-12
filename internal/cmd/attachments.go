@@ -130,8 +130,8 @@ checked locally; a file over it fails at the server.
 A failure after the whole request was sent — the deadline expiring while the
 response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
 parsed (exit code 1) — may have stored the files anyway, and its error says
-so. Only a 4xx says Confluence refused it, and a failure before the request
-was sent cannot have stored anything. When the error says the files may
+so. Only a 3xx or 4xx says it was not carried out, and a failure before the
+whole request was sent cannot have stored anything. When the error says the files may
 have been stored, check with ` + "`atlio confluence attachments list`" + ` before
 running it again: without --replace a repeat is refused if the files did
 land, and with --replace it adds another, identical version.`,

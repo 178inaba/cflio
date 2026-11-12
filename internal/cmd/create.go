@@ -48,8 +48,8 @@ too: the sidecar has to be written beside a file.
 A failure after the whole request was sent — the deadline expiring while the
 response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
 parsed (exit code 1) — may have made the page anyway, and its error says so.
-Only a 4xx says Confluence refused it, and a failure before the request was
-sent cannot have made anything. Running create again after a page was made
+Only a 3xx or 4xx says it was not carried out, and a failure before the whole
+request was sent cannot have made anything. Running create again after a page was made
 fails on the duplicate title rather than making a second page, and still
 leaves no checkout; that error alone does not say the first create landed,
 since the title may already be taken elsewhere in the space. So when the

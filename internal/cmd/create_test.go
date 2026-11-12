@@ -605,6 +605,16 @@ func failCreating(fc creatingFailure) (http.HandlerFunc, func()) {
 	}, func() { close(release) }
 }
 
+// timeoutFlag is the --timeout a creating command runs under for fc: a short
+// deadline for a stall to reach, and none for an answer, so a slow machine
+// cannot turn the answer into a timeout.
+func (fc creatingFailure) timeoutFlag() string {
+	if fc.stall {
+		return "--timeout=300ms"
+	}
+	return "--timeout=0"
+}
+
 // creatingBody is the file a creating command sends under fc.
 func creatingBody(t *testing.T, fc creatingFailure) string {
 	t.Helper()
@@ -657,7 +667,7 @@ func TestCreateSaysWhenThePageMayHaveBeenCreated(t *testing.T) {
 			})
 
 			file := creatingBody(t, fc)
-			_, err := runCreate(t, testPageURL, "New Page", file, "--timeout=300ms")
+			_, err := runCreate(t, testPageURL, "New Page", file, fc.timeoutFlag())
 
 			assertCreatingFailure(t, err, fc, createCheckHint)
 			assertNoSidecar(t, file)

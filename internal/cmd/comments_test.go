@@ -303,7 +303,7 @@ func TestCommentsCreateSaysWhenTheCommentMayHaveBeenPosted(t *testing.T) {
 			startAPI(t, fail)
 
 			_, err := runCLI(t, "confluence", "comments", "create", testPageURL,
-				"-f", creatingBody(t, fc), "--timeout=300ms")
+				"-f", creatingBody(t, fc), fc.timeoutFlag())
 
 			assertCreatingFailure(t, err, fc, commentsCheckHint)
 		})
