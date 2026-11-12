@@ -491,27 +491,13 @@ func uploadAPI(t *testing.T) (*[]uploadRequest, http.HandlerFunc) {
 	}
 }
 
-// writeUploadFile writes content to name under dir and returns its path.
-func writeUploadFile(t *testing.T, dir, name string, content []byte) string {
-	t.Helper()
-
-	p := filepath.Join(dir, name)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := os.WriteFile(p, content, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	return p
-}
-
 func TestAttachmentsUploadPostsTheFileUnderItsBaseName(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
 	requests, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	file := writeUploadFile(t, t.TempDir(), "out/a.png", pngBytes)
+	file := writeTempFile(t, "out/a.png", string(pngBytes))
 
 	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file); err != nil {
 		t.Fatalf("attachments upload error = %v", err)
@@ -545,7 +531,7 @@ func TestAttachmentsUploadWithReplaceIsAPut(t *testing.T) {
 	requests, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+	file := writeTempFile(t, "a.png", string(pngBytes))
 
 	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--replace"); err != nil {
 		t.Fatalf("attachments upload error = %v", err)
@@ -573,9 +559,8 @@ func TestAttachmentsUploadSendsEveryFileInOneRequest(t *testing.T) {
 	requests, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	dir := t.TempDir()
-	a := writeUploadFile(t, dir, "dir/a.png", pngBytes)
-	b := writeUploadFile(t, dir, "b.png", []byte("b"))
+	a := writeTempFile(t, "dir/a.png", string(pngBytes))
+	b := writeTempFile(t, "b.png", "b")
 
 	if _, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, a, b); err != nil {
 		t.Fatalf("attachments upload error = %v", err)
@@ -601,7 +586,7 @@ func TestAttachmentsUploadListsWhatTheServerStored(t *testing.T) {
 	_, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+	file := writeTempFile(t, "a.png", string(pngBytes))
 
 	res, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--replace")
 	if err != nil {
@@ -619,7 +604,7 @@ func TestAttachmentsUploadJSONOutput(t *testing.T) {
 	_, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+	file := writeTempFile(t, "a.png", string(pngBytes))
 
 	res, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--format", "json")
 	if err != nil {
@@ -647,7 +632,7 @@ func TestAttachmentsUploadAcceptsABarePageID(t *testing.T) {
 	requests, handler := uploadAPI(t)
 	startAPI(t, handler)
 
-	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+	file := writeTempFile(t, "a.png", string(pngBytes))
 
 	if _, err := runCLI(t, "confluence", "attachments", "upload", "123456", file); err != nil {
 		t.Fatalf("attachments upload error = %v", err)
@@ -667,7 +652,7 @@ func TestAttachmentsUploadPointsAtReplaceWhenThePostIsRefused(t *testing.T) {
 			`Cannot add a new attachment with same file name as an existing attachment: a.png"}`)
 	})
 
-	file := writeUploadFile(t, t.TempDir(), "a.png", pngBytes)
+	file := writeTempFile(t, "a.png", string(pngBytes))
 
 	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file)
 	if err == nil {
@@ -686,9 +671,9 @@ func TestAttachmentsUploadPointsAtReplaceWhenThePostIsRefused(t *testing.T) {
 
 func TestAttachmentsUploadChecksEveryFileBeforeSending(t *testing.T) {
 	dir := t.TempDir()
-	valid := writeUploadFile(t, dir, "a.png", pngBytes)
+	valid := writeTempFile(t, "a.png", string(pngBytes))
 	missing := filepath.Join(dir, "missing.png")
-	sameName := writeUploadFile(t, dir, "other/a.png", []byte("x"))
+	sameName := writeTempFile(t, "other/a.png", "x")
 
 	tests := []struct {
 		name     string
@@ -756,7 +741,7 @@ func TestAttachmentsUploadReportsADeadlineThatExpiresMidUpload(t *testing.T) {
 
 	// Large enough that the body cannot all sit in the socket buffers while
 	// the server stalls without reading it.
-	file := writeUploadFile(t, t.TempDir(), "big.bin", make([]byte, 16<<20))
+	file := writeTempFile(t, "big.bin", string(make([]byte, 16<<20)))
 
 	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--timeout=300ms")
 
