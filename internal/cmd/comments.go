@@ -13,8 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// defaultCommentsLimit is lower than the other commands' because each root
-// comment costs an extra request for its replies.
+// defaultCommentsLimit is the default --limit of both products' comment
+// listings, so the two read alike. It is lower than the other commands'
+// because on Confluence each root comment costs an extra request for its
+// replies.
 const defaultCommentsLimit = 25
 
 func newCommentsCmd(g *globalFlags) *cobra.Command {

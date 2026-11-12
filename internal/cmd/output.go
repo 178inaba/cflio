@@ -58,6 +58,13 @@ func writeJSON(cmd *cobra.Command, payload any) error {
 	return err
 }
 
+// degradedLine is the Markdown output's report of what a conversion could not
+// represent, the line agents read the count from. Every command that converts
+// a body prints it through here so the line reads the same everywhere.
+func degradedLine(unsupported []string, count int) string {
+	return fmt.Sprintf("Degraded: %d (%s)\n", count, strings.Join(unsupported, ", "))
+}
+
 // markdownItem is a list entry that can render itself for the Markdown
 // output. The JSON output uses the concrete types' struct tags instead.
 type markdownItem interface {

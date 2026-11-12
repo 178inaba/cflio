@@ -61,11 +61,42 @@ func ADFSectionsToMarkdown(sections []ADFSection) Result {
 	return r.result(blocks)
 }
 
+// DocumentsResult is several ADF documents converted one by one. Markdown
+// holds one entry per document, in input order, each ending in a newline as
+// Result.Markdown does unless the document rendered to nothing; Unsupported
+// and UnsupportedCount report what none of them could represent, in Result's
+// terms.
+type DocumentsResult struct {
+	Markdown         []string
+	Unsupported      []string
+	UnsupportedCount int
+}
+
+// ADFDocumentsToMarkdown converts each document to its own Markdown and
+// reports the losses of all of them together, for a listing whose entries are
+// rendered apart but read as one output.
+func ADFDocumentsToMarkdown(docs [][]byte) DocumentsResult {
+	r := &adfRenderer{}
+	result := DocumentsResult{Markdown: make([]string, len(docs))}
+	for i, doc := range docs {
+		result.Markdown[i] = assemble(r.document(doc))
+	}
+	result.Unsupported, result.UnsupportedCount = r.report()
+	return result
+}
+
 type adfRenderer struct {
 	losses
 }
 
 func (r *adfRenderer) document(doc []byte) []block {
+	// An empty or null value is no document at all — a comment or field with
+	// nothing in it — so it renders as nothing rather than as a document that
+	// failed to decode.
+	if len(doc) == 0 || string(doc) == "null" {
+		return nil
+	}
+
 	var root adfNode
 	err := json.Unmarshal(doc, &root)
 

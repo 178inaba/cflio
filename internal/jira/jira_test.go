@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -322,5 +323,152 @@ func TestSearchReportsMoreOnlyWhenAnIssuePastTheLimitArrives(t *testing.T) {
 	}
 	if len(issues) != 2 || hasMore {
 		t.Errorf("Search() = %d issues, hasMore %t; want 2 issues and no more", len(issues), hasMore)
+	}
+}
+
+// commentsServer serves stored comments the way Jira pages them: from startAt,
+// at most maxResults and at most pageSize at a time, reporting total.
+type commentsServer struct {
+	stored   int
+	total    int
+	pageSize int
+	requests []string
+}
+
+func (s *commentsServer) handle(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	s.requests = append(s.requests, r.URL.Path+"?"+r.URL.RawQuery)
+	startAt, _ := strconv.Atoi(q.Get("startAt"))
+	maxResults, _ := strconv.Atoi(q.Get("maxResults"))
+
+	var comments []string
+	for i := startAt; i < s.stored && len(comments) < min(maxResults, s.pageSize); i++ {
+		comments = append(comments, fmt.Sprintf(`{"id":"%d","body":{"type":"doc"},"created":"c","updated":"c"}`, i))
+	}
+	_, _ = fmt.Fprintf(w, `{"startAt":%d,"maxResults":%d,"total":%d,"comments":[%s]}`,
+		startAt, maxResults, s.total, strings.Join(comments, ","))
+}
+
+func commentIDs(comments []Comment) []string {
+	ids := make([]string, 0, len(comments))
+	for _, c := range comments {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+func TestCommentsFollowsTheOffsetPagination(t *testing.T) {
+	const path = "/rest/api/3/issue/KAN-1/comment"
+	tests := []struct {
+		name         string
+		server       commentsServer
+		limit        int
+		wantIDs      []string
+		wantTotal    int
+		wantRequests []string
+	}{
+		{
+			name:      "every page until total is reached",
+			server:    commentsServer{stored: 3, total: 3, pageSize: 2},
+			limit:     25,
+			wantIDs:   []string{"0", "1", "2"},
+			wantTotal: 3,
+			wantRequests: []string{
+				path + "?maxResults=25&orderBy=created&startAt=0",
+				path + "?maxResults=23&orderBy=created&startAt=2",
+			},
+		},
+		{
+			name:      "stops at the limit",
+			server:    commentsServer{stored: 5, total: 5, pageSize: 2},
+			limit:     3,
+			wantIDs:   []string{"0", "1", "2"},
+			wantTotal: 5,
+			wantRequests: []string{
+				path + "?maxResults=3&orderBy=created&startAt=0",
+				path + "?maxResults=1&orderBy=created&startAt=2",
+			},
+		},
+		{
+			name:         "asks for no more than the page cap",
+			server:       commentsServer{stored: 1, total: 1, pageSize: 1000},
+			limit:        1000,
+			wantIDs:      []string{"0"},
+			wantTotal:    1,
+			wantRequests: []string{path + "?maxResults=100&orderBy=created&startAt=0"},
+		},
+		{
+			name:      "an empty page ends an overstated total",
+			server:    commentsServer{stored: 2, total: 10, pageSize: 2},
+			limit:     25,
+			wantIDs:   []string{"0", "1"},
+			wantTotal: 10,
+			wantRequests: []string{
+				path + "?maxResults=25&orderBy=created&startAt=0",
+				path + "?maxResults=23&orderBy=created&startAt=2",
+			},
+		},
+		{
+			// A missing total says nothing about how many remain, so it
+			// must not end the listing after the first page.
+			name:      "a missing total does not end the listing",
+			server:    commentsServer{stored: 3, total: 0, pageSize: 2},
+			limit:     25,
+			wantIDs:   []string{"0", "1", "2"},
+			wantTotal: 0,
+			wantRequests: []string{
+				path + "?maxResults=25&orderBy=created&startAt=0",
+				path + "?maxResults=23&orderBy=created&startAt=2",
+				path + "?maxResults=22&orderBy=created&startAt=3",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, tt.server.handle)
+
+			comments, total, err := client.Comments(t.Context(), "KAN-1", tt.limit)
+			if err != nil {
+				t.Fatalf("Comments() error = %v", err)
+			}
+			if got := commentIDs(comments); !slices.Equal(got, tt.wantIDs) {
+				t.Errorf("comment IDs = %v, want %v", got, tt.wantIDs)
+			}
+			if total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", total, tt.wantTotal)
+			}
+			if !slices.Equal(tt.server.requests, tt.wantRequests) {
+				t.Errorf("requests =\n%s\nwant\n%s", strings.Join(tt.server.requests, "\n"), strings.Join(tt.wantRequests, "\n"))
+			}
+		})
+	}
+}
+
+func TestCommentsKeepsTheAPIFields(t *testing.T) {
+	const body = `{"type":"doc","version":1,"content":[]}`
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"total":2,"comments":[
+			{"id":"10","author":{"displayName":"Ada"},"body":%s,"created":"2026-01-01T00:00:00.000+0000","updated":"2026-01-02T00:00:00.000+0000"},
+			{"id":"11","body":%s,"created":"c","updated":"c"}]}`, body, body)
+	})
+
+	comments, _, err := client.Comments(t.Context(), "KAN-1", 25)
+	if err != nil {
+		t.Fatalf("Comments() error = %v", err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("got %d comments, want 2", len(comments))
+	}
+	first := comments[0]
+	if first.Author == nil || first.Author.DisplayName != "Ada" ||
+		first.Created != "2026-01-01T00:00:00.000+0000" || first.Updated != "2026-01-02T00:00:00.000+0000" {
+		t.Errorf("first comment = %+v", first)
+	}
+	if string(first.Body) != body {
+		t.Errorf("Body = %s, want the API's bytes %s", first.Body, body)
+	}
+	if comments[1].Author != nil {
+		t.Errorf("Author of a comment without one = %+v, want nil", comments[1].Author)
 	}
 }
