@@ -63,8 +63,9 @@ func ADFSectionsToMarkdown(sections []ADFSection) Result {
 
 // DocumentsResult is several ADF documents converted one by one. Markdown
 // holds one entry per document, in input order, each ending in a newline as
-// Result.Markdown does unless the document rendered to nothing; Unsupported and UnsupportedCount report what none of
-// them could represent, in Result's terms.
+// Result.Markdown does unless the document rendered to nothing; Unsupported
+// and UnsupportedCount report what none of them could represent, in Result's
+// terms.
 type DocumentsResult struct {
 	Markdown         []string
 	Unsupported      []string
