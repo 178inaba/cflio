@@ -141,12 +141,31 @@ type Result struct {
 // this converter has never seen still yields the text inside it.
 func ToMarkdown(storage string, opts Options) Result {
 	r := &renderer{opts: opts}
+	return r.result(r.blocks(parseStorage(storage).children))
+}
 
+// losses counts what a conversion turned into placeholders, by name. Both
+// converters embed it, so the two report loss in the same shape whatever tree
+// they read.
+type losses struct {
+	unsupported map[string]int
+}
+
+// unrepresentable records an element that became a placeholder.
+func (l *losses) unrepresentable(name string) {
+	if l.unsupported == nil {
+		l.unsupported = make(map[string]int)
+	}
+	l.unsupported[name]++
+}
+
+// result assembles the rendered blocks into a Result.
+func (l *losses) result(blocks []block) Result {
 	// Assembled in one pass: appending the trailing newline afterwards would
 	// copy the whole body a second time, and this tool exists for the pages
 	// where that is worth avoiding.
 	var out strings.Builder
-	for i, b := range r.blocks(parseStorage(storage).children) {
+	for i, b := range blocks {
 		if i > 0 {
 			out.WriteString("\n\n")
 		}
@@ -159,7 +178,7 @@ func ToMarkdown(storage string, opts Options) Result {
 	}
 
 	result := Result{Markdown: out.String()}
-	for name, count := range r.unsupported {
+	for name, count := range l.unsupported {
 		result.Unsupported = append(result.Unsupported, name)
 		result.UnsupportedCount += count
 	}
@@ -271,16 +290,8 @@ func joinBlocks(blocks []block) string {
 }
 
 type renderer struct {
-	opts        Options
-	unsupported map[string]int
-}
-
-// unrepresentable records an element that became a placeholder.
-func (r *renderer) unrepresentable(name string) {
-	if r.unsupported == nil {
-		r.unsupported = make(map[string]int)
-	}
-	r.unsupported[name]++
+	losses
+	opts Options
 }
 
 // blocks renders a node's children as a sequence of blocks. Inline children
@@ -419,8 +430,15 @@ func listBlock(items []string) []block {
 // without an ac:task-body, and this converter is contracted never to fail on
 // input it did not expect.
 func (r *renderer) listItem(li *node, marker string) string {
+	return itemText(r.blocks(li.childNodes()), marker)
+}
+
+// itemText lays out one list item's blocks under marker: a nested list hangs
+// directly under the line before it, every other block is a blank line away,
+// and continuation lines are indented to the marker's width.
+func itemText(blocks []block, marker string) string {
 	var body strings.Builder
-	for i, b := range r.blocks(li.childNodes()) {
+	for i, b := range blocks {
 		if i > 0 {
 			if b.isList {
 				body.WriteString("\n")
@@ -527,13 +545,17 @@ func (r *renderer) rowCells(row *node) []string {
 	cells := tableCells(row)
 	texts := make([]string, 0, len(cells))
 	for _, cell := range cells {
-		// A cell is one Markdown table cell however much structure it holds,
-		// so blocks collapse to spaces and pipes are escaped rather than
-		// ending the cell early.
-		text := strings.TrimSpace(collapseSpace(joinBlocks(r.blocks(cell.children))))
-		texts = append(texts, strings.ReplaceAll(text, "|", `\|`))
+		texts = append(texts, cellText(r.blocks(cell.children)))
 	}
 	return texts
+}
+
+// cellText renders a cell's blocks as one Markdown table cell. A cell is one
+// cell however much structure it holds, so blocks collapse to spaces and
+// pipes are escaped rather than ending the cell early.
+func cellText(blocks []block) string {
+	text := strings.TrimSpace(collapseSpace(joinBlocks(blocks)))
+	return strings.ReplaceAll(text, "|", `\|`)
 }
 
 // pad lengthens a row to the table's column count. Rows are never truncated:
@@ -609,14 +631,18 @@ func (r *renderer) placeholder(text string, body *node) []block {
 // separate blocks so the "\n\n" they are joined with leaves the blank lines
 // GitHub needs to read the body as Markdown rather than as literal text.
 func (r *renderer) expand(n *node) []block {
+	return detailsBlocks(macroParameter(n, "title"), r.blocks(n.child("ac", "rich-text-body").childNodes()))
+}
+
+func detailsBlocks(title string, body []block) []block {
 	open := "<details>"
 	// <summary> is raw HTML, so the title needs HTML entities rather than the
 	// backslash escaping escapeText applies to paragraph text.
-	if title := macroParameter(n, "title"); title != "" {
+	if title != "" {
 		open += "\n<summary>" + html.EscapeString(title) + "</summary>"
 	}
 
-	blocks := append([]block{{text: open}}, r.blocks(n.child("ac", "rich-text-body").childNodes())...)
+	blocks := append([]block{{text: open}}, body...)
 	return append(blocks, block{text: "</details>"})
 }
 
@@ -625,10 +651,13 @@ func (r *renderer) panel(n *node, kind string) []block {
 	if title := macroParameter(n, "title"); title != "" {
 		heading += ": " + escapeText(title)
 	}
+	return panelBlocks(heading, r.blocks(n.child("ac", "rich-text-body").childNodes()))
+}
 
-	blocks := []block{{text: "**" + heading + "**"}}
-	blocks = append(blocks, r.blocks(n.child("ac", "rich-text-body").childNodes())...)
-	return quote(blocks)
+// panelBlocks renders a callout as a quote led by its bold heading. heading
+// is Markdown already, escaped by the caller.
+func panelBlocks(heading string, body []block) []block {
+	return quote(append([]block{{text: "**" + heading + "**"}}, body...))
 }
 
 // adfExtension degrades a new-editor blob. Its ac:adf-node subtree is a
