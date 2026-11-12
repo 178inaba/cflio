@@ -87,11 +87,11 @@ func newRootCmd(g *globalFlags) (*cobra.Command, *runResult) {
 		// print its default `atlio version X.Y.Z` for it. cobra takes the -v
 		// shorthand along with it, which nothing else on the root claims.
 		Version: resolveVersion(version),
-		Long: `atlio reads Jira issues, and reads and updates Confluence page bodies,
+		Long: `atlio reads Jira issues, and reads, creates and updates Confluence pages,
 through local files. A body goes to a file rather than to standard output, and
-an edited Confluence page is written back from its file, so an AI coding agent
-works on them with its regular file tools instead of passing whole documents
-through its context.`,
+a Confluence page is created or written back from its file, so an AI coding
+agent works on them with its regular file tools instead of passing whole
+documents through its context.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

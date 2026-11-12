@@ -1,7 +1,7 @@
 # atlio
 
-An Atlassian Cloud CLI for AI coding agents: read Jira issues, and read and update Confluence page
-bodies, through local files, without the body passing through the model.
+An Atlassian Cloud CLI for AI coding agents: read Jira issues, and read, create and update Confluence
+pages, through local files, without the body passing through the model.
 
 Asking an agent to edit a Confluence page through the Atlassian MCP server breaks in two structural
 ways. Updating a page means passing the whole body as a tool argument, which the model has to
