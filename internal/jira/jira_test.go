@@ -83,6 +83,52 @@ func TestGetIssueRequestsEveryFieldWithItsName(t *testing.T) {
 	}
 }
 
+func TestAttachmentsAsksForTheAttachmentFieldOnly(t *testing.T) {
+	var gotMethod, gotPath, gotFields string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotFields = r.Method, r.URL.Path, r.URL.Query().Get("fields")
+		_, _ = fmt.Fprint(w, `{"key":"KAN-1","fields":{"attachment":[
+			{"id":"10001","filename":"screen.png","mimeType":"image/png","size":1234,"content":"https://example.atlassian.net/rest/api/3/attachment/content/10001"},
+			{"id":"10002","filename":"spec.pdf","mimeType":"application/pdf","size":9}
+		]}}`)
+	})
+
+	got, err := client.Attachments(t.Context(), "KAN-1")
+	if err != nil {
+		t.Fatalf("Attachments() error = %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/rest/api/3/issue/KAN-1" || gotFields != "attachment" {
+		t.Errorf("request = %s %s fields=%q, want GET /rest/api/3/issue/KAN-1 fields=attachment", gotMethod, gotPath, gotFields)
+	}
+	want := []Attachment{
+		{ID: "10001", Filename: "screen.png", MimeType: "image/png", Size: 1234},
+		{ID: "10002", Filename: "spec.pdf", MimeType: "application/pdf", Size: 9},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Attachments() = %+v, want %+v", got, want)
+	}
+}
+
+func TestDownloadAttachmentFetchesTheContentEndpoint(t *testing.T) {
+	var gotMethod, gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		_, _ = fmt.Fprint(w, "file bytes")
+	})
+
+	var buf strings.Builder
+	n, err := client.DownloadAttachment(t.Context(), "10001", &buf)
+	if err != nil {
+		t.Fatalf("DownloadAttachment() error = %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/rest/api/3/attachment/content/10001" {
+		t.Errorf("request = %s %s, want GET /rest/api/3/attachment/content/10001", gotMethod, gotPath)
+	}
+	if buf.String() != "file bytes" || n != int64(len("file bytes")) {
+		t.Errorf("DownloadAttachment() wrote %q (%d bytes), want the response body", buf.String(), n)
+	}
+}
+
 func TestGetIssueDecodesTheMetadata(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"key":"KAN-2","fields":{

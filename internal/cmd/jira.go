@@ -18,7 +18,7 @@ func newJiraCmd(g *globalFlags) *cobra.Command {
 		Use:   "jira",
 		Short: "Read Jira issues",
 	}
-	cmd.AddCommand(newJiraIssueCmd(g), newJiraSearchCmd(g), newJiraCommentsCmd(g))
+	cmd.AddCommand(newJiraIssueCmd(g), newJiraSearchCmd(g), newJiraCommentsCmd(g), newJiraAttachmentsCmd(g))
 	return cmd
 }
 
@@ -55,7 +55,9 @@ returned it (./<KEY>.adf.json).
 (./<KEY>.md): the description first, then one section per other field, headed
 by the field's name. That file is for reading only. Whatever the conversion
 could not represent is counted in Degraded; read the default file when the task
-depends on that part.
+depends on that part. An image in a field is among those losses, since it
+cannot be linked to its attachment: download it by filename with
+` + "`atlio jira attachments download`" + ` to see it.
 
 The issue is named by its key (KAN-1) or by a browser URL: /browse/KAN-1, a
 board, backlog or list URL with the issue open in its panel (selectedIssue),
@@ -134,12 +136,7 @@ type issueLink struct {
 }
 
 func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath string, markdown bool, outFormat format.Format) error {
-	ref, err := issueref.Parse(arg)
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveJira(g.profile, ref.Host)
+	client, key, err := resolveIssueClient(arg, g.profile)
 	if err != nil {
 		return err
 	}
@@ -147,7 +144,7 @@ func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath st
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	issue, err := client.GetIssue(ctx, ref.Key)
+	issue, err := client.GetIssue(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -176,6 +173,22 @@ func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath st
 	}
 
 	return writeJiraIssueResult(cmd, outFormat, result)
+}
+
+// resolveIssueClient parses the issue argument and builds the client for the
+// site it names. Every command that addresses an issue goes through here, so
+// a key and a URL select the profile the same way on each of them.
+func resolveIssueClient(arg, profile string) (*jira.Client, string, error) {
+	ref, err := issueref.Parse(arg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	client, err := resolveJira(profile, ref.Host)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, ref.Key, nil
 }
 
 func newJiraIssueResult(url string, issue *jira.Issue) jiraIssueResult {

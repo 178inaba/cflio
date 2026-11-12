@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -144,8 +146,9 @@ adds another, identical version.`,
 	return cmd
 }
 
-// attachmentItem is one rendered attachment. Filename is the API's title,
-// named for what it is. FileSize is the server's own byte count, printed raw
+// attachmentItem is one rendered attachment, whichever product holds it.
+// Filename is named for what it is, whatever the API calls it (Confluence's
+// title). FileSize is the server's own byte count, printed raw
 // the way `confluence read` prints the size of the file it wrote.
 type attachmentItem struct {
 	Filename  string `json:"filename"`
@@ -231,7 +234,11 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 		return err
 	}
 
-	matched, err := matchAttachments(attachments, pattern)
+	files := make([]attachmentFile, 0, len(attachments))
+	for _, a := range attachments {
+		files = append(files, confluenceAttachmentFile(client, a))
+	}
+	matched, err := matchAttachments(files, pattern)
 	if err != nil {
 		return err
 	}
@@ -247,17 +254,9 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", outDir, err)
-	}
-
-	items := make([]downloadedItem, 0, len(planned))
-	for _, p := range planned {
-		n, err := downloadToFile(ctx, client, p.attachment.DownloadLink, p.dest)
-		if err != nil {
-			return err
-		}
-		items = append(items, downloadedItem{Filename: p.attachment.Title, Path: p.dest, Bytes: n})
+	items, err := writeDownloads(ctx, planned, outDir)
+	if err != nil {
+		return err
 	}
 
 	notice := ""
@@ -423,10 +422,10 @@ func closeFiles(files []*os.File) {
 //
 // A malformed pattern is reported rather than left to match nothing, which
 // would be indistinguishable from a pattern that is merely too specific.
-func matchAttachments(attachments []confluence.Attachment, pattern string) ([]confluence.Attachment, error) {
-	var matched []confluence.Attachment
-	for _, a := range attachments {
-		ok, err := path.Match(pattern, a.Title)
+func matchAttachments(files []attachmentFile, pattern string) ([]attachmentFile, error) {
+	var matched []attachmentFile
+	for _, a := range files {
+		ok, err := path.Match(pattern, a.filename)
 		if err != nil {
 			return nil, fmt.Errorf("invalid --pattern %q: %w", pattern, err)
 		}
@@ -437,25 +436,54 @@ func matchAttachments(attachments []confluence.Attachment, pattern string) ([]co
 	return matched, nil
 }
 
+// attachmentFile is one attachment as the download paths see it, whichever
+// product holds it: the filename it is matched against and reported under, and
+// how to fetch its bytes.
+type attachmentFile struct {
+	filename string
+	// id is the product's identifier for the attachment, set where it is
+	// needed to tell attachments with the same filename apart.
+	id string
+	// saveAs is the name the file is written under when that is not its
+	// filename; empty means the filename.
+	saveAs string
+	fetch  func(ctx context.Context, w io.Writer) (int64, error)
+}
+
+// localName is the name the attachment is written under.
+func (a attachmentFile) localName() string {
+	return cmp.Or(a.saveAs, a.filename)
+}
+
+// confluenceAttachmentFile adapts a page attachment to the download paths.
+func confluenceAttachmentFile(client *confluence.Client, a confluence.Attachment) attachmentFile {
+	return attachmentFile{
+		filename: a.Title,
+		fetch: func(ctx context.Context, w io.Writer) (int64, error) {
+			return client.DownloadAttachment(ctx, a.DownloadLink, w)
+		},
+	}
+}
+
 // plannedDownload is one matched attachment together with the file it will be
 // written to, so the transfer loop never has to pair the two by index.
 type plannedDownload struct {
-	attachment confluence.Attachment
-	dest       string
+	file attachmentFile
+	dest string
 }
 
 // attachmentDest resolves the file an attachment is written to under outDir.
 //
 // The filename comes from the server, so it is also what pins the write inside
-// outDir: a title carrying a path would otherwise land somewhere the caller
+// outDir: a filename carrying a path would otherwise land somewhere the caller
 // never named. Base is the local filesystem's idea of a separator, which is
 // the right one — this is a path being built, not a pattern being matched.
-func attachmentDest(title, outDir string) (string, error) {
-	if !isPlainFilename(title) {
+func attachmentDest(filename, outDir string) (string, error) {
+	if !isPlainFilename(filename) {
 		return "", fmt.Errorf("attachment %q is not a plain filename; "+
-			"refusing to write it outside %s", title, outDir)
+			"refusing to write it outside %s", filename, outDir)
 	}
-	return filepath.Join(outDir, title), nil
+	return filepath.Join(outDir, filename), nil
 }
 
 // isPlainFilename reports whether a name the server supplied can be joined to
@@ -473,12 +501,12 @@ func isPlainFilename(name string) bool {
 // a directory neither the caller nor a re-run can reason about. Lstat rather
 // than Stat, so a dangling symlink counts as an existing entry here — which is
 // what the O_EXCL create would say about it too.
-func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDownload, error) {
+func planDownloads(matched []attachmentFile, outDir string) ([]plannedDownload, error) {
 	planned := make([]plannedDownload, 0, len(matched))
 	var collisions []string
 
 	for _, a := range matched {
-		dest, err := attachmentDest(a.Title, outDir)
+		dest, err := attachmentDest(a.localName(), outDir)
 		if err != nil {
 			return nil, err
 		}
@@ -488,7 +516,7 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 		} else if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("check %s: %w", dest, err)
 		}
-		planned = append(planned, plannedDownload{attachment: a, dest: dest})
+		planned = append(planned, plannedDownload{file: a, dest: dest})
 	}
 
 	if len(collisions) > 0 {
@@ -496,6 +524,24 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 			"(nothing was downloaded)", strings.Join(collisions, ", "))
 	}
 	return planned, nil
+}
+
+// writeDownloads creates outDir and writes every planned download into it,
+// stopping at the first failure.
+func writeDownloads(ctx context.Context, planned []plannedDownload, outDir string) ([]downloadedItem, error) {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create %s: %w", outDir, err)
+	}
+
+	items := make([]downloadedItem, 0, len(planned))
+	for _, p := range planned {
+		n, err := downloadToFile(ctx, p.file, p.dest)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, downloadedItem{Filename: p.file.filename, Path: p.dest, Bytes: n})
+	}
+	return items, nil
 }
 
 // downloadToFile streams one attachment to dest and reports how many bytes it
@@ -507,13 +553,13 @@ func planDownloads(matched []confluence.Attachment, outDir string) ([]plannedDow
 // collision off this create instead, so the fs.ErrExist it wraps is part of
 // the contract. A transfer that fails part-way takes its file with it, so no
 // truncated file is left at a name that looks complete.
-func downloadToFile(ctx context.Context, client *confluence.Client, downloadLink, dest string) (int64, error) {
+func downloadToFile(ctx context.Context, file attachmentFile, dest string) (int64, error) {
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", dest, err)
 	}
 
-	n, err := client.DownloadAttachment(ctx, downloadLink, f)
+	n, err := file.fetch(ctx, f)
 	if err != nil {
 		_ = f.Close()
 		_ = os.Remove(dest)

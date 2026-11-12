@@ -9,6 +9,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"maps"
 	"net/url"
 	"slices"
@@ -125,6 +126,7 @@ type IssueLink struct {
 
 // Attachment is one file attached to the issue.
 type Attachment struct {
+	ID       string `json:"id"`
 	Filename string `json:"filename"`
 	MimeType string `json:"mimeType"`
 	Size     int64  `json:"size"`
@@ -281,6 +283,33 @@ func (c *Client) Comments(ctx context.Context, key string, limit int) ([]Comment
 		all = all[:limit]
 	}
 	return all, total, nil
+}
+
+// Attachments lists the files attached to the issue. The issue response
+// carries every attachment at once, so there is nothing to page through.
+func (c *Client) Attachments(ctx context.Context, key string) ([]Attachment, error) {
+	var resp struct {
+		Fields struct {
+			Attachments []Attachment `json:"attachment"`
+		} `json:"fields"`
+	}
+	path := "/rest/api/3/issue/" + url.PathEscape(key)
+	if err := c.api.Get(ctx, path, url.Values{"fields": {"attachment"}}, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Fields.Attachments, nil
+}
+
+// DownloadAttachment streams the attachment with the given ID to w and
+// returns how many bytes it wrote.
+//
+// The URL is built from the ID rather than taken from the attachment's
+// content field, so the request stays on the documented endpoint. That
+// endpoint answers with a redirect to Atlassian's media service on another
+// host; atlassian.Client.Download is what keeps the site's credentials off it.
+func (c *Client) DownloadAttachment(ctx context.Context, id string, w io.Writer) (int64, error) {
+	path := "/rest/api/3/attachment/content/" + url.PathEscape(id)
+	return c.api.Download(ctx, strings.TrimSuffix(c.api.BaseURL(), "/")+path, path, w)
 }
 
 // Field is one field of an issue with its value as the API returned it.

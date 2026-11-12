@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/178inaba/atlio/internal/format"
-	"github.com/178inaba/atlio/internal/issueref"
 	"github.com/178inaba/atlio/internal/jira"
 	"github.com/spf13/cobra"
 )
@@ -86,12 +85,7 @@ func runJiraCommentsList(cmd *cobra.Command, arg string, g *globalFlags, limit i
 		return err
 	}
 
-	ref, err := issueref.Parse(arg)
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveJira(g.profile, ref.Host)
+	client, key, err := resolveIssueClient(arg, g.profile)
 	if err != nil {
 		return err
 	}
@@ -99,7 +93,7 @@ func runJiraCommentsList(cmd *cobra.Command, arg string, g *globalFlags, limit i
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	comments, total, err := client.Comments(ctx, ref.Key, limit)
+	comments, total, err := client.Comments(ctx, key, limit)
 	if err != nil {
 		return err
 	}

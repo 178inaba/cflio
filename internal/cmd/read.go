@@ -363,7 +363,7 @@ func downloadReferencedAttachments(
 			unchecked++
 			continue
 		}
-		planned = append(planned, plannedDownload{attachment: a, dest: dest})
+		planned = append(planned, plannedDownload{file: confluenceAttachmentFile(client, a), dest: dest})
 	}
 	if len(planned) == 0 {
 		return nil, unchecked
@@ -375,11 +375,11 @@ func downloadReferencedAttachments(
 
 	paths := make(map[string]string, len(planned))
 	for _, p := range planned {
-		if !fetchAttachment(ctx, client, p) {
+		if !fetchAttachment(ctx, p) {
 			unchecked++
 			continue
 		}
-		paths[p.attachment.Title] = attachmentLink(dir, p.attachment.Title)
+		paths[p.file.filename] = attachmentLink(dir, p.file.filename)
 	}
 	return paths, unchecked
 }
@@ -397,8 +397,8 @@ func downloadReferencedAttachments(
 // existing destination costs no transfer either way, and asking the filesystem
 // once is what keeps this from drifting away from the answer planDownloads
 // gets — a dangling symlink included, which O_EXCL rejects as an entry too.
-func fetchAttachment(ctx context.Context, client *confluence.Client, p plannedDownload) bool {
-	if _, err := downloadToFile(ctx, client, p.attachment.DownloadLink, p.dest); err != nil {
+func fetchAttachment(ctx context.Context, p plannedDownload) bool {
+	if _, err := downloadToFile(ctx, p.file, p.dest); err != nil {
 		return errors.Is(err, fs.ErrExist)
 	}
 	return true
