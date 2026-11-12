@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/sidecar"
@@ -549,31 +550,124 @@ func TestCreateLeavesAnEntryThatAppearedDuringTheRequest(t *testing.T) {
 	}
 }
 
-// TestCreateReportsADeadlineThatExpiresDuringTheCreate covers the case the
-// documented 124 check is about: the POST was sent, and whether the page
-// exists is unknown, so nothing is written for it.
-func TestCreateReportsADeadlineThatExpiresDuringTheCreate(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
+// Each command that creates something names its own check for an error that
+// says the request may have been carried out.
+const (
+	createCheckHint   = "atlio confluence children"
+	commentsCheckHint = "atlio confluence comments list"
+	uploadCheckHint   = "atlio confluence attachments list"
+)
 
-	inner := (&createStub{}).handler(t)
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			inner(w, r)
+var checkHints = []string{createCheckHint, commentsCheckHint, uploadCheckHint}
+
+// creatingFailure is how the server fails the one request a creating command
+// makes, and what the command has to say about it.
+type creatingFailure struct {
+	name string
+	// stall, when set, leaves the request unanswered until the deadline;
+	// otherwise the server answers status.
+	stall  bool
+	status int
+	// readBody has the server read the request body to its end first.
+	readBody bool
+	// big sends a body far past what the socket buffers absorb, so one the
+	// server does not read cannot all be handed over.
+	big bool
+	// wantCode is the exit code, and wantHint the check the error names, or
+	// "" for none.
+	wantCode int
+	wantHint bool
+}
+
+// creatingFailures are the outcomes a creating command can meet: the two in
+// which the server may have carried the request out, and the two in which it
+// cannot have.
+var creatingFailures = []creatingFailure{
+	{name: "5xx after the whole body", status: http.StatusBadGateway, readBody: true, wantCode: 1, wantHint: true},
+	{name: "deadline after the whole body", stall: true, readBody: true, wantCode: timeoutExitCode, wantHint: true},
+	{name: "4xx", status: http.StatusBadRequest, readBody: true, wantCode: 1},
+	{name: "deadline before the whole body", stall: true, big: true, wantCode: timeoutExitCode},
+}
+
+// failCreating answers a creating command's one write as fc says, and returns
+// what the test must close once the command is done. Released by the test
+// rather than by r.Context(): a server that has not read the body to its end
+// never sees the client go away.
+func failCreating(fc creatingFailure) (http.HandlerFunc, func()) {
+	release := make(chan struct{})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if fc.readBody {
+			_, _ = io.Copy(io.Discard, r.Body)
+		}
+		if fc.stall {
+			<-release
 			return
 		}
-		// The server only notices the client giving up once the request
-		// body has been consumed, so it is drained before the stall.
-		_, _ = io.Copy(io.Discard, r.Body)
-		<-r.Context().Done()
-	})
+		w.WriteHeader(fc.status)
+	}, func() { close(release) }
+}
 
-	file := writeBodyFile(t, "<p>hi</p>")
-	_, err := runCreate(t, testPageURL, "New Page", file, "--timeout=200ms")
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
+// creatingBody is the file a creating command sends under fc.
+func creatingBody(t *testing.T, fc creatingFailure) string {
+	t.Helper()
+	if fc.big {
+		return writeBodyFile(t, "<p>"+strings.Repeat("x", 16<<20)+"</p>")
 	}
-	assertNoSidecar(t, file)
+	return writeBodyFile(t, "<p>hi</p>")
+}
+
+// assertCreatingFailure checks the exit code and what the printed error says
+// against fc: the check named by hint when the request may have been carried
+// out, and none of the creating commands' checks otherwise.
+func assertCreatingFailure(t *testing.T, err error, fc creatingFailure, hint string) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("error = nil, want the failure")
+	}
+	code, printed := describeFailure(err, 300*time.Millisecond)
+	if code != fc.wantCode {
+		t.Errorf("exit code = %d for %v, want %d", code, err, fc.wantCode)
+	}
+	for _, h := range checkHints {
+		want := fc.wantHint && h == hint
+		if got := strings.Contains(printed.Error(), h); got != want {
+			t.Errorf("error = %q, contains %q = %v, want %v", printed, h, got, want)
+		}
+	}
+}
+
+// TestCreateSaysWhenThePageMayHaveBeenCreated covers the outcomes of the
+// create request: when the server may have made the page, the error names the
+// check to make before creating it again, and the file is left without a
+// sidecar either way, since no page is known to exist.
+func TestCreateSaysWhenThePageMayHaveBeenCreated(t *testing.T) {
+	for _, fc := range creatingFailures {
+		t.Run(fc.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+
+			inner := (&createStub{}).handler(t)
+			fail, release := failCreating(fc)
+			defer release()
+			startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					inner(w, r)
+					return
+				}
+				fail(w, r)
+			})
+
+			file := creatingBody(t, fc)
+			_, err := runCreate(t, testPageURL, "New Page", file, "--timeout=300ms")
+
+			assertCreatingFailure(t, err, fc, createCheckHint)
+			if fc.stall && !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
+			}
+			assertNoSidecar(t, file)
+		})
+	}
 }
 
 // TestCreatingCommandsDocumentTheCheckAfterATimeout pins the help text an

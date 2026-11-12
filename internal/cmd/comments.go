@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -135,6 +136,10 @@ func runCommentsCreate(cmd *cobra.Command, args []string, g *globalFlags, file s
 
 	comment, err := client.CreateFooterComment(ctx, pageID, string(body))
 	if err != nil {
+		if errors.Is(err, confluence.ErrCreateUnconfirmed) {
+			return fmt.Errorf("%w; check with `atlio confluence comments list` before posting it again: "+
+				"if the comment is there, nothing is left to do", err)
+		}
 		return err
 	}
 

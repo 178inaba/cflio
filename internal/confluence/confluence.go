@@ -510,6 +510,12 @@ var ErrUploadRefused = errors.New("the page may already have an attachment with 
 // this package need not reach into the transport to recognise it.
 var ErrUploadUnconfirmed = atlassian.ErrSentInFull
 
+// ErrCreateUnconfirmed marks a CreatePage or CreateFooterComment that failed
+// after its whole body was sent without a 3xx or 4xx settling it, so
+// Confluence may have made the page or posted the comment anyway. It is the
+// transport's atlassian.ErrSentInFull under the name of what it means here.
+var ErrCreateUnconfirmed = atlassian.ErrSentInFull
+
 // uploadedAttachment is the v1 content entry an upload answers with, which
 // keeps the media type and size under extensions rather than beside the title.
 type uploadedAttachment struct {
