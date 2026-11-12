@@ -26,25 +26,34 @@ func runLogin(t *testing.T, answers string, handler http.HandlerFunc) (cliRun, e
 	return runCLIWithStdin(t, answers, "auth", "login")
 }
 
+// okCurrentUser answers either product's current-user endpoint. The two
+// responses differ only in the email's member name, which login does not read.
 func okCurrentUser(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"accountId":"acc-1","displayName":"Ada Lovelace","email":"a@example.com"}`))
 }
 
+const (
+	confluenceCurrentUserPath = "/wiki/rest/api/user/current"
+	jiraCurrentUserPath       = "/rest/api/3/myself"
+)
+
 func TestAuthLoginRegistersAProfile(t *testing.T) {
 	isolateConfig(t)
 
-	var gotPath, gotAuth string
+	var gotPaths []string
+	var gotAuth string
 	run, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
 		func(w http.ResponseWriter, r *http.Request) {
-			gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+			gotPaths = append(gotPaths, r.URL.Path)
+			gotAuth = r.Header.Get("Authorization")
 			okCurrentUser(w, r)
 		})
 	if err != nil {
 		t.Fatalf("auth login error = %v", err)
 	}
 
-	if gotPath != "/wiki/rest/api/user/current" {
-		t.Errorf("validation call = %q, want /wiki/rest/api/user/current", gotPath)
+	if want := []string{confluenceCurrentUserPath, jiraCurrentUserPath}; !slices.Equal(gotPaths, want) {
+		t.Errorf("validation calls = %v, want %v", gotPaths, want)
 	}
 	if gotAuth == "" {
 		t.Error("validation call carried no Authorization header")
@@ -61,8 +70,72 @@ func TestAuthLoginRegistersAProfile(t *testing.T) {
 	if file.DefaultProfile != "example" {
 		t.Errorf("default profile = %q, want the first registered profile", file.DefaultProfile)
 	}
-	if !strings.Contains(run.stdout, "Ada Lovelace") {
-		t.Errorf("output = %q, want it to confirm who the credentials belong to", run.stdout)
+	for _, want := range []string{"Ada Lovelace", "Confluence: available\n", "Jira:       available\n"} {
+		if !strings.Contains(run.stdout, want) {
+			t.Errorf("output = %q, want it to contain %q", run.stdout, want)
+		}
+	}
+}
+
+// TestAuthLoginAcceptsASiteWithOneProduct covers a site that serves only one
+// of the two products: the credentials are good, so the profile is saved, and
+// the output says which product did not answer and why.
+func TestAuthLoginAcceptsASiteWithOneProduct(t *testing.T) {
+	tests := []struct {
+		name       string
+		answering  string
+		silent     string
+		silentCode int
+		wantLines  []string
+	}{
+		{
+			name:       "jira only",
+			answering:  jiraCurrentUserPath,
+			silent:     confluenceCurrentUserPath,
+			silentCode: http.StatusNotFound,
+			wantLines:  []string{"Confluence: not available (GET /rest/api/user/current: HTTP 404", "Jira:       available\n"},
+		},
+		{
+			name:       "confluence only",
+			answering:  confluenceCurrentUserPath,
+			silent:     jiraCurrentUserPath,
+			silentCode: http.StatusForbidden,
+			wantLines:  []string{"Confluence: available\n", "Jira:       not available (GET /rest/api/3/myself: HTTP 403"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+
+			run, err := runLogin(t, "https://example.atlassian.net\na@example.com\napi-token\n\n",
+				func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case tt.answering:
+						okCurrentUser(w, r)
+					case tt.silent:
+						w.WriteHeader(tt.silentCode)
+					default:
+						t.Errorf("unexpected request %s", r.URL.Path)
+					}
+				})
+			if err != nil {
+				t.Fatalf("auth login error = %v", err)
+			}
+
+			file, err := config.Load()
+			if err != nil {
+				t.Fatalf("config.Load() error = %v", err)
+			}
+			if _, ok := file.Profiles["example"]; !ok {
+				t.Errorf("profiles = %v, want the site registered", file.Profiles)
+			}
+			for _, want := range append(tt.wantLines, "Ada Lovelace") {
+				if !strings.Contains(run.stdout, want) {
+					t.Errorf("output = %q, want it to contain %q", run.stdout, want)
+				}
+			}
+		})
 	}
 }
 
@@ -123,8 +196,11 @@ func TestAuthLoginSavesNothingWhenCredentialsAreRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("auth login error = nil, want an error for rejected credentials")
 	}
-	if !strings.Contains(err.Error(), "401") {
-		t.Errorf("error = %q, want it to surface the status", err)
+	// Both products were asked, and both refusals are reported.
+	for _, want := range []string{"GET /rest/api/user/current: HTTP 401", "GET /rest/api/3/myself: HTTP 401"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err, want)
+		}
 	}
 	if strings.Contains(run.stdout, "Registered") {
 		t.Errorf("output = %q, want no success message", run.stdout)

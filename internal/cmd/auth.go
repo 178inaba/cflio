@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -30,7 +32,14 @@ func newAuthLoginCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
 		Short: "Register an Atlassian Cloud site interactively",
-		Args:  cobra.NoArgs,
+		Long: `Register an Atlassian Cloud site interactively: its URL, the account email
+and an API token. One profile serves both Confluence and Jira on the site.
+
+The credentials are checked against both products before anything is saved.
+The profile is saved when either product accepts them, so a site with only
+one of the two can be registered, and the output says which products
+answered. Nothing is saved when neither does.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAuthLogin(cmd, g)
 		},
@@ -66,19 +75,14 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 		return fmt.Errorf("api token is required")
 	}
 
-	client, err := confluenceFactory(site, email, token)
-	if err != nil {
-		return err
-	}
-
 	// The deadline starts here rather than at the top of RunE: the prompts
 	// above are human-paced, and a slow typist should not hit --timeout.
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	user, err := client.CurrentUser(ctx)
+	checks, err := verifyCredentials(ctx, site, email, token)
 	if err != nil {
-		return fmt.Errorf("verify credentials against %s: %w", site, err)
+		return err
 	}
 
 	file, err := config.Load()
@@ -101,8 +105,17 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	}
 
 	if _, err := fmt.Fprintf(out, "Registered profile %q for %s as %s.\n",
-		name, site, displayName(user.DisplayName, email)); err != nil {
+		name, site, displayName(checks.displayName, email)); err != nil {
 		return err
+	}
+	for _, c := range checks.products {
+		status := "available"
+		if c.err != nil {
+			status = fmt.Sprintf("not available (%v)", c.err)
+		}
+		if _, err := fmt.Fprintf(out, "%-12s%s\n", c.name+":", status); err != nil {
+			return err
+		}
 	}
 	if setDefault {
 		if _, err := fmt.Fprintln(out, "Set as the default profile."); err != nil {
@@ -110,6 +123,66 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 		}
 	}
 	return nil
+}
+
+// productCheck is one product's answer to the credentials.
+type productCheck struct {
+	name string
+	err  error
+}
+
+type credentialChecks struct {
+	products []productCheck
+	// displayName is the account's name as the first product that accepted
+	// the credentials reported it.
+	displayName string
+}
+
+// verifyCredentials asks each product who the credentials belong to. One
+// profile serves both products on a site, but a site need not have both, so
+// the credentials are good when either accepts them; only a request that
+// succeeded counts, since a site without a product answers its endpoint with
+// whatever it likes. When neither accepts them, both answers are returned
+// joined, so the status of each survives and a deadline still reads as one.
+func verifyCredentials(ctx context.Context, site, email, token string) (credentialChecks, error) {
+	confluenceClient, err := confluenceFactory(site, email, token)
+	if err != nil {
+		return credentialChecks{}, err
+	}
+	jiraClient, err := jiraFactory(site, email, token)
+	if err != nil {
+		return credentialChecks{}, err
+	}
+
+	var checks credentialChecks
+	for _, product := range []struct {
+		name        string
+		currentUser func(context.Context) (string, error)
+	}{
+		{name: "Confluence", currentUser: func(ctx context.Context) (string, error) {
+			user, err := confluenceClient.CurrentUser(ctx)
+			return user.DisplayName, err
+		}},
+		{name: "Jira", currentUser: func(ctx context.Context) (string, error) {
+			user, err := jiraClient.CurrentUser(ctx)
+			return user.DisplayName, err
+		}},
+	} {
+		name, err := product.currentUser(ctx)
+		checks.products = append(checks.products, productCheck{name: product.name, err: err})
+		if err == nil && checks.displayName == "" {
+			checks.displayName = name
+		}
+	}
+
+	var errs []error
+	for _, c := range checks.products {
+		if c.err == nil {
+			return checks, nil
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", c.name, c.err))
+	}
+	return credentialChecks{}, fmt.Errorf("verify credentials against %s: %w", site, errors.Join(errs...))
 }
 
 // chooseProfileName settles on the profile name to write to, confirming
