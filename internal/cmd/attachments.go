@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/178inaba/atlio/internal/atlassian"
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/178inaba/atlio/internal/pageref"
@@ -283,19 +281,20 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 		return err
 	}
 
-	files, err := openUploads(args[1:])
+	opened, err := openUploads(args[1:])
 	if err != nil {
 		return err
 	}
-	defer func() {
-		for _, f := range files {
-			_ = f.Content.(*os.File).Close()
-		}
-	}()
+	defer closeFiles(opened)
 
 	client, pageID, err := resolvePageClient(args[0], g.profile)
 	if err != nil {
 		return err
+	}
+
+	files := make([]confluence.UploadFile, 0, len(opened))
+	for _, f := range opened {
+		files = append(files, confluence.UploadFile{Name: filepath.Base(f.Name()), Content: f})
 	}
 
 	ctx, cancel := commandContext(cmd, g.timeout)
@@ -303,11 +302,8 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 
 	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
 	if err != nil {
-		// Worded as a condition: a 400 is how Confluence refuses a name the
-		// page already has, but not the only thing it can mean.
-		if apiErr, ok := errors.AsType[*atlassian.APIError](err); ok && !replace && apiErr.Status == http.StatusBadRequest {
-			return fmt.Errorf("%w (if the page already has an attachment with this name, "+
-				"pass --replace to upload a new version of it)", err)
+		if !replace && errors.Is(err, confluence.ErrUploadRefused) {
+			return fmt.Errorf("%w; pass --replace to upload a new version of it instead", err)
 		}
 		return err
 	}
@@ -326,34 +322,34 @@ func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, rep
 // Every check runs before any request, as in planDownloads, so a run never
 // attaches some files and then stops at a bad one. Opening rather than only
 // stat-ing is what makes "cannot be read" a local finding, and the files are
-// kept open for the upload so the check holds for what is sent. The directory
-// check is a Stat of its own because opening a directory succeeds on Unix.
-func openUploads(paths []string) ([]confluence.UploadFile, error) {
+// kept open for the upload so every check holds for what is sent — the
+// directory check included, which is why it reads the open handle: opening a
+// directory succeeds on Unix.
+func openUploads(paths []string) ([]*os.File, error) {
 	var (
-		files    []confluence.UploadFile
+		files    []*os.File
 		problems []string
 	)
 	byName := map[string][]string{}
 
 	for _, p := range paths {
-		name := filepath.Base(p)
-		byName[name] = append(byName[name], p)
+		byName[filepath.Base(p)] = append(byName[filepath.Base(p)], p)
 
-		info, err := os.Stat(p)
-		if err != nil {
-			problems = append(problems, err.Error())
-			continue
-		}
-		if info.IsDir() {
-			problems = append(problems, p+" is a directory")
-			continue
-		}
 		f, err := os.Open(p)
 		if err != nil {
 			problems = append(problems, err.Error())
 			continue
 		}
-		files = append(files, confluence.UploadFile{Name: name, Content: f})
+		if info, err := f.Stat(); err != nil {
+			_ = f.Close()
+			problems = append(problems, err.Error())
+			continue
+		} else if info.IsDir() {
+			_ = f.Close()
+			problems = append(problems, p+" is a directory")
+			continue
+		}
+		files = append(files, f)
 	}
 
 	// Ordered by first appearance, so the message follows the command line.
@@ -366,12 +362,18 @@ func openUploads(paths []string) ([]confluence.UploadFile, error) {
 	}
 
 	if len(problems) > 0 {
-		for _, f := range files {
-			_ = f.Content.(*os.File).Close()
-		}
+		closeFiles(files)
 		return nil, fmt.Errorf("cannot upload (nothing was sent): %s", strings.Join(problems, "; "))
 	}
 	return files, nil
+}
+
+// closeFiles closes files opened only for reading, where a failed close loses
+// nothing.
+func closeFiles(files []*os.File) {
+	for _, f := range files {
+		_ = f.Close()
+	}
 }
 
 // resolvePageClient parses the page argument and builds the client for the site

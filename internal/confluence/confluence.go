@@ -11,6 +11,7 @@ package confluence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -463,6 +464,12 @@ type UploadedAttachment struct {
 	Version   int
 }
 
+// ErrUploadRefused marks a 400 to an upload that does not replace, which is
+// how Confluence refuses a name the page already has an attachment under. It
+// is worded as a possibility because a 400 is not only that: the server's own
+// message, which the error carries too, is what names the cause.
+var ErrUploadRefused = errors.New("the page may already have an attachment with one of these names")
+
 // uploadedAttachment is the v1 content entry an upload answers with, which
 // keeps the media type and size under extensions rather than beside the title.
 type uploadedAttachment struct {
@@ -517,6 +524,9 @@ func (c *Client) UploadAttachments(ctx context.Context, pageID string, files []U
 	}
 	path := "/rest/api/content/" + url.PathEscape(pageID) + "/child/attachment"
 	if err := c.api.SendMultipart(ctx, method, path, header, write, &result); err != nil {
+		if apiErr, ok := errors.AsType[*atlassian.APIError](err); ok && !replace && apiErr.Status == http.StatusBadRequest {
+			return nil, fmt.Errorf("%w: %w", err, ErrUploadRefused)
+		}
 		return nil, err
 	}
 

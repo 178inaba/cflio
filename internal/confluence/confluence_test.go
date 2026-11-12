@@ -586,22 +586,38 @@ func TestUploadAttachmentsSendsEachFileWithAMinorEditFlag(t *testing.T) {
 	}
 }
 
-func TestUploadAttachmentsReportsTheV1Message(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprint(w, `{"statusCode":400,"message":"Cannot add a new attachment with same file name as an existing attachment: a.png"}`)
-	})
-
-	_, err := client.UploadAttachments(t.Context(), "10",
-		[]UploadFile{{Name: "a.png", Content: strings.NewReader("x")}}, false)
-
-	apiErr, ok := errors.AsType[*atlassian.APIError](err)
-	if !ok || apiErr.Status != http.StatusBadRequest {
-		t.Fatalf("UploadAttachments() error = %v, want an *APIError with status 400", err)
+func TestUploadAttachmentsMarksARefusedPost(t *testing.T) {
+	tests := []struct {
+		name        string
+		replace     bool
+		wantRefused bool
+	}{
+		{name: "a 400 to a POST is the refusal of an existing name", wantRefused: true},
+		{name: "a 400 to a PUT is not, since a PUT accepts one", replace: true},
 	}
-	if !strings.Contains(err.Error(), "same file name as an existing attachment: a.png") {
-		t.Errorf("error = %q, want the server's message", err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, `{"statusCode":400,"message":"Cannot add a new attachment with same file name as an existing attachment: a.png"}`)
+			})
+
+			_, err := client.UploadAttachments(t.Context(), "10",
+				[]UploadFile{{Name: "a.png", Content: strings.NewReader("x")}}, tt.replace)
+
+			apiErr, ok := errors.AsType[*atlassian.APIError](err)
+			if !ok || apiErr.Status != http.StatusBadRequest {
+				t.Fatalf("UploadAttachments() error = %v, want an *APIError with status 400", err)
+			}
+			if !strings.Contains(err.Error(), "same file name as an existing attachment: a.png") {
+				t.Errorf("error = %q, want the server's message", err)
+			}
+			if got := errors.Is(err, ErrUploadRefused); got != tt.wantRefused {
+				t.Errorf("errors.Is(err, ErrUploadRefused) = %v, want %v", got, tt.wantRefused)
+			}
+		})
 	}
 }
 
