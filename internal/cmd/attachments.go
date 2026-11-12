@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -436,11 +437,22 @@ func matchAttachments(files []attachmentFile, pattern string) ([]attachmentFile,
 }
 
 // attachmentFile is one attachment as the download paths see it, whichever
-// product holds it: the filename it is matched and written under, and how to
-// fetch its bytes.
+// product holds it: the filename it is matched against and reported under, and
+// how to fetch its bytes.
 type attachmentFile struct {
 	filename string
-	fetch    func(ctx context.Context, w io.Writer) (int64, error)
+	// id is the product's identifier for the attachment, set where it is
+	// needed to tell attachments with the same filename apart.
+	id string
+	// saveAs is the name the file is written under when that is not its
+	// filename; empty means the filename.
+	saveAs string
+	fetch  func(ctx context.Context, w io.Writer) (int64, error)
+}
+
+// localName is the name the attachment is written under.
+func (a attachmentFile) localName() string {
+	return cmp.Or(a.saveAs, a.filename)
 }
 
 // confluenceAttachmentFile adapts a page attachment to the download paths.
@@ -494,7 +506,7 @@ func planDownloads(matched []attachmentFile, outDir string) ([]plannedDownload, 
 	var collisions []string
 
 	for _, a := range matched {
-		dest, err := attachmentDest(a.filename, outDir)
+		dest, err := attachmentDest(a.localName(), outDir)
 		if err != nil {
 			return nil, err
 		}

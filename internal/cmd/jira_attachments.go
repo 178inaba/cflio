@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
+	"path"
 	"strings"
 
 	"github.com/178inaba/atlio/internal/format"
@@ -69,12 +69,12 @@ An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
 cannot leave some files replaced and others not.
 
-Jira lets two attachments on one issue share a filename. If two matched
-attachments have filenames that are equal ignoring case (a.png and A.png are
-one file on a case-insensitive filesystem), the command fails before
-downloading anything and names them. Narrow --pattern to pick one of a.png
-and A.png; two attachments with exactly the same filename cannot be told
-apart by --pattern, so leave them out of it.
+Jira lets two attachments on one issue share a filename, which --pattern
+cannot pick one of. When two matched attachments have filenames that are
+equal ignoring case (a.png and A.png are one file on a case-insensitive
+filesystem), each is written with its attachment ID before the extension
+(screen.png becomes screen-10002.png); the output's filename is still the
+attachment's own and its path is the file written.
 
 Read-only against Jira: every request is a GET.`,
 		Args: cobra.ExactArgs(1),
@@ -148,7 +148,7 @@ func runJiraAttachmentsDownload(cmd *cobra.Command, arg string, g *globalFlags, 
 	if len(matched) == 0 {
 		return fmt.Errorf("no attachment matches %q (%d on the issue)", pattern, len(attachments))
 	}
-	if err := refuseCaseInsensitiveDuplicates(matched); err != nil {
+	if err := nameCollisionsByID(matched); err != nil {
 		return err
 	}
 
@@ -167,68 +167,57 @@ func runJiraAttachmentsDownload(cmd *cobra.Command, arg string, g *globalFlags, 
 func jiraAttachmentFile(client *jira.Client, a jira.Attachment) attachmentFile {
 	return attachmentFile{
 		filename: a.Filename,
+		id:       a.ID,
 		fetch: func(ctx context.Context, w io.Writer) (int64, error) {
 			return client.DownloadAttachment(ctx, a.ID, w)
 		},
 	}
 }
 
-// refuseCaseInsensitiveDuplicates fails when two matched attachments have
-// filenames equal ignoring case.
+// nameCollisionsByID gives every matched attachment whose filename equals
+// another's ignoring case a name carrying its ID, and fails if that still
+// leaves two of them on one file.
 //
-// Jira allows two attachments on an issue to share a filename, and a.png and
-// A.png are one file on a case-insensitive filesystem. Either way the second
-// write would fail only after the first had landed, so the run is refused
-// before any transfer, on every platform, so a collision writes nothing.
+// Jira allows two attachments on an issue to share a filename, and no glob
+// can pick one of them; a.png and A.png are one file on a case-insensitive
+// filesystem. Every member of such a group is renamed, not all but one, so
+// which file gets which name does not depend on the order Jira lists them
+// in. The check runs on every platform and before any transfer, so the same
+// issue downloads the same files everywhere and a collision writes nothing.
 // Filenames that differ only in Unicode normalisation are not detected.
-//
-// The error says which way out applies to each group: a glob can pick one of
-// a.png and A.png, but nothing matched against the filename can tell two
-// identical ones apart.
-func refuseCaseInsensitiveDuplicates(matched []attachmentFile) error {
-	var caseOnly, identical []string
-	seen := make([]bool, len(matched))
+func nameCollisionsByID(matched []attachmentFile) error {
 	for i, a := range matched {
-		if seen[i] {
-			continue
-		}
-		group := []string{a.filename}
-		for j := i + 1; j < len(matched); j++ {
-			if !seen[j] && strings.EqualFold(a.filename, matched[j].filename) {
-				seen[j] = true
-				group = append(group, matched[j].filename)
+		for j, b := range matched {
+			if i != j && strings.EqualFold(a.filename, b.filename) {
+				matched[i].saveAs = withID(a.filename, a.id)
+				break
 			}
-		}
-		switch {
-		case len(group) == 1:
-		case hasRepeat(group):
-			identical = append(identical, strings.Join(group, " and "))
-		default:
-			caseOnly = append(caseOnly, strings.Join(group, " and "))
 		}
 	}
 
-	var reasons []string
-	if len(caseOnly) > 0 {
-		reasons = append(reasons, fmt.Sprintf("attachments %s differ only in case and would be "+
-			"written to the same file; narrow --pattern to pick one", strings.Join(caseOnly, ", ")))
+	var collisions []string
+	for i, a := range matched {
+		for _, b := range matched[i+1:] {
+			if strings.EqualFold(a.localName(), b.localName()) {
+				collisions = append(collisions, a.localName()+" and "+b.localName())
+			}
+		}
 	}
-	if len(identical) > 0 {
-		reasons = append(reasons, fmt.Sprintf("attachments %s share a filename and cannot be told "+
-			"apart by --pattern; change it to leave them out", strings.Join(identical, ", ")))
-	}
-	if len(reasons) > 0 {
-		return fmt.Errorf("%s (nothing was downloaded)", strings.Join(reasons, "; "))
+	if len(collisions) > 0 {
+		return fmt.Errorf("%s would be written to the same file even with attachment IDs in the names; "+
+			"narrow --pattern (nothing was downloaded)", strings.Join(collisions, ", "))
 	}
 	return nil
 }
 
-// hasRepeat reports whether any filename occurs more than once in names.
-func hasRepeat(names []string) bool {
-	for i, n := range names {
-		if slices.Contains(names[i+1:], n) {
-			return true
-		}
+// withID inserts id before the filename's extension: screen.png becomes
+// screen-10002.png. A name that is all extension, such as .env, gets the ID
+// at its end, so the result still opens with the same name.
+func withID(filename, id string) string {
+	ext := path.Ext(filename)
+	stem := strings.TrimSuffix(filename, ext)
+	if stem == "" {
+		stem, ext = filename, ""
 	}
-	return false
+	return stem + "-" + id + ext
 }

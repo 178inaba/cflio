@@ -318,25 +318,27 @@ func TestJiraAttachmentsDownloadRefusesToOverwriteBeforeFetchingAnything(t *test
 	}
 }
 
-func TestJiraAttachmentsDownloadRefusesFilenamesThatCollideIgnoringCase(t *testing.T) {
+func TestJiraAttachmentsDownloadWritesFilenamesThatCollideIgnoringCaseUnderTheirIDs(t *testing.T) {
 	tests := []struct {
 		name      string
 		filenames []string
-		// wantHint is the way out the error offers, which differs: no glob
-		// can pick one of two identical filenames.
-		wantHint string
+		// wantNames are the files written for filenames, in order. IDs start
+		// at 10002: other.png, which collides with nothing, is 10001 and keeps
+		// its name.
+		wantNames []string
 	}{
 		{
+			// No glob can pick one of two identical filenames.
 			name:      "the same filename twice",
 			filenames: []string{"screen.png", "screen.png"},
-			wantHint:  "cannot be told apart by --pattern",
+			wantNames: []string{"screen-10002.png", "screen-10003.png"},
 		},
 		{
 			// One file on a case-insensitive filesystem, where the second
 			// write would fail only after the first had landed.
 			name:      "filenames differing only in case",
 			filenames: []string{"a.png", "A.png"},
-			wantHint:  "narrow --pattern to pick one",
+			wantNames: []string{"a-10002.png", "A-10003.png"},
 		},
 	}
 
@@ -351,26 +353,64 @@ func TestJiraAttachmentsDownloadRefusesFilenamesThatCollideIgnoringCase(t *testi
 			content, handler := jiraAttachmentsAPI(t, attachments...)
 			startAPI(t, handler)
 
-			dir := filepath.Join(t.TempDir(), "assets")
-			_, err := runJiraDownload(t, dir, "*.png")
-			if err == nil {
-				t.Fatal("jira attachments download error = nil, want the colliding filenames refused")
+			dir := t.TempDir()
+			run, err := runJiraDownload(t, dir, "*.png", "--format", "json")
+			if err != nil {
+				t.Fatalf("jira attachments download error = %v", err)
 			}
-			for _, f := range tt.filenames {
-				if !strings.Contains(err.Error(), f) {
-					t.Errorf("error = %q, want it to name %s", err, f)
+
+			var out struct {
+				Items []downloadedItem `json:"downloaded_attachments"`
+			}
+			if err := json.Unmarshal([]byte(run.stdout), &out); err != nil {
+				t.Fatalf("Unmarshal(%q) error = %v", run.stdout, err)
+			}
+			want := []downloadedItem{{Filename: "other.png", Path: filepath.Join(dir, "other.png"), Bytes: int64(len(pngBytes))}}
+			for i, f := range tt.filenames {
+				want = append(want, downloadedItem{Filename: f, Path: filepath.Join(dir, tt.wantNames[i]), Bytes: int64(len(pngBytes))})
+			}
+			if !slices.Equal(out.Items, want) {
+				t.Errorf("downloaded = %+v, want %+v", out.Items, want)
+			}
+			for _, item := range want {
+				if _, err := os.Stat(item.Path); err != nil {
+					t.Errorf("Stat(%s) error = %v, want the file written", item.Path, err)
 				}
 			}
-			if !strings.Contains(err.Error(), tt.wantHint) {
-				t.Errorf("error = %q, want it to say %q", err, tt.wantHint)
-			}
-			if len(*content) != 0 {
-				t.Errorf("content requests = %v, want none", *content)
-			}
-			if _, err := os.Stat(dir); !os.IsNotExist(err) {
-				t.Errorf("Stat(-o) error = %v, want nothing written, not even the directory", err)
+			if len(*content) != 3 {
+				t.Errorf("content requests = %v, want all three attachments fetched", *content)
 			}
 		})
+	}
+}
+
+func TestJiraAttachmentsDownloadRefusesANameWithAnIDThatStillCollides(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	// a.png and A.png become a-10001.png and A-10002.png, and the latter is
+	// a-10002.png's own name ignoring case.
+	content, handler := jiraAttachmentsAPI(t,
+		jiraAttachment{filename: "a.png", mimeType: "image/png", size: 1},
+		jiraAttachment{filename: "A.png", mimeType: "image/png", size: 1},
+		jiraAttachment{filename: "a-10002.png", mimeType: "image/png", size: 1},
+	)
+	startAPI(t, handler)
+
+	dir := filepath.Join(t.TempDir(), "assets")
+	_, err := runJiraDownload(t, dir, "*.png")
+	if err == nil {
+		t.Fatal("jira attachments download error = nil, want the remaining collision refused")
+	}
+	for _, name := range []string{"A-10002.png", "a-10002.png"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error = %q, want it to name %s", err, name)
+		}
+	}
+	if len(*content) != 0 {
+		t.Errorf("content requests = %v, want none", *content)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("Stat(-o) error = %v, want nothing written, not even the directory", err)
 	}
 }
 
@@ -388,5 +428,21 @@ func TestJiraAttachmentsDownloadRejectsAFilenameThatEscapesTheOutputDirectory(t 
 	}
 	if len(*content) != 0 {
 		t.Errorf("content requests = %v, want none", *content)
+	}
+}
+
+func TestWithIDInsertsTheIDBeforeTheExtension(t *testing.T) {
+	tests := []struct{ filename, want string }{
+		{filename: "screen.png", want: "screen-10002.png"},
+		{filename: "archive.tar.gz", want: "archive.tar-10002.gz"},
+		{filename: "README", want: "README-10002"},
+		// All extension: the ID goes at the end rather than leaving a name
+		// that starts with a dash.
+		{filename: ".env", want: ".env-10002"},
+	}
+	for _, tt := range tests {
+		if got := withID(tt.filename, "10002"); got != tt.want {
+			t.Errorf("withID(%q) = %q, want %q", tt.filename, got, tt.want)
+		}
 	}
 }
