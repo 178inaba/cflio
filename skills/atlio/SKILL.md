@@ -1,6 +1,6 @@
 ---
 name: atlio
-description: Read Jira issues, and read, edit and create Confluence Cloud pages, from the CLI without the body passing through your context. Use whenever the user shares a Jira link or an issue key (e.g. KAN-1), asks what an issue says, or asks you to find Jira issues, shares a Confluence link, asks you to read, search or summarize a Confluence page, asks you to edit, update or fix wording on one, asks you to create a new Confluence page, or asks you to put a screenshot, image or file on one.
+description: Read Jira issues, and read, edit and create Confluence Cloud pages, from the CLI without the body passing through your context. Use whenever the user shares a Jira link or an issue key (e.g. KAN-1), asks what an issue says, asks you to find Jira issues, shares a Confluence link, asks you to read, search or summarize a Confluence page, asks you to edit, update or fix wording on one, asks you to create a new Confluence page, or asks you to put a screenshot, image or file on one.
 ---
 
 # atlio
