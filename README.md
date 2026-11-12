@@ -320,11 +320,10 @@ for a large file. The site's attachment size limit is not checked locally; a fil
 the server. The output lists each attachment with the media type Confluence read it as, its size,
 and its version: `1` for a new attachment, higher for a replaced one.
 
-An upload that fails after the whole request was sent — the deadline expiring while the response is
-awaited, or a `5xx` answer — may have been stored anyway, and its error says so; only a `4xx` says
-Confluence refused it. Check with `confluence attachments list` before running it again: without
-`--replace` a repeat is refused if the files did land, and with `--replace` it adds another,
-identical version. The exit code is still the one the failure calls for, `124` for the deadline.
+An upload whose error says the request may have been carried out may have stored the files anyway
+(see [Timeouts and exit codes](#timeouts-and-exit-codes)). Check with `confluence attachments list`
+before running it again: without `--replace` a repeat is refused if the files did land, and with
+`--replace` it adds another, identical version.
 
 ### PlantUML diagrams
 
@@ -503,26 +502,29 @@ typical agent harness force-kills it (Claude Code's Bash tool sends SIGKILL afte
 
 A run that ends normally reports which happened in its exit status, so a caller does not have to
 read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
-every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
-retrying — with a larger `--timeout`, and for a command that creates something only after the check
-below; every other one needs the `Error:` line read instead. A
+every other failure. `124` is the code GNU `timeout` uses, and it marks a failure worth retrying with
+a larger `--timeout`. The other failure worth retrying is one whose error says the request may have
+been carried out, under either code; a command that creates something is retried after either only
+once the check below has found nothing. Every other `1` needs the `Error:` line read instead. A
 deadline that expires while `confluence read --markdown` is resolving references or downloading
 attachments is the exception: it is absorbed like any other lookup failure, so the reference is
 counted in `Unchecked: N` above and the run still exits `0`.
 
-A command that creates something must not be re-run blindly after a `124`: the deadline can expire
-after the server has already created the thing. A re-run of `confluence comments create` then posts
-a second comment. A re-run of `confluence create` makes no second page — Confluence refuses a title
-the space already holds — but fails with the duplicate-title `400` and still leaves you without a
-checkout. That `400` alone does not say the first create landed: the deadline may have expired
-before anything was sent, and the title may already be taken elsewhere in the space. Check whether
-the thing exists first, and re-run only if it does not — for `confluence create`, look for the page
+A command that creates something must not be re-run blindly when its error says the request may
+have been carried out. That is the case for a failure after the whole request was sent: the
+deadline expiring while the response is awaited (`124`), a `5xx` answer, or a `2xx` whose body
+could not be parsed (`1`). A `3xx` or `4xx` says the request was not carried out, and a failure
+before the whole request was sent cannot have been, so neither carries the note. A re-run of
+`confluence comments create` after a comment was posted posts a second one. A re-run of `confluence
+create` makes no second page — Confluence refuses a title the space already holds — but fails with
+the duplicate-title `400` and still leaves you without a checkout; that `400` alone does not say the
+first create landed, since the title may already be taken elsewhere in the space. Check whether the
+thing exists first, and re-run once only if it does not — for `confluence create`, look for the page
 with `atlio confluence children <parent>` (raising `--limit` if it says more child pages are
 available, since it lists the oldest first) and, if it is there, run `confluence read` on it to get
 a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`
 (raising `--limit` the same way), and if the comment is there nothing is left to do; for
-`confluence attachments upload`, whose error says when the files may have landed, look with
-`atlio confluence attachments list <page>` (see
+`confluence attachments upload`, look with `atlio confluence attachments list <page>` (see
 [Putting an image on a page](#putting-an-image-on-a-page)). `confluence update` needs no such check: its
 version lock turns a re-run after a write that did land into the "changed since it was read" refusal
 rather than a second write.

@@ -670,10 +670,11 @@ func TestCreateSaysWhenThePageMayHaveBeenCreated(t *testing.T) {
 	}
 }
 
-// TestCreatingCommandsDocumentTheCheckAfterATimeout pins the help text an
-// agent reads before re-running a command that may already have created
-// something.
-func TestCreatingCommandsDocumentTheCheckAfterATimeout(t *testing.T) {
+// TestCreatingCommandsDocumentTheCheckWhenTheRequestMayHaveLanded pins the
+// help text an agent reads before re-running a command that may already have
+// created something: the check is keyed on the error saying so, for a 124 and
+// a 5xx alike, not on the exit code.
+func TestCreatingCommandsDocumentTheCheckWhenTheRequestMayHaveLanded(t *testing.T) {
 	tests := []struct {
 		args []string
 		want []string
@@ -686,12 +687,17 @@ func TestCreatingCommandsDocumentTheCheckAfterATimeout(t *testing.T) {
 			args: []string{"confluence", "create", "--help"},
 			want: []string{
 				"--parent", "--title", "--file", "storage", "sidecar", "already has a sidecar",
-				"confluence update", "124", "duplicate title", "confluence children", "--limit",
+				"confluence update", "124", "5xx", "4xx", "its error says so", "duplicate title",
+				"confluence children", "--limit",
 			},
 		},
 		{
 			args: []string{"confluence", "comments", "create", "--help"},
-			want: []string{"124", "confluence comments list", "--limit"},
+			want: []string{"124", "5xx", "4xx", "its error", "confluence comments list", "--limit"},
+		},
+		{
+			args: []string{"confluence", "attachments", "upload", "--help"},
+			want: []string{"124", "5xx", "4xx", "its error says", "confluence attachments list"},
 		},
 	}
 

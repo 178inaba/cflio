@@ -45,15 +45,18 @@ already a checkout of a page, so use ` + "`atlio confluence update`" + ` to writ
 page, or pass a file with no sidecar to create a new one. -f - is refused
 too: the sidecar has to be written beside a file.
 
-Exit code 124 does not mean the page was not created: the deadline can
-expire after the server has made it. Running create again then fails on the
-duplicate title rather than making a second page, and still leaves no
-checkout. That error alone does not say the first create landed: the title
-may already be taken elsewhere in the space. Before running create again,
-check with
-` + "`atlio confluence children <parent>`" + ` (raise --limit if it says more child
-pages are available); if the page is there, run ` + "`atlio confluence read`" + ` on
-it to get a checkout instead.`,
+A failure after the whole request was sent — the deadline expiring while the
+response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
+parsed (exit code 1) — may have made the page anyway, and its error says so.
+Only a 4xx says Confluence refused it, and a failure before the request was
+sent cannot have made anything. Running create again after a page was made
+fails on the duplicate title rather than making a second page, and still
+leaves no checkout; that error alone does not say the first create landed,
+since the title may already be taken elsewhere in the space. So when the
+error says the page may have been made, check with
+` + "`atlio confluence children <parent>`" + ` before running create again (raise
+--limit if it says more child pages are available); if the page is there,
+run ` + "`atlio confluence read`" + ` on it to get a checkout instead.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCreatePage(cmd, g, parent, title, file, outFormat)
