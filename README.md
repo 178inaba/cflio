@@ -387,9 +387,9 @@ A moved issue is answered under its new key, and the output and the default file
 A command given a page or issue URL picks the matching profile automatically, and
 `confluence update` does the same from the URL its sidecar recorded. A URL from an unregistered site
 fails immediately rather than falling back to the default profile. `confluence search`, and commands
-given a bare page ID or issue key, use the default profile; pass `--profile <name>` to choose another, or `atlio profile use <name>` to
-change the default. An explicit `--profile` that disagrees with the URL's site is an error rather
-than a silent choice.
+given a bare page ID or issue key, use the default profile; pass `--profile <name>` to choose
+another, or `atlio profile use <name>` to change the default. An explicit `--profile` that disagrees
+with the URL's site is an error rather than a silent choice.
 
 ### Timeouts and exit codes
 

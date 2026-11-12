@@ -27,7 +27,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return client
 }
 
-func TestBaseURLIsTheSite(t *testing.T) {
+func TestBrowseURLIsUnderTheSite(t *testing.T) {
 	for _, site := range []string{"https://example.atlassian.net", "https://example.atlassian.net/"} {
 		client, err := New(site, "a@example.com", "t")
 		if err != nil {

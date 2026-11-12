@@ -134,17 +134,26 @@ func TestJiraIssueReadAcceptsEveryIssueReference(t *testing.T) {
 }
 
 func TestJiraIssueReadRejectsWhatNamesNoIssue(t *testing.T) {
-	for _, arg := range []string{
-		"https://example.atlassian.net/jira/software/projects/KAN/boards/1",
-		"https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title",
-	} {
-		t.Run(arg, func(t *testing.T) {
+	tests := []struct {
+		arg     string
+		wantErr string
+	}{
+		{arg: "https://example.atlassian.net/jira/software/projects/KAN/boards/1", wantErr: "is a Jira URL that names no issue"},
+		{arg: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title", wantErr: "is not an issue URL or issue key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.arg, func(t *testing.T) {
 			isolateConfig(t)
 			seedProfile(t, "example", testSite)
 			startAPI(t, neverCalled(t, "for an argument that names no issue"))
 
-			if _, err := runCLI(t, "jira", "issue", "read", arg); err == nil {
-				t.Fatalf("jira issue read %q error = nil, want an error", arg)
+			_, err := runCLI(t, "jira", "issue", "read", tt.arg)
+			if err == nil {
+				t.Fatalf("jira issue read %q error = nil, want an error", tt.arg)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err, tt.wantErr)
 			}
 		})
 	}
