@@ -80,6 +80,9 @@ func TestFormatFlagRegistration(t *testing.T) {
 		"confluence plantuml get":         true,
 		"confluence plantuml set":         true,
 		"confluence plantuml add":         true,
+		"jira":                            false,
+		"jira issue":                      false,
+		"jira issue read":                 true,
 		"auth":                            false,
 		"auth login":                      false,
 		"profile":                         false,
@@ -156,6 +159,10 @@ func TestFormatFlagRejectsAnUnknownValue(t *testing.T) {
 			args: []string{"confluence", "create", "--format", "bogus"},
 		},
 		{
+			name: "jira issue read",
+			args: []string{"jira", "issue", "read", "--format", "bogus", "KAN-1"},
+		},
+		{
 			name: "plantuml list, before cobra reports a missing required flag",
 			args: []string{"confluence", "plantuml", "list", "--format", "bogus"},
 		},
@@ -205,6 +212,10 @@ func TestWritersRejectAFormatThatBypassedSet(t *testing.T) {
 		{
 			name:  "writeReadResult",
 			write: func(cmd *cobra.Command) error { return writeReadResult(cmd, bogus, readResult{}) },
+		},
+		{
+			name:  "writeJiraIssueResult",
+			write: func(cmd *cobra.Command) error { return writeJiraIssueResult(cmd, bogus, jiraIssueResult{}) },
 		},
 		{
 			name:  "writeUpdateResult",
@@ -309,6 +320,16 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 			wantErr: `unknown command "bogus" for "atlio confluence comments"`,
 		},
 		{
+			name:    "jira",
+			args:    []string{"jira", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio jira"`,
+		},
+		{
+			name:    "jira issue",
+			args:    []string{"jira", "issue", "bogus"},
+			wantErr: `unknown command "bogus" for "atlio jira issue"`,
+		},
+		{
 			name:    "profile",
 			args:    []string{"profile", "bogus"},
 			wantErr: `unknown command "bogus" for "atlio profile"`,
@@ -366,7 +387,7 @@ func TestGroupCommandRejectsAnUnknownSubcommand(t *testing.T) {
 func TestGroupCommandWithoutArgumentsPrintsHelp(t *testing.T) {
 	for _, name := range []string{
 		"", "confluence", "confluence attachments", "confluence comments", "confluence plantuml",
-		"auth", "profile", "completion",
+		"jira", "jira issue", "auth", "profile", "completion",
 	} {
 		t.Run("atlio "+name, func(t *testing.T) {
 			args := strings.Fields(name)
@@ -582,7 +603,7 @@ func TestHelpPrintsHelpForAResolvingTopic(t *testing.T) {
 // stderr is not asserted here, unlike the tests above: cobra ends every
 // __complete run with a "Completion ended with directive" line on it.
 func TestHelpTopicCompletion(t *testing.T) {
-	want := []string{"auth", "completion", "confluence", "help", "profile"}
+	want := []string{"auth", "completion", "confluence", "help", "jira", "profile"}
 
 	run, err := runCLI(t, "__complete", "help", "")
 	if err != nil {

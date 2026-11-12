@@ -1,0 +1,29 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "text", "text": "Hello "},
+        {"type": "mention", "attrs": {"id": "acc-1", "text": "@Ada Lovelace", "accessLevel": ""}},
+        {"type": "text", "text": " and "},
+        {"type": "mention", "attrs": {"id": "acc-2"}},
+        {"type": "text", "text": ", see "},
+        {"type": "inlineCard", "attrs": {"url": "https://example.com/a"}},
+        {"type": "text", "text": " on "},
+        {"type": "date", "attrs": {"timestamp": "1582152559000"}},
+        {"type": "text", "text": ", status "},
+        {"type": "status", "attrs": {"text": "In Progress", "color": "yellow", "localId": "s-1"}},
+        {"type": "text", "text": " "},
+        {"type": "emoji", "attrs": {"shortName": ":grinning:", "id": "1f600", "text": "😀"}},
+        {"type": "text", "text": " "},
+        {"type": "emoji", "attrs": {"shortName": ":awthanks:", "id": "atlassian-awthanks"}},
+        {"type": "hardBreak"},
+        {"type": "text", "text": "next line"}
+      ]
+    },
+    {"type": "blockCard", "attrs": {"url": "https://example.com/b"}},
+    {"type": "embedCard", "attrs": {"url": "https://example.com/c", "layout": "center"}}
+  ]
+}

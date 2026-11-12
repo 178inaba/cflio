@@ -1,0 +1,33 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "text", "text": "bold", "marks": [{"type": "strong"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "it", "marks": [{"type": "em"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "gone", "marks": [{"type": "strike"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "x*y", "marks": [{"type": "code"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "site", "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "both", "marks": [{"type": "link", "attrs": {"href": "https://example.com/b"}}, {"type": "strong"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "fn", "marks": [{"type": "link", "attrs": {"href": "https://example.com/fn"}}, {"type": "code"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "under", "marks": [{"type": "underline"}]},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "red", "marks": [{"type": "textColor", "attrs": {"color": "#ff5630"}}]},
+        {"type": "text", "text": " H"},
+        {"type": "text", "text": "2", "marks": [{"type": "subsup", "attrs": {"type": "sub"}}]},
+        {"type": "text", "text": "O "},
+        {"type": "text", "text": "boxed", "marks": [{"type": "border", "attrs": {"size": 2, "color": "#091e4224"}}]},
+        {"type": "text", "text": " a*b [c] <d>"}
+      ]
+    }
+  ]
+}

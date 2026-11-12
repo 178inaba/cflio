@@ -1,6 +1,7 @@
 # atlio
 
-A Confluence Cloud CLI built for AI coding agents.
+An Atlassian Cloud CLI for AI coding agents: read Jira issues, and read, create and update Confluence
+pages, through local files, without the body passing through the model.
 
 Asking an agent to edit a Confluence page through the Atlassian MCP server breaks in two structural
 ways. Updating a page means passing the whole body as a tool argument, which the model has to
@@ -10,7 +11,9 @@ conversion that macros do not survive.
 
 `atlio` moves the round-trip onto the filesystem: `confluence read` downloads a page's body to a
 local file, the agent edits that file with its regular file-editing tools, and `confluence update`
-writes it back. Only the diff costs tokens.
+writes it back. Only the diff costs tokens. Jira issues travel the same way in one direction:
+`jira issue read` writes an issue's rich-text fields to a file and prints its metadata. Jira is
+read-only.
 
 - **The body never passes through the model.** Bodies go to and from files; stdout carries metadata
   and exploration results only.
@@ -63,10 +66,12 @@ commit — the checksum is checked as part of it.
 
    You will be asked for your Atlassian site URL (anything copied from the browser works — only the
    host is kept), your Atlassian account email, and the token. The token is not echoed when the
-   prompt is attached to a terminal, so it stays out of your scrollback. `atlio` verifies the
-   credentials before saving anything, then records the site as a named profile under
-   `~/.config/atlio/` (`XDG_CONFIG_HOME` is respected; the directory is `0700` and the file `0600`).
-   The first profile registered becomes the default.
+   prompt is attached to a terminal, so it stays out of your scrollback. `atlio` checks the
+   credentials against both Confluence and Jira before saving anything, and saves them when either
+   product accepts them — a site with only one of the two can be registered — saying which products
+   answered. It records the site as a named profile under `~/.config/atlio/` (`XDG_CONFIG_HOME` is
+   respected; the directory is `0700` and the file `0600`); one profile serves both products. The
+   first profile registered becomes the default.
 
 ## Usage
 
@@ -113,10 +118,15 @@ atlio confluence update -f page.xml
 # ...or put a new diagram on the page
 atlio confluence plantuml add -f page.xml --source diagram.puml --after 7c1d4e8a
 atlio confluence update -f page.xml
+
+# Read a Jira issue: its rich-text fields as Markdown, its metadata on stdout
+atlio jira issue read https://example.atlassian.net/browse/KAN-1 --markdown
+atlio jira issue read KAN-1
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
-dialog copies, and a bare page ID.
+dialog copies, and a bare page ID. Commands that address an issue accept its key or its URL (see
+[Reading a Jira issue](#reading-a-jira-issue)).
 Add `--format json` to any of them for structured output instead of Markdown. Run `atlio --help` or
 `atlio <command> --help` for the full flag reference.
 
@@ -333,14 +343,53 @@ refusal of its own.
 
 [puml-app]: https://marketplace.atlassian.com/apps/1215115/plantuml-diagrams-for-confluence-i-uml-flowchart-git?hosting=cloud&tab=overview
 
+### Reading a Jira issue
+
+`jira issue read` writes an issue's rich-text fields to a file and prints the issue's metadata —
+key, URL, summary, type, status, priority, assignee, reporter, labels, parent, subtasks, links,
+dates and attachments — on stdout. A Jira description can run to tens of thousands of characters,
+so the fields are never printed.
+
+The rich-text fields are every field whose value is an Atlassian Document Format (ADF) document:
+the description, the environment and multi-line custom fields, in that order, custom fields by
+field ID. The command has the two modes `confluence read` has:
+
+- **By default** it writes `<KEY>.adf.json`: one JSON object holding those fields keyed by field ID,
+  each value exactly as the API returned it. It loses nothing.
+- **`--markdown`** writes `<KEY>.md` instead: the description first, then one section per other
+  field headed by the field's name (`## Environment`). That file is for reading only.
+
+`-o` names the file in either mode and replaces whatever is there. An issue with no rich-text field
+writes no file, and the output carries no `Body:` line. Neither mode writes a sidecar.
+
+The Markdown conversion reports what it could not represent the way `confluence read --markdown`
+does, summed over all the fields:
+
+```
+Degraded: 2 (extension, mediaSingle)
+```
+
+Images are among them: an image in a description references its file by an ID Jira does not map
+to the issue's attachments, so it becomes a placeholder, and the `Attachment:` lines in the output
+are how you learn which files exist. If you need what degraded, read `<KEY>.adf.json`.
+
+An issue is named by its key (`KAN-1`, any case) or by a URL copied from the browser:
+
+- `/browse/KAN-1`;
+- a board, backlog or list view with the issue open in its panel (`?selectedIssue=KAN-1`);
+- an issue view under `/jira/` (`/jira/software/projects/KAN/issues/KAN-1`, and the `core` and
+  `servicedesk` equivalents).
+
+A moved issue is answered under its new key, and the output and the default filename use that key.
+
 ### Multiple sites
 
-A command given a page URL picks the matching profile automatically, and `confluence update` does
-the same from the URL its sidecar recorded. A URL from an unregistered site fails immediately rather
-than falling back to the default profile. `confluence search`, and commands given a bare page ID,
-use the default profile; pass `--profile <name>` to choose another, or `atlio profile use <name>` to
-change the default. An explicit `--profile` that disagrees with the URL's site is an error rather
-than a silent choice.
+A command given a page or issue URL picks the matching profile automatically, and
+`confluence update` does the same from the URL its sidecar recorded. A URL from an unregistered site
+fails immediately rather than falling back to the default profile. `confluence search`, and commands
+given a bare page ID or issue key, use the default profile; pass `--profile <name>` to choose
+another, or `atlio profile use <name>` to change the default. An explicit `--profile` that disagrees
+with the URL's site is an error rather than a silent choice.
 
 ### Timeouts and exit codes
 
@@ -419,16 +468,19 @@ docker compose run --rm lint --fix
 
 ## Notes and limitations
 
-- **Confluence Cloud only.** Data Center and Server are out of scope.
+- **Atlassian Cloud only.** Confluence and Jira Data Center and Server are out of scope. Credentials
+  are an API token without scopes; a scoped token is refused on the site URL.
+- **Jira is read-only.** Nothing atlio sends to Jira changes anything in it: every request is a
+  `GET`. Creating or editing issues, commenting and transitions are not supported.
 - **Comment display is best-effort.** The comment API offers no rendered representation, so comment
   bodies are converted from storage XHTML to Markdown locally, by the same converter
   `confluence read --markdown` uses. `confluence comments list` shows root comments and their direct
   replies; replies to replies are not fetched. Authors appear as Atlassian account IDs, and
   references inside a comment body are not resolved — only `confluence read --markdown` resolves
   mentions and page links.
-- **Converted output never feeds an update.** Both converted outputs — comment bodies and
-  `confluence read --markdown` — are for reading only. A body that will be written back is never
-  converted.
+- **Converted output never feeds an update.** Every converted output — comment bodies,
+  `confluence read --markdown` and `jira issue read --markdown` — is for reading only. A body that
+  will be written back is never converted.
 - **Short links** (`/wiki/x/…`) are resolved locally: the token encodes the page ID, so no request
   is made to expand one. A short link pointing at a blog post decodes just as well, but the page
   API then answers 404 — atlio addresses pages only. A token that does not decode reports so and
@@ -440,6 +492,6 @@ docker compose run --rm lint --fix
   to be fetched from content other than the page being read.
 - **Comments are post-only.** A footer comment can be posted; editing or deleting one, replying to
   one, and posting an inline comment are not supported.
-- Deleting and moving pages, uploading attachments, and ADF (the
-  representation behind live docs) are not supported. See
+- Deleting and moving pages, uploading attachments, and reading or writing a Confluence page as ADF
+  (the representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/atlio/issues/1) for the full list.

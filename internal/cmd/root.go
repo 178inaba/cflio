@@ -82,14 +82,16 @@ func newRootCmd(g *globalFlags) (*cobra.Command, *runResult) {
 	res := &runResult{}
 	cmd := &cobra.Command{
 		Use:   "atlio",
-		Short: "Confluence CLI for AI coding agents",
+		Short: "Atlassian Cloud CLI for AI coding agents",
 		// Setting this is what makes cobra register --version at all, and
 		// print its default `atlio version X.Y.Z` for it. cobra takes the -v
 		// shorthand along with it, which nothing else on the root claims.
 		Version: resolveVersion(version),
-		Long: `atlio reads a Confluence page's storage-format body into a local file and
-writes the edited file back, so an AI coding agent can edit pages with its
-regular file-editing tools instead of regenerating the whole body as tokens.`,
+		Long: `atlio reads Jira issues, and reads, creates and updates Confluence pages,
+through local files. A body goes to a file rather than to standard output, and
+a Confluence page is created or written back from its file, so an AI coding
+agent works on them with its regular file tools instead of passing whole
+documents through its context.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -103,6 +105,7 @@ regular file-editing tools instead of regenerating the whole body as tokens.`,
 	// profile to talk to.
 	cmd.AddCommand(
 		newConfluenceCmd(g),
+		newJiraCmd(g),
 		newAuthCmd(g),
 		newProfileCmd(),
 	)
