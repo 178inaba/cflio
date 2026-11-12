@@ -73,16 +73,11 @@ type DocumentsResult struct {
 
 // ADFDocumentsToMarkdown converts each document to its own Markdown and
 // reports the losses of all of them together, for a listing whose entries are
-// rendered apart but read as one output. An empty or null document is no
-// document at all and converts to "" without counting as a loss: rendering it
-// would report a document that failed to decode.
+// rendered apart but read as one output.
 func ADFDocumentsToMarkdown(docs [][]byte) DocumentsResult {
 	r := &adfRenderer{}
 	result := DocumentsResult{Markdown: make([]string, len(docs))}
 	for i, doc := range docs {
-		if len(doc) == 0 || string(doc) == "null" {
-			continue
-		}
 		result.Markdown[i] = assemble(r.document(doc))
 	}
 	result.Unsupported, result.UnsupportedCount = r.report()
@@ -94,6 +89,13 @@ type adfRenderer struct {
 }
 
 func (r *adfRenderer) document(doc []byte) []block {
+	// An empty or null value is no document at all — a comment or field with
+	// nothing in it — so it renders as nothing rather than as a document that
+	// failed to decode.
+	if len(doc) == 0 || string(doc) == "null" {
+		return nil
+	}
+
 	var root adfNode
 	err := json.Unmarshal(doc, &root)
 

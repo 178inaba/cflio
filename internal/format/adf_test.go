@@ -293,7 +293,7 @@ func TestADFSectionsToMarkdownReportsOneResult(t *testing.T) {
 // one by one adds over one file: each document keeps its own Markdown, and the
 // losses of all of them are reported together, names merged and counts
 // summed. An absent document stays an empty entry rather than counting as a
-// document that failed to decode.
+// document that failed to decode, and keeps the entries aligned with the input.
 func TestADFDocumentsToMarkdownReportsOneResult(t *testing.T) {
 	const (
 		first = `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"One"}]},
