@@ -1,0 +1,57 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "panel",
+      "attrs": {"panelType": "info"},
+      "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Heads up."}]}]
+    },
+    {
+      "type": "panel",
+      "attrs": {"panelType": "success"},
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Done."}]},
+        {
+          "type": "bulletList",
+          "content": [
+            {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "point"}]}]}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "panel",
+      "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Plain."}]}]
+    },
+    {
+      "type": "expand",
+      "attrs": {"title": "More & more"},
+      "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Hidden text."}]}]
+    },
+    {
+      "type": "table",
+      "content": [
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "nestedExpand",
+                  "attrs": {"title": ""},
+                  "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Nested hidden."}]}]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "nestedExpand",
+      "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Untitled."}]}]
+    }
+  ]
+}

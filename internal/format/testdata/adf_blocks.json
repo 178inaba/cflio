@@ -1,0 +1,26 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {"type": "paragraph", "content": [{"type": "text", "text": "Intro paragraph."}]},
+    {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "Title"}]},
+    {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Sub"}]},
+    {"type": "paragraph", "content": [{"type": "text", "text": "# not a heading"}]},
+    {"type": "paragraph"},
+    {
+      "type": "codeBlock",
+      "attrs": {"language": "go"},
+      "content": [{"type": "text", "text": "fmt.Println(\"*hi*\")\n"}, {"type": "text", "text": "return"}]
+    },
+    {"type": "codeBlock", "content": [{"type": "text", "text": "no language ``` inside"}]},
+    {
+      "type": "blockquote",
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Quoted text"}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "Second quoted"}]}
+      ]
+    },
+    {"type": "rule"},
+    {"type": "paragraph", "content": [{"type": "text", "text": "After the rule."}]}
+  ]
+}

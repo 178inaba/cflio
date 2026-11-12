@@ -1,0 +1,54 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "bulletList",
+      "content": [
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "One"}]}]},
+        {
+          "type": "listItem",
+          "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Two"}]},
+            {
+              "type": "orderedList",
+              "attrs": {"order": 3},
+              "content": [
+                {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Three"}]}]},
+                {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Four"}]}]}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "orderedList",
+      "content": [
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "First"}]}]},
+        {
+          "type": "listItem",
+          "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Second"}]},
+            {"type": "paragraph", "content": [{"type": "text", "text": "More about second"}]}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {"localId": "tl-1"},
+      "content": [
+        {"type": "taskItem", "attrs": {"localId": "t-1", "state": "DONE"}, "content": [{"type": "text", "text": "Done task"}]},
+        {"type": "taskItem", "attrs": {"localId": "t-2", "state": "TODO"}, "content": [{"type": "text", "text": "Open task"}]},
+        {
+          "type": "taskList",
+          "attrs": {"localId": "tl-2"},
+          "content": [
+            {"type": "taskItem", "attrs": {"localId": "t-3", "state": "TODO"}, "content": [{"type": "text", "text": "Nested task"}]}
+          ]
+        }
+      ]
+    }
+  ]
+}
