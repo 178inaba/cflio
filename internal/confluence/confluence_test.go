@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -177,6 +178,65 @@ func TestUpdatePageSendsTheRequiredFieldsUnescaped(t *testing.T) {
 	}
 	if page.Version.Number != 8 {
 		t.Errorf("returned version = %d, want the server's 8", page.Version.Number)
+	}
+}
+
+// TestCreatePagePostsAPublishedStorageBodyUnescaped pins the whole create
+// request: a published page with no subtype and no query parameters, so a
+// draft, a live doc or a private page can never be asked for by accident.
+func TestCreatePagePostsAPublishedStorageBodyUnescaped(t *testing.T) {
+	body := `<p>a & b <c></p>`
+
+	var gotMethod, gotPath, gotQuery, gotRaw string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll() error = %v", err)
+			return
+		}
+		gotRaw = string(raw)
+		_, _ = fmt.Fprint(w, `{"id":"777","status":"current","title":"New","spaceId":"42",`+
+			`"version":{"number":1},"_links":{"webui":"/spaces/DEV/pages/777/New"}}`)
+	})
+
+	req := NewCreatePageRequest("42", "123", "New", body)
+	page, err := client.CreatePage(t.Context(), req)
+	if err != nil {
+		t.Fatalf("CreatePage() error = %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/wiki/api/v2/pages" || gotQuery != "" {
+		t.Errorf("request = %s %s?%s, want POST /wiki/api/v2/pages with no query", gotMethod, gotPath, gotQuery)
+	}
+	if !strings.Contains(gotRaw, body) {
+		t.Errorf("payload = %s, want the body inline and unescaped (no \\u003c sequences)", gotRaw)
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(gotRaw), &fields); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v", err)
+	}
+	keys := slices.Sorted(maps.Keys(fields))
+	if want := []string{"body", "parentId", "spaceId", "status", "title"}; !slices.Equal(keys, want) {
+		t.Errorf("payload keys = %v, want exactly %v", keys, want)
+	}
+
+	var sent CreatePageRequest
+	if err := json.Unmarshal([]byte(gotRaw), &sent); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v", err)
+	}
+	if sent != req {
+		t.Errorf("payload = %+v, want %+v", sent, req)
+	}
+	if req.SpaceID != "42" || req.ParentID != "123" || req.Status != "current" || req.Title != "New" ||
+		req.Body.Representation != "storage" || req.Body.Value != body {
+		t.Errorf("NewCreatePageRequest() = %+v, want every argument in its field and a storage body", req)
+	}
+
+	if page.ID != "777" || page.SpaceID != "42" || page.Version.Number != 1 ||
+		page.Links.WebUI != "/spaces/DEV/pages/777/New" {
+		t.Errorf("page = %+v, want the created page as the server returned it", page)
 	}
 }
 

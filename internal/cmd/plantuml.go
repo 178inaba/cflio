@@ -31,7 +31,8 @@ func newPlantUMLCmd() *cobra.Command {
 		Use:   "plantuml",
 		Short: "Read and rewrite the PlantUML diagrams in a downloaded page",
 		Long: `Work with the PlantUML diagrams on a page you have downloaded with
-` + "`atlio confluence read`" + `, without hand-editing the macro's encoded payload.
+` + "`atlio confluence read`" + ` or created with ` + "`atlio confluence create`" + `, without
+hand-editing the macro's encoded payload.
 
 A ` + "`plantumlcloud`" + ` macro stores its diagram source percent-encoded, deflated
 and base64'd in a data parameter. Producing that by hand is both error-prone
@@ -230,7 +231,7 @@ without it.`,
 // downloaded page body, exactly as `confluence update` takes it.
 func addPlantUMLFileFlag(cmd *cobra.Command, file *string) {
 	cmd.Flags().StringVarP(file, "file", "f", "",
-		"page body downloaded by atlio confluence read, without --markdown")
+		"page body with the sidecar atlio confluence read (without --markdown) or create wrote")
 	if err := cmd.MarkFlagRequired("file"); err != nil {
 		panic(err)
 	}
@@ -278,8 +279,9 @@ func validatePlantUMLSelector(cmd *cobra.Command, id, name string) error {
 
 // plantUMLFile is a downloaded page body and its sidecar. The two travel
 // together because every subcommand needs both: the body to read offsets into,
-// and the sidecar to reject a file that was not produced by `confluence read`
-// and to tell a live doc apart.
+// and the sidecar to reject a file that is not a checkout of a page — one
+// `confluence read` or `confluence create` wrote — and to tell a live doc
+// apart.
 type plantUMLFile struct {
 	path    string
 	storage string

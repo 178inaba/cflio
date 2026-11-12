@@ -167,17 +167,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		return err
 	}
 
-	meta := sidecar.Meta{
-		PageID:  page.ID,
-		Version: page.Version.Number,
-		Title:   page.Title,
-		Status:  page.Status,
-		PageURL: pageref.PageURL(client.BaseURL(), page.Links.WebUI, page.ID),
-		// Always recorded, empty subtype and all: what the API reported is an
-		// answer, and a caller has to be able to tell it from a sidecar
-		// written before atlio asked the question at all.
-		Subtype: &page.Subtype,
-	}
+	meta := checkoutMeta(client, page)
 
 	result := readResult{
 		PageID:           meta.PageID,
@@ -216,6 +206,23 @@ type references struct {
 	// that reference is unresolvable, which is a settled answer rather than a
 	// missing one.
 	unchecked int
+}
+
+// checkoutMeta is the sidecar for a page as the server returned it, which both
+// `confluence read` and `confluence create` write so the file next to it can go
+// straight to `confluence update`.
+func checkoutMeta(client *confluence.Client, page *confluence.Page) sidecar.Meta {
+	return sidecar.Meta{
+		PageID:  page.ID,
+		Version: page.Version.Number,
+		Title:   page.Title,
+		Status:  page.Status,
+		PageURL: pageref.PageURL(client.BaseURL(), page.Links.WebUI, page.ID),
+		// Always recorded, empty subtype and all: what the API reported is an
+		// answer, and a caller has to be able to tell it from a sidecar
+		// written before atlio asked the question at all.
+		Subtype: &page.Subtype,
+	}
 }
 
 // resolveReferences looks up the names and URLs the converter cannot derive

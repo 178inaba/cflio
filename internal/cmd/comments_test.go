@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -290,18 +289,6 @@ func createCommentAPI(t *testing.T, raw *string) http.HandlerFunc {
 	}
 }
 
-// writeCommentFile writes a comment body to a temporary file and returns its
-// path.
-func writeCommentFile(t *testing.T, body string) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "note.xml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	return path
-}
-
 // commentBodySent returns the body value out of a recorded request payload.
 func commentBodySent(t *testing.T, raw string) string {
 	t.Helper()
@@ -337,7 +324,7 @@ func TestCommentsCreateSendsTheFileUnchanged(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runCLI(t, "confluence", "comments", "create", testPageURL, "-f", writeCommentFile(t, body))
+	run, err := runCLI(t, "confluence", "comments", "create", testPageURL, "-f", writeBodyFile(t, body))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -377,7 +364,7 @@ func TestCommentsCreateAcceptsABarePageID(t *testing.T) {
 	var raw string
 	startAPI(t, createCommentAPI(t, &raw))
 
-	run, err := runCLI(t, "confluence", "comments", "create", "123456", "-f", writeCommentFile(t, "<p>note</p>"))
+	run, err := runCLI(t, "confluence", "comments", "create", "123456", "-f", writeBodyFile(t, "<p>note</p>"))
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}
@@ -397,7 +384,7 @@ func TestCommentsCreateJSONOutput(t *testing.T) {
 	startAPI(t, createCommentAPI(t, &raw))
 
 	run, err := runCLI(t, "confluence", "comments", "create", testPageURL,
-		"-f", writeCommentFile(t, "<p>note</p>"), "--format", "json")
+		"-f", writeBodyFile(t, "<p>note</p>"), "--format", "json")
 	if err != nil {
 		t.Fatalf("comments create error = %v", err)
 	}

@@ -1,8 +1,10 @@
 // Package sidecar reads and writes the metadata file that
-// `atlio confluence read` leaves next to a downloaded page body. The sidecar is
-// what makes `confluence update` self-describing: the page it targets, the
-// profile it authenticates with and the version it locks against all come from
-// here, so there is no way to write to a page that was never read.
+// `atlio confluence read` leaves next to a downloaded page body, and that
+// `atlio confluence create` leaves next to the body a page was created from.
+// The sidecar is what makes `confluence update` self-describing: the page it
+// targets, the profile it authenticates with and the version it locks against
+// all come from here, so there is no way to write to a page no sidecar
+// describes.
 package sidecar
 
 import (
@@ -134,17 +136,73 @@ func Remove(bodyPath string) error {
 func Write(bodyPath string, meta Meta) error {
 	path := Path(bodyPath)
 
+	data, err := encode(meta)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write sidecar %s: %w", path, err)
+	}
+	return nil
+}
+
+// Exists reports whether anything is at the sidecar path for bodyPath. Lstat
+// rather than Stat, so a dangling symlink counts as present — which is what
+// Create's exclusive open would say about it too. An error other than "not
+// exist" is returned rather than read as absent, so an unreadable directory
+// never passes for a free path.
+func Exists(bodyPath string) (bool, error) {
+	path := Path(bodyPath)
+
+	_, err := os.Lstat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("check sidecar %s: %w", path, err)
+}
+
+// Create writes the sidecar next to bodyPath only if nothing is there yet, and
+// never replaces an existing entry: that entry may be another page's checkout.
+// A collision returns an error wrapping fs.ErrExist. The meta is validated
+// first, so Create never leaves a sidecar that Load would then reject.
+func Create(bodyPath string, meta Meta) error {
+	path := Path(bodyPath)
+
+	if err := meta.validate(path); err != nil {
+		return err
+	}
+	data, err := encode(meta)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return fmt.Errorf("create sidecar %s: %w", path, err)
+	}
+	// The close error counts too, so a failed flush takes the partial file
+	// with it rather than leaving a sidecar Load cannot parse.
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("write sidecar %s: %w", path, err)
+	}
+	return nil
+}
+
+func encode(meta Meta) ([]byte, error) {
 	// Deterministic does nothing for a struct, and is here so that the day
 	// Meta grows a map field nobody has to notice: v2 leaves map members in
 	// runtime order, and a reshuffling sidecar would fail no test.
 	data, err := json.Marshal(meta, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
-		return fmt.Errorf("encode sidecar: %w", err)
+		return nil, fmt.Errorf("encode sidecar: %w", err)
 	}
-	data = append(data, '\n')
-
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write sidecar %s: %w", path, err)
-	}
-	return nil
+	return append(data, '\n'), nil
 }

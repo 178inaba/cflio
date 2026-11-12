@@ -1,7 +1,10 @@
 package sidecar
 
 import (
+	"bytes"
 	"encoding/json/v2"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,5 +253,115 @@ func TestLoadAcceptsASidecarWithNoSubtype(t *testing.T) {
 	}
 	if got.Subtype != nil {
 		t.Errorf("Load().Subtype = %q, want it unrecorded", *got.Subtype)
+	}
+}
+
+func TestExists(t *testing.T) {
+	dir := t.TempDir()
+
+	absent := filepath.Join(dir, "absent.xml")
+	present := filepath.Join(dir, "present.xml")
+	if err := Write(present, testMeta()); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	// A dangling symlink is an entry the exclusive create would collide with,
+	// so it has to count as present here as well.
+	dangling := filepath.Join(dir, "dangling.xml")
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), Path(dangling)); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	for _, tt := range []struct {
+		body string
+		want bool
+	}{
+		{absent, false},
+		{present, true},
+		{dangling, true},
+	} {
+		got, err := Exists(tt.body)
+		if err != nil {
+			t.Errorf("Exists(%s) error = %v", filepath.Base(tt.body), err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("Exists(%s) = %v, want %v", filepath.Base(tt.body), got, tt.want)
+		}
+	}
+}
+
+// TestExistsReportsAPathItCannotCheck pins that only "not exist" reads as
+// absent: any other Lstat failure would otherwise let a create go ahead
+// without knowing what is at the path.
+func TestExistsReportsAPathItCannotCheck(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// A regular file used as a directory fails with ENOTDIR, not ENOENT.
+	if got, err := Exists(filepath.Join(file, "page.xml")); err == nil {
+		t.Errorf("Exists() = %v, nil; want an error for a path under a regular file", got)
+	}
+}
+
+func TestCreateThenLoadRoundTrips(t *testing.T) {
+	body := filepath.Join(t.TempDir(), "page.xml")
+	want := testMeta()
+	subtype := ""
+	want.Subtype = &subtype
+
+	if err := Create(body, want); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	got, err := Load(body)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Subtype == nil || *got.Subtype != "" {
+		t.Errorf("Load().Subtype = %v, want a present empty subtype", got.Subtype)
+	}
+	got.Subtype, want.Subtype = nil, nil
+	if got != want {
+		t.Errorf("Load() = %+v, want %+v", got, want)
+	}
+}
+
+// TestCreateLeavesAnExistingEntryAlone covers the reason Create exists next to
+// Write: whatever is already at the path may be another page's checkout.
+func TestCreateLeavesAnExistingEntryAlone(t *testing.T) {
+	body := filepath.Join(t.TempDir(), "page.xml")
+	existing := []byte(`{"page_id":"999"}`)
+	if err := os.WriteFile(Path(body), existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	err := Create(body, testMeta())
+	if !errors.Is(err, fs.ErrExist) {
+		t.Errorf("Create() error = %v, want it to carry fs.ErrExist", err)
+	}
+
+	got, err := os.ReadFile(Path(body))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Equal(got, existing) {
+		t.Errorf("sidecar = %q, want it left as %q", got, existing)
+	}
+}
+
+// TestCreateRefusesAnUnusableMeta pins that Create never leaves behind a
+// sidecar Load would reject.
+func TestCreateRefusesAnUnusableMeta(t *testing.T) {
+	body := filepath.Join(t.TempDir(), "page.xml")
+	meta := testMeta()
+	meta.Version = 0
+
+	if err := Create(body, meta); err == nil {
+		t.Fatal("Create() error = nil for a meta with no version, want an error")
+	}
+	if _, err := os.Lstat(Path(body)); !os.IsNotExist(err) {
+		t.Errorf("Lstat(%s) = %v, want no sidecar", Path(body), err)
 	}
 }

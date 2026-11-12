@@ -16,6 +16,7 @@ func newConfluenceCmd(g *globalFlags) *cobra.Command {
 	cmd.AddCommand(
 		newReadCmd(g),
 		newUpdateCmd(g),
+		newCreateCmd(g),
 		newSearchCmd(g),
 		newChildrenCmd(g),
 		newCommentsCmd(g),

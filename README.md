@@ -81,6 +81,10 @@ atlio confluence update -f page.xml --message 'Clarify the rollback steps'
 # Rename the page while writing it back — or on its own, with the body untouched
 atlio confluence update -f page.xml --title 'Release Notes (Q3)'
 
+# Create a page under that one from a file, then keep editing the same file
+atlio confluence create --parent 123456 --title 'Release Notes (Q4)' -f new.xml
+atlio confluence update -f new.xml
+
 # Just reading it? Get Markdown instead of storage XHTML
 atlio confluence read https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Release+Notes --markdown
 
@@ -136,6 +140,23 @@ is refused before anything is sent.
 
 Every version `atlio` writes carries a message (`Updated via atlio` by default, `--message` to
 override) so agent edits are identifiable in the page history.
+
+### Creating a page
+
+`atlio confluence create --parent <page> --title <title> -f <file>` creates a page under `--parent`,
+and all three flags are required. The file is sent as the `storage` representation, byte for byte —
+the same representation `confluence read` downloads — so Markdown written into it posts as the
+literal characters you typed. An empty file creates an empty page.
+
+On success the file becomes a checkout of the new page: the sidecar `confluence read` would write is
+written next to it, filled from what the server created, so the next step can be
+`confluence update -f <file>` with no read in between. A file that already has a sidecar is refused
+before anything is sent — it is already a checkout of a page, so write to that page with
+`confluence update`, or pass a file with no sidecar to create a new one. `-f -` is refused too: the
+sidecar has nowhere to go.
+
+Only published classic pages are created, and only under a parent page: no drafts, no live docs, and
+nothing at the root of a space. The space is the parent's.
 
 ### Reading a page without editing it
 
@@ -331,10 +352,25 @@ typical agent harness force-kills it (Claude Code's Bash tool sends SIGKILL afte
 A run that ends normally reports which happened in its exit status, so a caller does not have to
 read stderr to classify a failure: `0` for success, `124` when the deadline expired, and `1` for
 every other failure. `124` is the code GNU `timeout` uses, and it marks the one failure worth
-retrying — with a larger `--timeout`; every other one needs the `Error:` line read instead. A
+retrying — with a larger `--timeout`, and for a command that creates something only after the check
+below; every other one needs the `Error:` line read instead. A
 deadline that expires while `confluence read --markdown` is resolving references or downloading
 attachments is the exception: it is absorbed like any other lookup failure, so the reference is
 counted in `Unchecked: N` above and the run still exits `0`.
+
+A command that creates something must not be re-run blindly after a `124`: the deadline can expire
+after the server has already created the thing. A re-run of `confluence comments create` then posts
+a second comment. A re-run of `confluence create` makes no second page — Confluence refuses a title
+the space already holds — but fails with the duplicate-title `400` and still leaves you without a
+checkout. That `400` alone does not say the first create landed: the deadline may have expired
+before anything was sent, and the title may already be taken elsewhere in the space. Check whether
+the thing exists first, and re-run only if it does not — for `confluence create`, look for the page
+with `atlio confluence children <parent>` (raising `--limit` if it says more child pages are
+available, since it lists the oldest first) and, if it is there, run `confluence read` on it to get
+a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`
+(raising `--limit` the same way), and if the comment is there nothing is left to do. `confluence update` needs no such check: its
+version lock turns a re-run after a write that did land into the "changed since it was read" refusal
+rather than a second write.
 
 Ctrl-C and `SIGTERM` are not reported as failures: atlio prints nothing and terminates by the
 signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over
@@ -404,6 +440,6 @@ docker compose run --rm lint --fix
   to be fetched from content other than the page being read.
 - **Comments are post-only.** A footer comment can be posted; editing or deleting one, replying to
   one, and posting an inline comment are not supported.
-- Creating, deleting and moving pages, uploading attachments, and ADF (the
+- Deleting and moving pages, uploading attachments, and ADF (the
   representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/atlio/issues/1) for the full list.
