@@ -288,3 +288,29 @@ func TestADFSectionsToMarkdownReportsOneResult(t *testing.T) {
 		t.Errorf("UnsupportedCount = %d, want 3", got.UnsupportedCount)
 	}
 }
+
+// TestADFDocumentsToMarkdownReportsOneResult covers what converting documents
+// one by one adds over one file: each document keeps its own Markdown, and the
+// losses of all of them are reported together, names merged and counts
+// summed. An absent document stays an empty entry rather than counting as a
+// document that failed to decode.
+func TestADFDocumentsToMarkdownReportsOneResult(t *testing.T) {
+	const (
+		first = `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"One"}]},
+			{"type":"mediaSingle","content":[{"type":"media","attrs":{"id":"a","type":"file","collection":"c"}}]}]}`
+		second = `{"type":"doc","content":[{"type":"mediaSingle","content":[{"type":"media","attrs":{"id":"b","type":"file","collection":"c"}}]}]}`
+	)
+
+	got := ADFDocumentsToMarkdown([][]byte{[]byte(first), nil, []byte("null"), []byte(second)})
+
+	want := []string{"One\n\n[unsupported mediaSingle]\n", "", "", "[unsupported mediaSingle]\n"}
+	if !slices.Equal(got.Markdown, want) {
+		t.Errorf("Markdown = %q, want %q", got.Markdown, want)
+	}
+	if want := []string{"mediaSingle"}; !slices.Equal(got.Unsupported, want) {
+		t.Errorf("Unsupported = %v, want %v", got.Unsupported, want)
+	}
+	if got.UnsupportedCount != 2 {
+		t.Errorf("UnsupportedCount = %d, want 2", got.UnsupportedCount)
+	}
+}

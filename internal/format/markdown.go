@@ -161,6 +161,25 @@ func (l *losses) unrepresentable(name string) {
 
 // result assembles the rendered blocks into a Result.
 func (l *losses) result(blocks []block) Result {
+	result := Result{Markdown: assemble(blocks)}
+	result.Unsupported, result.UnsupportedCount = l.report()
+	return result
+}
+
+// report lists what became placeholders, deduplicated and sorted, with every
+// occurrence counted: the terms Result reports loss in.
+func (l *losses) report() (names []string, count int) {
+	for name, n := range l.unsupported {
+		names = append(names, name)
+		count += n
+	}
+	sort.Strings(names)
+	return names, count
+}
+
+// assemble joins the rendered blocks into a Markdown file, ending in a newline
+// unless it is empty.
+func assemble(blocks []block) string {
 	// Assembled in one pass: appending the trailing newline afterwards would
 	// copy the whole body a second time, and this tool exists for the pages
 	// where that is worth avoiding.
@@ -176,14 +195,7 @@ func (l *losses) result(blocks []block) Result {
 		// verbatim, nothing here has to survive a byte comparison.
 		out.WriteByte('\n')
 	}
-
-	result := Result{Markdown: out.String()}
-	for name, count := range l.unsupported {
-		result.Unsupported = append(result.Unsupported, name)
-		result.UnsupportedCount += count
-	}
-	sort.Strings(result.Unsupported)
-	return result
+	return out.String()
 }
 
 // node is a parsed storage element, or a run of text when name is empty.
