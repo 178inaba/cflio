@@ -470,6 +470,12 @@ type UploadedAttachment struct {
 // message, which the error carries too, is what names the cause.
 var ErrUploadRefused = errors.New("the page may already have an attachment with one of these names")
 
+// ErrUploadUnconfirmed marks an upload that failed after its whole body was
+// sent, so Confluence may have stored the files anyway. It is the transport's
+// atlassian.ErrSentInFull under the name of what it means here, so callers of
+// this package need not reach into the transport to recognise it.
+var ErrUploadUnconfirmed = atlassian.ErrSentInFull
+
 // uploadedAttachment is the v1 content entry an upload answers with, which
 // keeps the media type and size under extensions rather than beside the title.
 type uploadedAttachment struct {

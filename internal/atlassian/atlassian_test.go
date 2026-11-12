@@ -499,6 +499,10 @@ func TestSendMultipartReturnsTheAPIErrorWhenTheServerAnswersWithoutReading(t *te
 	if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != http.StatusBadRequest {
 		t.Fatalf("SendMultipart() error = %v, want an *APIError with status 400", err)
 	}
+	// A response says what happened, so nothing about the outcome is unknown.
+	if errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull once the server answered", err)
+	}
 }
 
 func TestSendMultipartReturnsOnceTheServerStopsReadingALargeBody(t *testing.T) {
@@ -552,5 +556,29 @@ func TestSendMultipartKeepsTheDeadlineWhenTheServerStopsReading(t *testing.T) {
 	err := client.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, write, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("SendMultipart() error = %v, want it to wrap context.DeadlineExceeded", err)
+	}
+	// The server never had the whole body, so it cannot have acted on it.
+	if errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull for a body cut short", err)
+	}
+}
+
+func TestSendMultipartMarksAFailureAfterTheWholeBodyWasSent(t *testing.T) {
+	release := make(chan struct{})
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-release
+	})
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	err := client.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, writeFilePart("a.png", fileBytes), nil)
+	if !errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want ErrSentInFull: the server had the whole body", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("SendMultipart() error = %v, want it to still wrap context.DeadlineExceeded", err)
 	}
 }

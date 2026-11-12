@@ -163,8 +163,21 @@ func (c *Client) SendMultipart(ctx context.Context, method, path string, header 
 	if err != nil && werr != nil && ctx.Err() == nil && !errors.Is(werr, io.ErrClosedPipe) {
 		return fmt.Errorf("%s %s: write request body: %w", method, path, werr)
 	}
+	// The writer only returns nil once the transport has read the body to its
+	// end, so a failure with no response after that leaves the outcome unknown.
+	if err != nil && werr == nil {
+		if _, answered := errors.AsType[*APIError](err); !answered {
+			return fmt.Errorf("%w: %w", err, ErrSentInFull)
+		}
+	}
 	return err
 }
+
+// ErrSentInFull marks a request that failed without a response after its
+// whole body was sent: the server may have carried it out regardless. It is
+// wrapped alongside the failure rather than in place of it, so an expired
+// deadline still reads as context.DeadlineExceeded.
+var ErrSentInFull = errors.New("the whole request was sent before it failed, so the server may have carried it out")
 
 // Download streams the body behind rawURL, an absolute URL, to w and returns
 // how many bytes it wrote. path names the resource in errors, so that a
