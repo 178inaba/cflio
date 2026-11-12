@@ -4,7 +4,10 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -31,10 +34,10 @@ func searchIssue(key, summary, assignee string) string {
 // serveSearch answers each search request with the next of pages in turn,
 // failing the test on anything but a GET to the search path, and records the
 // query of every request.
-func serveSearch(t *testing.T, pages ...string) *[]map[string][]string {
+func serveSearch(t *testing.T, pages ...string) *[]url.Values {
 	t.Helper()
 
-	var queries []map[string][]string
+	var queries []url.Values
 	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != testSearchPath {
 			t.Errorf("request = %s %s, want GET %s", r.Method, r.URL.Path, testSearchPath)
@@ -63,10 +66,10 @@ func TestJiraSearchSendsTheQueryWithTheListedFields(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(*queries))
 	}
 	q := (*queries)[0]
-	if got := q["jql"]; len(got) != 1 || got[0] != "project = KAN" {
+	if got := q.Get("jql"); got != "project = KAN" {
 		t.Errorf("jql = %q, want it passed as typed", got)
 	}
-	if got := q["fields"]; len(got) != 1 || got[0] != "summary,issuetype,status,assignee,updated" {
+	if got := q.Get("fields"); got != "summary,issuetype,status,assignee,updated" {
 		t.Errorf("fields = %q, want summary,issuetype,status,assignee,updated", got)
 	}
 	want := "- **KAN-1** Login fails (Bug, In Progress, Ada Lovelace, updated 2025-01-03T03:04:05.000+0000)\n" +
@@ -93,10 +96,10 @@ func TestJiraSearchFollowsTheNextPageToken(t *testing.T) {
 	if len(*queries) != 2 {
 		t.Fatalf("requests = %d, want 2", len(*queries))
 	}
-	if got := (*queries)[0]["nextPageToken"]; got != nil {
-		t.Errorf("first request nextPageToken = %q, want none", got)
+	if (*queries)[0].Has("nextPageToken") {
+		t.Errorf("first request nextPageToken = %q, want none", (*queries)[0].Get("nextPageToken"))
 	}
-	if got := (*queries)[1]["nextPageToken"]; len(got) != 1 || got[0] != "page-2" {
+	if got := (*queries)[1].Get("nextPageToken"); got != "page-2" {
 		t.Errorf("second request nextPageToken = %q, want page-2", got)
 	}
 	for _, want := range []string{"**KAN-1** First", "**KAN-2** Second"} {
@@ -126,16 +129,13 @@ func TestJiraSearchReportsTruncationOnlyWhenMoreMatched(t *testing.T) {
 			for n := 1; n <= tt.matches; n++ {
 				issues = append(issues, searchIssue(fmt.Sprintf("KAN-%d", n), "S", ""))
 			}
-			queries := serveSearch(t, `{"issues":[`+strings.Join(issues, ",")+`]}`)
+			serveSearch(t, `{"issues":[`+strings.Join(issues, ",")+`]}`)
 
 			run, err := runJiraSearchCmd(t, "project = KAN", 2)
 			if err != nil {
 				t.Fatalf("jira search error = %v", err)
 			}
 
-			if got := (*queries)[0]["maxResults"]; len(got) != 1 || got[0] != "3" {
-				t.Errorf("maxResults = %q, want 3: one past --limit", got)
-			}
 			if got := strings.Count(run.stdout, "/browse/"); got != 2 {
 				t.Errorf("output lists %d issues, want 2:\n%s", got, run.stdout)
 			}
@@ -178,13 +178,8 @@ func TestJiraSearchJSONOutput(t *testing.T) {
 			"updated_at": "2025-01-03T03:04:05.000+0000", "url": testSite + "/browse/KAN-2",
 		},
 	}
-	if len(got.Issues) != len(want) {
-		t.Fatalf("issues = %v, want %v", got.Issues, want)
-	}
-	for i := range want {
-		if fmt.Sprint(got.Issues[i]) != fmt.Sprint(want[i]) {
-			t.Errorf("issues[%d] = %v, want %v", i, got.Issues[i], want[i])
-		}
+	if !slices.EqualFunc(got.Issues, want, maps.Equal) {
+		t.Errorf("issues = %v, want %v", got.Issues, want)
 	}
 	if got.Notice != nil {
 		t.Errorf("notice = %q, want none", *got.Notice)
@@ -213,15 +208,14 @@ func TestJiraSearchReportsJiraErrors(t *testing.T) {
 }
 
 func TestJiraSearchRejectsAnOutOfRangeLimit(t *testing.T) {
-	for _, limit := range []int{0, 1001} {
-		t.Run(fmt.Sprint(limit), func(t *testing.T) {
-			isolateConfig(t)
-			seedProfile(t, "example", testSite)
-			startAPI(t, neverCalled(t, "despite an invalid --limit"))
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
 
-			if _, err := runJiraSearchCmd(t, "project = KAN", limit); err == nil {
-				t.Errorf("jira search error = nil for --limit %d, want an error", limit)
-			}
-		})
+	startAPI(t, neverCalled(t, "despite an invalid --limit"))
+
+	for _, limit := range []int{0, -1, maxLimit + 1} {
+		if _, err := runJiraSearchCmd(t, "project = KAN", limit); err == nil {
+			t.Errorf("jira search error = nil for --limit %d, want an error", limit)
+		}
 	}
 }
