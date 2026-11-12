@@ -1,5 +1,20 @@
 # Changelog
 
+## [v1.1.0](https://github.com/178inaba/atlio/compare/v1.0.6...v1.1.0) - 2026-11-12
+
+### Changes
+- Rename the CLI, module, config and plugin from cflio to atlio by @178inaba in https://github.com/178inaba/atlio/pull/107
+- Move the Confluence commands under atlio confluence by @178inaba in https://github.com/178inaba/atlio/pull/109
+- Store the bare site URL in profiles and lift the shared Atlassian transport out of the Confluence client by @178inaba in https://github.com/178inaba/atlio/pull/110
+- Add atlio confluence create to make a page under a parent and keep editing the same file by @178inaba in https://github.com/178inaba/atlio/pull/114
+- Add atlio jira issue read, writing an issue to a file as ADF or Markdown by @178inaba in https://github.com/178inaba/atlio/pull/115
+- Add confluence attachments upload so an agent can put a screenshot on a page by @178inaba in https://github.com/178inaba/atlio/pull/113
+- Add atlio jira search for JQL queries by @178inaba in https://github.com/178inaba/atlio/pull/118
+- Add atlio jira comments list by @178inaba in https://github.com/178inaba/atlio/pull/121
+- Accept a space's overview and space URLs wherever atlio takes a page by @178inaba in https://github.com/178inaba/atlio/pull/119
+- Add atlio jira attachments list and download by @178inaba in https://github.com/178inaba/atlio/pull/123
+- Split the atlio skill into SKILL.md and per-product reference files by @178inaba in https://github.com/178inaba/atlio/pull/124
+
 ## [v1.0.6](https://github.com/178inaba/cflio/compare/v1.0.5...v1.0.6) - 2026-11-11
 
 ### Changes
