@@ -586,13 +586,16 @@ var smallPayload = map[string]string{"title": "x"}
 var bodySenders = []struct {
 	name string
 	send func(ctx context.Context, c *Client, out any) error
+	// replayable is whether the body can be sent again, which a 307 or 308
+	// needs: a streamed body cannot, so the client hands that 3xx back.
+	replayable bool
 }{
 	{"Send", func(ctx context.Context, c *Client, out any) error {
 		return c.Send(ctx, http.MethodPost, "/rest/create", smallPayload, out)
-	}},
+	}, true},
 	{"SendMultipart", func(ctx context.Context, c *Client, out any) error {
 		return c.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, writeFilePart("a.png", fileBytes), out)
-	}},
+	}, false},
 }
 
 // TestOnlyAClientErrorSettlesAFullySentRequest covers the
@@ -650,11 +653,82 @@ func TestTheStatusAloneDecidesWhenTheErrorBodyIsLost(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s() error = nil, want the failure", s.name)
 				}
+				// An *APIError would mean the body was read after all, and the
+				// case would be the plain status one above.
+				if _, ok := errors.AsType[*APIError](err); ok {
+					t.Fatalf("%s() error = %v, want the failed read of the error body", s.name, err)
+				}
 				if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
 					t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
 				}
 			})
 		}
+	}
+}
+
+// TestARedirectIsJudgedByTheRequestItLeadsTo covers a 3xx the client follows.
+// A 301, 302 or 303 turns the request into a GET without its body: the 3xx
+// settled the original, so what the GET meets marks nothing. A 307 or 308
+// sends the body again, so the outcome of that resend decides; one whose body
+// cannot be sent again gets the 307 or 308 back unfollowed, which settles it.
+func TestARedirectIsJudgedByTheRequestItLeadsTo(t *testing.T) {
+	for _, s := range bodySenders {
+		for _, tc := range []struct {
+			redirect int
+			resends  bool
+		}{
+			{http.StatusMovedPermanently, false},
+			{http.StatusFound, false},
+			{http.StatusSeeOther, false},
+			{http.StatusTemporaryRedirect, true},
+			{http.StatusPermanentRedirect, true},
+		} {
+			t.Run(s.name+"/"+strconv.Itoa(tc.redirect), func(t *testing.T) {
+				wantStatus, unknown := http.StatusBadGateway, tc.resends
+				if tc.resends && !s.replayable {
+					wantStatus, unknown = tc.redirect, false
+				}
+
+				client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+					_, _ = io.Copy(io.Discard, r.Body)
+					if !strings.HasSuffix(r.URL.Path, "/moved") {
+						w.Header().Set("Location", "/api/moved")
+						w.WriteHeader(tc.redirect)
+						return
+					}
+					w.WriteHeader(http.StatusBadGateway)
+				})
+
+				err := s.send(t.Context(), client, nil)
+
+				if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != wantStatus {
+					t.Fatalf("%s() error = %v, want an *APIError with status %d", s.name, err, wantStatus)
+				}
+				if got := errors.Is(err, ErrSentInFull); got != unknown {
+					t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, unknown, err)
+				}
+			})
+		}
+	}
+}
+
+// TestARedirectLoopIsNotMarked covers a client that gives up following
+// redirects: the last answer it had was a 3xx, which settled the request.
+func TestARedirectLoopIsNotMarked(t *testing.T) {
+	for _, s := range bodySenders {
+		t.Run(s.name, func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Location", r.URL.Path)
+				w.WriteHeader(http.StatusFound)
+			})
+
+			err := s.send(t.Context(), client, nil)
+
+			if err == nil || errors.Is(err, ErrSentInFull) {
+				t.Errorf("%s() error = %v, want the redirect failure without ErrSentInFull", s.name, err)
+			}
+		})
 	}
 }
 

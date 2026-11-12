@@ -252,7 +252,7 @@ func (c *Client) doJSON(req *http.Request, path string, out any) error {
 		return fmt.Errorf("%w: %w", err, ErrSentInFull)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.clientFor(sent).Do(req)
 	if err != nil {
 		return unknown(fmt.Errorf("%s %s: %w", req.Method, path, err))
 	}
@@ -319,6 +319,33 @@ func trackSent(req *http.Request) *atomic.Bool {
 		}
 	}
 	return sent
+}
+
+// maxRedirects is net/http's default limit, which a CheckRedirect of our own
+// replaces and so has to apply itself.
+const maxRedirects = 10
+
+// clientFor returns the client to send a request whose body sets sent. A 301,
+// 302 or 303 the client follows turns the request into a GET with no body:
+// that 3xx settled the request, so sent is cleared before the GET goes out
+// and nothing the GET meets marks it. A 307 or 308 sends the body again
+// through GetBody, which trackSent already starts afresh.
+func (c *Client) clientFor(sent *atomic.Bool) *http.Client {
+	hc := *c.httpClient
+	check := hc.CheckRedirect
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.Body == nil || req.Body == http.NoBody {
+			sent.Store(false)
+		}
+		if check != nil {
+			return check(req, via)
+		}
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+		return nil
+	}
+	return &hc
 }
 
 // sentReader is a request body that records when its last bytes are read. It
