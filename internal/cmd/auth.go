@@ -154,35 +154,26 @@ func verifyCredentials(ctx context.Context, site, email, token string) (credenti
 		return credentialChecks{}, err
 	}
 
-	var checks credentialChecks
-	for _, product := range []struct {
-		name        string
-		currentUser func(context.Context) (string, error)
-	}{
-		{name: "Confluence", currentUser: func(ctx context.Context) (string, error) {
-			user, err := confluenceClient.CurrentUser(ctx)
-			return user.DisplayName, err
-		}},
-		{name: "Jira", currentUser: func(ctx context.Context) (string, error) {
-			user, err := jiraClient.CurrentUser(ctx)
-			return user.DisplayName, err
-		}},
-	} {
-		name, err := product.currentUser(ctx)
-		checks.products = append(checks.products, productCheck{name: product.name, err: err})
-		if err == nil && checks.displayName == "" {
-			checks.displayName = name
-		}
-	}
+	confluenceUser, confluenceErr := confluenceClient.CurrentUser(ctx)
+	jiraUser, jiraErr := jiraClient.CurrentUser(ctx)
 
-	var errs []error
-	for _, c := range checks.products {
-		if c.err == nil {
-			return checks, nil
+	checks := credentialChecks{products: []productCheck{
+		{name: "Confluence", err: confluenceErr},
+		{name: "Jira", err: jiraErr},
+	}}
+	if confluenceErr != nil && jiraErr != nil {
+		errs := make([]error, 0, len(checks.products))
+		for _, c := range checks.products {
+			errs = append(errs, fmt.Errorf("%s: %w", c.name, c.err))
 		}
-		errs = append(errs, fmt.Errorf("%s: %w", c.name, c.err))
+		return credentialChecks{}, fmt.Errorf("verify credentials against %s: %w", site, errors.Join(errs...))
 	}
-	return credentialChecks{}, fmt.Errorf("verify credentials against %s: %w", site, errors.Join(errs...))
+	if confluenceErr == nil {
+		checks.displayName = confluenceUser.DisplayName
+	} else {
+		checks.displayName = jiraUser.DisplayName
+	}
+	return checks, nil
 }
 
 // chooseProfileName settles on the profile name to write to, confirming
