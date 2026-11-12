@@ -680,21 +680,6 @@ var uuidShape = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab]
 // a selector -- Confluence reissues it -- so nothing but these tests needs it.
 var macroIDPattern = regexp.MustCompile(`ac:macro-id="([^"]*)"`)
 
-// seedDiagramSource writes a diagram source file under name and returns its
-// path. The name matters: it is what the default filename is derived from.
-func seedDiagramSource(t *testing.T, name, source string) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	return path
-}
-
 // splicedAt reports what `add` inserted at off, and fails the test if the file
 // changed anywhere else -- which is the acceptance criterion that a byte diff
 // shows nothing but the new element.
@@ -737,7 +722,7 @@ func TestPlantUMLAddAppendsAMacroTheOtherSubcommandsCanRead(t *testing.T) {
 	file := seedReadPage(t, before, classicMeta())
 
 	macro, element := addedMacro(t, file, before, len(before),
-		"--source", seedDiagramSource(t, "d.puml", source))
+		"--source", writeTempFile(t, "d.puml", source))
 
 	if macro.Name != "plantumlcloud" {
 		t.Errorf("macro name = %q, want %q", macro.Name, "plantumlcloud")
@@ -815,7 +800,7 @@ func TestPlantUMLAddPutsTheMacroAfterTheAnchor(t *testing.T) {
 			file := seedReadPage(t, tt.before, classicMeta())
 
 			if _, err := runCLI(t, "confluence", "plantuml", "add", "-f", file,
-				"--source", seedDiagramSource(t, "d.puml", "@startuml\n@enduml"),
+				"--source", writeTempFile(t, "d.puml", "@startuml\n@enduml"),
 				"--after", tt.anchor); err != nil {
 				t.Fatalf("plantuml add error = %v", err)
 			}
@@ -848,7 +833,7 @@ func TestPlantUMLAddNamesTheDiagramFile(t *testing.T) {
 			const before = "<p>before</p>"
 			file := seedReadPage(t, before, classicMeta())
 
-			args := []string{"--source", seedDiagramSource(t, tt.source, "@startuml\n@enduml")}
+			args := []string{"--source", writeTempFile(t, tt.source, "@startuml\n@enduml")}
 			if tt.filename != "" {
 				args = append(args, "--filename", tt.filename)
 			}
@@ -865,7 +850,7 @@ func TestPlantUMLAddNamesTheDiagramFile(t *testing.T) {
 // after the file is open: in each the page has to be left exactly as it was,
 // since a half-applied insertion is not something a re-run can reason about.
 func TestPlantUMLAddRefusesWhatItCannotResolve(t *testing.T) {
-	source := seedDiagramSource(t, "d.puml", "@startuml\n@enduml")
+	source := writeTempFile(t, "d.puml", "@startuml\n@enduml")
 
 	for _, tt := range []struct {
 		name   string
@@ -916,7 +901,7 @@ func TestPlantUMLAddRefusesWhatItCannotResolve(t *testing.T) {
 			// build a filename out of.
 			name:   "a source with no name to derive from",
 			before: `<p>one</p>`,
-			args:   []string{"--source", seedDiagramSource(t, ".puml", "@startuml\n@enduml")},
+			args:   []string{"--source", writeTempFile(t, ".puml", "@startuml\n@enduml")},
 			want:   "--filename",
 		},
 		{
@@ -955,7 +940,7 @@ func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 	file := seedReadPage(t, "<p>before</p>", classicMeta())
 
 	run, err := runCLI(t, "confluence", "plantuml", "add", "-f", file, "--format", "json",
-		"--source", seedDiagramSource(t, "d.puml", "@startuml\nactor User\n@enduml"))
+		"--source", writeTempFile(t, "d.puml", "@startuml\nactor User\n@enduml"))
 	if err != nil {
 		t.Fatalf("plantuml add error = %v", err)
 	}
@@ -975,7 +960,7 @@ func TestPlantUMLAddReportsAnIDTheOtherSubcommandsAccept(t *testing.T) {
 	}
 
 	// The reported id has to select the new macro, not merely resemble one.
-	replacement := seedDiagramSource(t, "next.puml", "@startuml\nactor Admin\n@enduml")
+	replacement := writeTempFile(t, "next.puml", "@startuml\nactor Admin\n@enduml")
 	if _, err := runCLI(t, "confluence", "plantuml", "set", "-f", file,
 		"--id", added.LocalID, "--source", replacement); err != nil {
 		t.Fatalf("plantuml set error = %v", err)
@@ -1005,7 +990,7 @@ func TestPlantUMLAddAcceptsALiveDoc(t *testing.T) {
 	file := seedReadPage(t, before, liveMeta())
 
 	macro, _ := addedMacro(t, file, before, len(before),
-		"--source", seedDiagramSource(t, "d.puml", "@startuml\n@enduml"))
+		"--source", writeTempFile(t, "d.puml", "@startuml\n@enduml"))
 
 	if macro.LocalID == "" {
 		t.Error("the macro added to a live doc carries no ac:local-id, " +

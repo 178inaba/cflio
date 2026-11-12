@@ -20,9 +20,9 @@ const defaultAttachmentsLimit = 100
 func newAttachmentsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "attachments",
-		Short: "List and download a page's attachments",
+		Short: "List, download and upload a page's attachments",
 	}
-	cmd.AddCommand(newAttachmentsListCmd(g), newAttachmentsDownloadCmd(g))
+	cmd.AddCommand(newAttachmentsListCmd(g), newAttachmentsDownloadCmd(g), newAttachmentsUploadCmd(g))
 	return cmd
 }
 
@@ -73,9 +73,7 @@ error rather than a silent success.
 
 An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
-cannot leave some files replaced and others not.
-
-Read-only against Confluence: atlio never uploads an attachment.`,
+cannot leave some files replaced and others not.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsDownload(cmd, args, g, pattern, outDir, outFormat)
@@ -91,6 +89,57 @@ Read-only against Confluence: atlio never uploads an attachment.`,
 	if err := cmd.MarkFlagRequired("pattern"); err != nil {
 		panic(err)
 	}
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
+}
+
+func newAttachmentsUploadCmd(g *globalFlags) *cobra.Command {
+	var (
+		replace   bool
+		outFormat format.Format
+	)
+
+	cmd := &cobra.Command{
+		Use:   "upload <page-url|page-id> <file>...",
+		Short: "Attach local files to a page",
+		Long: `Attach one or more regular files to a page, each under its base name
+(./out/shot.png is attached as shot.png). A FIFO, a device or a directory is
+refused before anything is sent.
+
+Uploading does not change the page body, so the file does not appear on the
+page yet. To show an image, read the page, add an element naming the
+attachment where it should appear, and update:
+
+  atlio confluence attachments upload <page> shot.png
+  atlio confluence read <page> -o page.xml
+  # add <ac:image><ri:attachment ri:filename="shot.png" /></ac:image> to page.xml
+  atlio confluence update -f page.xml
+
+A file whose name the page already has an attachment under is refused, and
+then none of the files are attached. --replace uploads it as a new version of
+that attachment instead, keeping its history, and creates the rest. The page
+shows the new version without a ` + "`confluence update`" + `, so retaking a screenshot
+that is already on the page is this one command.
+
+All files go in one request, and --timeout is the deadline for the whole
+upload: raise it for a large file. The site's attachment size limit is not
+checked locally; a file over it fails at the server.
+
+An upload that fails after the whole request was sent — the deadline expiring
+while the response is awaited, or a 5xx answer — may have been stored anyway,
+and its error says so. Only a 4xx says Confluence refused it. Check with
+` + "`atlio confluence attachments list`" + ` before running it again: without
+--replace a repeat is refused if the files did land, and with --replace it
+adds another, identical version.`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAttachmentsUpload(cmd, args, g, replace, outFormat)
+		},
+	}
+
+	cmd.Flags().BoolVar(&replace, "replace", false,
+		"add a new version to an attachment the page already has under the same name, instead of refusing")
 	addFormatFlag(cmd, &outFormat)
 
 	return cmd
@@ -220,8 +269,154 @@ func runAttachmentsDownload(cmd *cobra.Command, args []string, g *globalFlags, p
 	return writeList(cmd, outFormat, "downloaded attachments", items, notice)
 }
 
+// uploadedItem is one attachment `upload` left on the page, as the server
+// reports it. Version tells a new attachment (1) from a replaced one, and
+// MediaType is Confluence's own reading of the file, which is what decides
+// whether <ac:image> renders it.
+type uploadedItem struct {
+	Filename  string `json:"filename"`
+	MediaType string `json:"media_type"`
+	FileSize  int64  `json:"file_size"`
+	Version   int    `json:"version"`
+}
+
+func (u uploadedItem) markdown() string {
+	return fmt.Sprintf("- **%s** (%s, %d bytes, version %d)", u.Filename, u.MediaType, u.FileSize, u.Version)
+}
+
+func runAttachmentsUpload(cmd *cobra.Command, args []string, g *globalFlags, replace bool, outFormat format.Format) error {
+	if err := outFormat.Validate(); err != nil {
+		return err
+	}
+
+	opened, err := openUploads(args[1:])
+	if err != nil {
+		return err
+	}
+	defer closeFiles(opened)
+
+	client, pageID, err := resolvePageClient(args[0], g.profile)
+	if err != nil {
+		return err
+	}
+
+	files := make([]confluence.UploadFile, 0, len(opened))
+	for _, f := range opened {
+		files = append(files, confluence.UploadFile{Name: filepath.Base(f.Name()), Content: f})
+	}
+
+	ctx, cancel := commandContext(cmd, g.timeout)
+	defer cancel()
+
+	uploaded, err := client.UploadAttachments(ctx, pageID, files, replace)
+	if err != nil {
+		switch {
+		case errors.Is(err, confluence.ErrUploadRefused):
+			return fmt.Errorf("%w; pass --replace to upload a new version of that attachment instead", err)
+		case errors.Is(err, confluence.ErrUploadUnconfirmed):
+			return fmt.Errorf("%w; check with `atlio confluence attachments list` before uploading again", err)
+		}
+		return err
+	}
+
+	items := make([]uploadedItem, 0, len(uploaded))
+	for _, u := range uploaded {
+		items = append(items, uploadedItem{Filename: u.Title, MediaType: u.MediaType, FileSize: u.FileSize, Version: u.Version})
+	}
+	return writeList(cmd, outFormat, "uploaded attachments", items, "")
+}
+
+// openUploads opens every file to upload, attached under its base name, and
+// refuses the whole run — naming every offending argument — if any cannot be
+// read or two would be the same attachment.
+//
+// Every check runs before any request, as in planDownloads, so a run never
+// attaches some files and then stops at a bad one. Opening rather than only
+// stat-ing is what makes "cannot be read" a local finding, and the files are
+// kept open for the upload so the checks hold for what is sent.
+//
+// Only a regular file is accepted, and that is decided from a Stat before the
+// open: opening a FIFO blocks until a writer appears, before --timeout is
+// running, and a device can stream without end. SameFile on the open handle
+// then refuses a path that was swapped for another file in between; a swap to
+// a FIFO in that window would still block the open, which only a racing local
+// process could arrange.
+func openUploads(paths []string) ([]*os.File, error) {
+	var (
+		files    []*os.File
+		problems []string
+	)
+	byName := map[string][]string{}
+
+	for _, p := range paths {
+		byName[filepath.Base(p)] = append(byName[filepath.Base(p)], p)
+
+		f, problem := openRegular(p)
+		if problem != "" {
+			problems = append(problems, problem)
+			continue
+		}
+		files = append(files, f)
+	}
+
+	// Ordered by first appearance, so the message follows the command line.
+	// Each name is dropped once reported, which is what keeps one path given
+	// twice from being reported twice.
+	for _, p := range paths {
+		name := filepath.Base(p)
+		if same := byName[name]; len(same) > 1 {
+			problems = append(problems, fmt.Sprintf("%s would all be attached as %s",
+				strings.Join(same, ", "), name))
+			delete(byName, name)
+		}
+	}
+
+	if len(problems) > 0 {
+		closeFiles(files)
+		return nil, fmt.Errorf("cannot upload (nothing was sent): %s", strings.Join(problems, "; "))
+	}
+	return files, nil
+}
+
+// openRegular opens p for upload, or describes why it cannot be one.
+func openRegular(p string) (*os.File, string) {
+	info, err := os.Stat(p)
+	if err != nil {
+		return nil, err.Error()
+	}
+	switch {
+	case info.IsDir():
+		return nil, p + " is a directory"
+	case !info.Mode().IsRegular():
+		return nil, p + " is not a regular file"
+	}
+
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err.Error()
+	}
+	opened, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err.Error()
+	}
+	if !os.SameFile(info, opened) {
+		_ = f.Close()
+		return nil, p + " changed while it was being checked"
+	}
+	return f, ""
+}
+
+// closeFiles closes files opened only for reading, where a failed close loses
+// nothing.
+func closeFiles(files []*os.File) {
+	for _, f := range files {
+		_ = f.Close()
+	}
+}
+
 // resolvePageClient parses the page argument and builds the client for the site
-// it names. Both subcommands go through here, so a page URL and a bare page ID
+// it names. Every subcommand goes through here, so a page URL and a bare page ID
 // are interchangeable on each of them with the same profile resolution.
 func resolvePageClient(arg, profile string) (*confluence.Client, string, error) {
 	ref, err := pageref.Parse(arg)

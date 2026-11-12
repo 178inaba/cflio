@@ -7,11 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -401,5 +405,231 @@ func TestDownloadDropsTheAuthHeaderOnARedirectToAnotherHost(t *testing.T) {
 	}
 	if !bytes.Equal(buf.Bytes(), fileBytes) {
 		t.Errorf("body = %v, want the redirect target's bytes %v", buf.Bytes(), fileBytes)
+	}
+}
+
+// writeFilePart is a SendMultipart writer that sends content as one file part
+// named name, the shape every upload this transport carries has.
+func writeFilePart(name string, content []byte) func(*multipart.Writer) error {
+	return func(mw *multipart.Writer) error {
+		part, err := mw.CreateFormFile("file", name)
+		if err != nil {
+			return err
+		}
+		_, err = part.Write(content)
+		return err
+	}
+}
+
+func TestSendMultipartStreamsThePartsWithTheGivenHeader(t *testing.T) {
+	var gotMethod, gotPath, gotAuth, gotAccept, gotToken, gotName string
+	var gotContent []byte
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotAuth, gotAccept = r.Header.Get("Authorization"), r.Header.Get("Accept")
+		gotToken = r.Header.Get("X-Test-Token")
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			t.Errorf("FormFile() error = %v", err)
+			return
+		}
+		defer func() { _ = file.Close() }()
+		gotName = header.Filename
+		gotContent, _ = io.ReadAll(file)
+		_, _ = fmt.Fprint(w, `{"name":"x"}`)
+	})
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	header := http.Header{"X-Test-Token": {"nocheck"}}
+	if err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", header,
+		writeFilePart("a.png", fileBytes), &out); err != nil {
+		t.Fatalf("SendMultipart() error = %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/api/rest/upload" {
+		t.Errorf("request = %s %s, want POST /api/rest/upload", gotMethod, gotPath)
+	}
+	if gotAuth != wantAuth {
+		t.Errorf("Authorization = %q, want %q", gotAuth, wantAuth)
+	}
+	if gotAccept != "application/json" {
+		t.Errorf("Accept = %q, want application/json", gotAccept)
+	}
+	if gotToken != "nocheck" {
+		t.Errorf("X-Test-Token = %q, want the caller's header passed through", gotToken)
+	}
+	if gotName != "a.png" || !bytes.Equal(gotContent, fileBytes) {
+		t.Errorf("file part = %q %v, want a.png %v", gotName, gotContent, fileBytes)
+	}
+	if out.Name != "x" {
+		t.Errorf("decoded name = %q, want x", out.Name)
+	}
+}
+
+func TestSendMultipartReportsTheWritersError(t *testing.T) {
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+	})
+
+	errRead := errors.New("read local file")
+	write := func(mw *multipart.Writer) error {
+		if err := writeFilePart("a.png", fileBytes)(mw); err != nil {
+			return err
+		}
+		return errRead
+	}
+
+	err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil, write, nil)
+	if !errors.Is(err, errRead) {
+		t.Errorf("SendMultipart() error = %v, want it to wrap the writer's error", err)
+	}
+}
+
+func TestSendMultipartReturnsTheAPIErrorWhenTheServerAnswersWithoutReading(t *testing.T) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	// Small enough to sit in the socket buffers, so the write never blocks and
+	// the response is what the transport reports.
+	err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
+		writeFilePart("a.png", fileBytes), nil)
+
+	if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != http.StatusBadRequest {
+		t.Fatalf("SendMultipart() error = %v, want an *APIError with status 400", err)
+	}
+	// A 4xx refuses the request, so nothing about the outcome is unknown.
+	if errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull once the server refused it", err)
+	}
+}
+
+func TestSendMultipartReturnsOnceTheServerStopsReadingALargeBody(t *testing.T) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	// Far past what the socket buffers and the server's discard of an unread
+	// body absorb, so the writer is left blocked once the server stops
+	// reading. Which error comes back is net/http's race between the response
+	// and the failed write; what matters is that one does, and that the writer
+	// is done by then.
+	var writerDone atomic.Bool
+	write := func(mw *multipart.Writer) error {
+		defer writerDone.Store(true)
+		return writeFilePart("big.bin", make([]byte, 16<<20))(mw)
+	}
+
+	if err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil, write, nil); err == nil {
+		t.Fatal("SendMultipart() error = nil, want the failure")
+	}
+	if !writerDone.Load() {
+		t.Error("the writer was still running after SendMultipart returned")
+	}
+}
+
+func TestSendMultipartKeepsTheDeadlineWhenTheServerStopsReading(t *testing.T) {
+	// Released by the test rather than by r.Context(): a server that has not
+	// read the body to its end does not watch the connection, so the client
+	// going away never cancels that context, and closing the server would wait
+	// on this handler for good.
+	release := make(chan struct{})
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, _ *http.Request) {
+		<-release
+	})
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	// The writer wraps whatever the pipe answers, as a real one does with an
+	// io.Copy error, so a pipe closed under the deadline reaches here as an
+	// error of its own that must not displace the deadline.
+	write := func(mw *multipart.Writer) error {
+		if err := writeFilePart("big.bin", make([]byte, 16<<20))(mw); err != nil {
+			return fmt.Errorf("copy big.bin: %w", err)
+		}
+		return nil
+	}
+
+	err := client.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, write, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("SendMultipart() error = %v, want it to wrap context.DeadlineExceeded", err)
+	}
+	// The server never had the whole body, so it cannot have acted on it.
+	if errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want no ErrSentInFull for a body cut short", err)
+	}
+}
+
+func TestSendMultipartMarksAnUnreadableSuccessAsSentInFull(t *testing.T) {
+	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = fmt.Fprint(w, "<html>not json</html>")
+	})
+
+	var out struct{}
+	err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
+		writeFilePart("a.png", fileBytes), &out)
+
+	// A 2xx means the server accepted the request; only its answer is lost.
+	if !errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want ErrSentInFull for a 2xx that could not be parsed", err)
+	}
+}
+
+func TestSendMultipartMarksAFailureAfterTheWholeBodyWasSent(t *testing.T) {
+	release := make(chan struct{})
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-release
+	})
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	err := client.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, writeFilePart("a.png", fileBytes), nil)
+	if !errors.Is(err, ErrSentInFull) {
+		t.Errorf("SendMultipart() error = %v, want ErrSentInFull: the server had the whole body", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("SendMultipart() error = %v, want it to still wrap context.DeadlineExceeded", err)
+	}
+}
+
+// TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest covers the
+// responses to a body the server read to its end: a 4xx refuses the request,
+// while no 5xx definition says whether the request was carried out.
+func TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		unknown bool
+	}{
+		{http.StatusBadRequest, false},
+		{http.StatusNotFound, false},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+		{http.StatusGatewayTimeout, true},
+	} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(tc.status)
+			})
+
+			err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
+				writeFilePart("a.png", fileBytes), nil)
+
+			if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != tc.status {
+				t.Fatalf("SendMultipart() error = %v, want an *APIError with status %d", err, tc.status)
+			}
+			if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
+				t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
+			}
+		})
 	}
 }

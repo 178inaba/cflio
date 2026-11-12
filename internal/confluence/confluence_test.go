@@ -497,6 +497,130 @@ func TestPageAttachmentsReportsMoreBeyondTheLimit(t *testing.T) {
 	}
 }
 
+// formPart is one part of a multipart request as the server read it.
+type formPart struct {
+	name, filename, content string
+}
+
+func readParts(t *testing.T, r *http.Request) []formPart {
+	t.Helper()
+
+	reader, err := r.MultipartReader()
+	if err != nil {
+		t.Errorf("MultipartReader() error = %v", err)
+		return nil
+	}
+	var parts []formPart
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			return parts
+		}
+		if err != nil {
+			t.Errorf("NextPart() error = %v", err)
+			return parts
+		}
+		content, _ := io.ReadAll(part)
+		parts = append(parts, formPart{name: part.FormName(), filename: part.FileName(), content: string(content)})
+	}
+}
+
+func TestUploadAttachmentsSendsEachFileWithAMinorEditFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		replace    bool
+		wantMethod string
+	}{
+		{name: "a new upload is a POST, which refuses an existing name", wantMethod: http.MethodPost},
+		{name: "a replacing upload is a PUT, which versions an existing name", replace: true, wantMethod: http.MethodPut},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotMethod, gotPath, gotToken string
+			var gotParts []formPart
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				gotMethod, gotPath = r.Method, r.URL.Path
+				gotToken = r.Header.Get("X-Atlassian-Token")
+				gotParts = readParts(t, r)
+				_, _ = fmt.Fprint(w, `{"results":[
+					{"id":"att1","title":"a.png","extensions":{"mediaType":"image/png","fileSize":3},"version":{"number":1}},
+					{"id":"att2","title":"b.txt","extensions":{"mediaType":"text/plain","fileSize":2},"version":{"number":4}}
+				]}`)
+			})
+
+			files := []UploadFile{
+				{Name: "a.png", Content: strings.NewReader("\x89\xff\x00")},
+				{Name: "b.txt", Content: strings.NewReader("hi")},
+			}
+			uploaded, err := client.UploadAttachments(t.Context(), "10", files, tt.replace)
+			if err != nil {
+				t.Fatalf("UploadAttachments() error = %v", err)
+			}
+
+			if gotMethod != tt.wantMethod || gotPath != "/wiki/rest/api/content/10/child/attachment" {
+				t.Errorf("request = %s %s, want %s /wiki/rest/api/content/10/child/attachment", gotMethod, gotPath, tt.wantMethod)
+			}
+			// Confluence answers 403 without it.
+			if gotToken != "nocheck" {
+				t.Errorf("X-Atlassian-Token = %q, want nocheck", gotToken)
+			}
+			wantParts := []formPart{
+				{name: "file", filename: "a.png", content: "\x89\xff\x00"},
+				{name: "minorEdit", content: "true"},
+				{name: "file", filename: "b.txt", content: "hi"},
+				{name: "minorEdit", content: "true"},
+			}
+			if !slices.Equal(gotParts, wantParts) {
+				t.Errorf("parts = %q, want %q", gotParts, wantParts)
+			}
+
+			want := []UploadedAttachment{
+				{Title: "a.png", MediaType: "image/png", FileSize: 3, Version: 1},
+				{Title: "b.txt", MediaType: "text/plain", FileSize: 2, Version: 4},
+			}
+			if !slices.Equal(uploaded, want) {
+				t.Errorf("uploaded = %+v, want %+v", uploaded, want)
+			}
+		})
+	}
+}
+
+func TestUploadAttachmentsMarksARefusedPost(t *testing.T) {
+	tests := []struct {
+		name        string
+		replace     bool
+		wantRefused bool
+	}{
+		{name: "a 400 to a POST is the refusal of an existing name", wantRefused: true},
+		{name: "a 400 to a PUT is not, since a PUT accepts one", replace: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, `{"statusCode":400,"message":"Cannot add a new attachment with same file name as an existing attachment: a.png"}`)
+			})
+
+			_, err := client.UploadAttachments(t.Context(), "10",
+				[]UploadFile{{Name: "a.png", Content: strings.NewReader("x")}}, tt.replace)
+
+			apiErr, ok := errors.AsType[*atlassian.APIError](err)
+			if !ok || apiErr.Status != http.StatusBadRequest {
+				t.Fatalf("UploadAttachments() error = %v, want an *APIError with status 400", err)
+			}
+			if !strings.Contains(err.Error(), "same file name as an existing attachment: a.png") {
+				t.Errorf("error = %q, want the server's message", err)
+			}
+			if got := errors.Is(err, ErrUploadRefused); got != tt.wantRefused {
+				t.Errorf("errors.Is(err, ErrUploadRefused) = %v, want %v", got, tt.wantRefused)
+			}
+		})
+	}
+}
+
 // pngBytes is a real PNG signature plus a byte that is not valid UTF-8 on its
 // own, so a transfer that decoded or re-encoded the body would corrupt it
 // visibly rather than passing the assertion by luck.

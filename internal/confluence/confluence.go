@@ -5,15 +5,17 @@
 // the lossless round-trip that is the whole point of this tool.
 //
 // Capabilities are split across API versions as Atlassian publishes them:
-// pages, children and comments come from v2, while CQL search and the
-// credential check only exist in v1.
+// pages, children and comments come from v2, while CQL search, the credential
+// check and attachment upload only exist in v1.
 package confluence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"slices"
@@ -444,6 +446,106 @@ func (c *Client) DownloadAttachment(ctx context.Context, downloadLink string, w 
 		return 0, err
 	}
 	return c.api.Download(ctx, endpoint, downloadLink, w)
+}
+
+// UploadFile is one file to attach: Name is the attachment's filename, and
+// Content is read to its end as the file's bytes.
+type UploadFile struct {
+	Name    string
+	Content io.Reader
+}
+
+// UploadedAttachment is one attachment as an upload left it. Version is 1 for
+// an attachment the upload created and higher for one it added a version to.
+type UploadedAttachment struct {
+	Title     string
+	MediaType string
+	FileSize  int64
+	Version   int
+}
+
+// ErrUploadRefused marks a 400 to an upload that does not replace, which is
+// how Confluence refuses a name the page already has an attachment under. It
+// is worded as a possibility because a 400 is not only that: the server's own
+// message, which the error carries too, is what names the cause.
+var ErrUploadRefused = errors.New("the page may already have an attachment with one of these names")
+
+// ErrUploadUnconfirmed marks an upload that failed after its whole body was
+// sent, so Confluence may have stored the files anyway. It is the transport's
+// atlassian.ErrSentInFull under the name of what it means here, so callers of
+// this package need not reach into the transport to recognise it.
+var ErrUploadUnconfirmed = atlassian.ErrSentInFull
+
+// uploadedAttachment is the v1 content entry an upload answers with, which
+// keeps the media type and size under extensions rather than beside the title.
+type uploadedAttachment struct {
+	Title      string `json:"title"`
+	Extensions struct {
+		MediaType string `json:"mediaType"`
+		FileSize  int64  `json:"fileSize"`
+	} `json:"extensions"`
+	Version struct {
+		Number int `json:"number"`
+	} `json:"version"`
+}
+
+// UploadAttachments attaches files to a page in one request and returns the
+// attachments the server reports for them.
+//
+// This is v1: v2 has no upload. Without replace the request is a POST, which
+// Confluence refuses as a whole — creating none of the files — when the page
+// already has an attachment named like one of them; with replace it is a PUT,
+// which adds a version to such an attachment and creates the rest.
+//
+// Each file part is followed by a minorEdit field of true. The API requires
+// the field either never or once per file, and true keeps the upload from
+// notifying the page's watchers: the edit that embeds the file is the one
+// they should hear about. X-Atlassian-Token is the CSRF opt-out Confluence
+// answers 403 without.
+func (c *Client) UploadAttachments(ctx context.Context, pageID string, files []UploadFile, replace bool) ([]UploadedAttachment, error) {
+	method := http.MethodPost
+	if replace {
+		method = http.MethodPut
+	}
+	header := http.Header{"X-Atlassian-Token": {"nocheck"}}
+
+	write := func(mw *multipart.Writer) error {
+		for _, f := range files {
+			part, err := mw.CreateFormFile("file", f.Name)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(part, f.Content); err != nil {
+				return fmt.Errorf("send %s: %w", f.Name, err)
+			}
+			if err := mw.WriteField("minorEdit", "true"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	var result struct {
+		Results []uploadedAttachment `json:"results"`
+	}
+	path := "/rest/api/content/" + url.PathEscape(pageID) + "/child/attachment"
+	if err := c.api.SendMultipart(ctx, method, path, header, write, &result); err != nil {
+		if apiErr, ok := errors.AsType[*atlassian.APIError](err); ok && !replace && apiErr.Status == http.StatusBadRequest {
+			return nil, fmt.Errorf("%w: %w", err, ErrUploadRefused)
+		}
+		return nil, err
+	}
+
+	uploaded := make([]UploadedAttachment, 0, len(result.Results))
+	for _, r := range result.Results {
+		uploaded = append(uploaded, UploadedAttachment{
+			Title:     r.Title,
+			MediaType: r.Extensions.MediaType,
+			FileSize:  r.Extensions.FileSize,
+			Version:   r.Version.Number,
+		})
+	}
+	return uploaded, nil
 }
 
 // attachmentURL turns the relative download link an attachment carries into an

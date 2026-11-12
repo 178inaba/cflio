@@ -108,6 +108,11 @@ atlio confluence read 123456 --markdown --attachments ./assets
 atlio confluence attachments list 123456
 atlio confluence attachments download 123456 --pattern '*.png' -o ./assets
 
+# Put a screenshot on the page: attach it, then reference it from the body
+atlio confluence attachments upload 123456 ./shot.png
+# ...add <ac:image><ri:attachment ri:filename="shot.png" /></ac:image> to page.xml, then
+atlio confluence update -f page.xml
+
 # Change a PlantUML diagram on the page, without hand-encoding its payload
 atlio confluence plantuml list -f page.xml
 atlio confluence plantuml get -f page.xml --id 7c1d4e8a -o diagram.puml
@@ -276,7 +281,37 @@ fails before downloading anything and names the file, so a run can never leave s
 and others not — delete them, or point `-o` somewhere else. `-o` defaults to the working directory
 and is created if it does not exist.
 
-Uploading attachments is not supported.
+### Putting an image on a page
+
+`confluence attachments upload` attaches local regular files to a page, each under its base name
+(`./out/shot.png` becomes `shot.png`); a FIFO, a device or a directory is refused before anything is
+sent. Uploading does not touch the body, so the file does not
+appear on the page yet: showing it is the read/update cycle, with one element naming the attachment
+placed where it should appear.
+
+```sh
+atlio confluence attachments upload 123456 ./shot.png
+atlio confluence read 123456 -o page.xml
+# add <ac:image><ri:attachment ri:filename="shot.png" /></ac:image> to page.xml
+atlio confluence update -f page.xml
+```
+
+A file whose name the page already has an attachment under is refused, and then none of the files
+in the run are attached. `--replace` uploads it as a new version of that attachment instead — its
+history is kept — and creates the rest. The page shows the new version without a `confluence
+update`, since the body names the attachment rather than one of its versions, so retaking a
+screenshot that is already on the page is this one command.
+
+All the files go in one request, and the default 90 s `--timeout` covers the whole upload — raise it
+for a large file. The site's attachment size limit is not checked locally; a file over it fails at
+the server. The output lists each attachment with the media type Confluence read it as, its size,
+and its version: `1` for a new attachment, higher for a replaced one.
+
+An upload that fails after the whole request was sent — the deadline expiring while the response is
+awaited, or a `5xx` answer — may have been stored anyway, and its error says so; only a `4xx` says
+Confluence refused it. Check with `confluence attachments list` before running it again: without
+`--replace` a repeat is refused if the files did land, and with `--replace` it adds another,
+identical version. The exit code is still the one the failure calls for, `124` for the deadline.
 
 ### PlantUML diagrams
 
@@ -417,7 +452,10 @@ the thing exists first, and re-run only if it does not — for `confluence creat
 with `atlio confluence children <parent>` (raising `--limit` if it says more child pages are
 available, since it lists the oldest first) and, if it is there, run `confluence read` on it to get
 a checkout; for `confluence comments create`, look with `atlio confluence comments list <page>`
-(raising `--limit` the same way), and if the comment is there nothing is left to do. `confluence update` needs no such check: its
+(raising `--limit` the same way), and if the comment is there nothing is left to do; for
+`confluence attachments upload`, whose error says when the files may have landed, look with
+`atlio confluence attachments list <page>` (see
+[Putting an image on a page](#putting-an-image-on-a-page)). `confluence update` needs no such check: its
 version lock turns a re-run after a write that did land into the "changed since it was read" refusal
 rather than a second write.
 
@@ -486,12 +524,13 @@ docker compose run --rm lint --fix
   API then answers 404 — atlio addresses pages only. A token that does not decode reports so and
   asks for the full URL.
 - **No retries.** A rate-limited or failing request reports the error rather than backing off.
-- **Attachments are read-only.** They can be listed and downloaded; uploading one is not supported.
+- **Attachments are added, never removed.** They can be listed, downloaded and uploaded; deleting
+  one, or one of its versions, is not supported.
   `confluence read --markdown --attachments` links the images it downloads, but an image whose
   attachment lives on another page or blog post still renders as its filename: the file would have
   to be fetched from content other than the page being read.
 - **Comments are post-only.** A footer comment can be posted; editing or deleting one, replying to
   one, and posting an inline comment are not supported.
-- Deleting and moving pages, uploading attachments, and reading or writing a Confluence page as ADF
+- Deleting and moving pages, and reading or writing a Confluence page as ADF
   (the representation behind live docs) are not supported. See
   [the tracking issue](https://github.com/178inaba/atlio/issues/1) for the full list.

@@ -62,9 +62,21 @@ func seedProfile(t *testing.T, name, siteURL string) {
 // path.
 func writeBodyFile(t *testing.T, body string) string {
 	t.Helper()
+	return writeTempFile(t, "body.xml", body)
+}
 
-	path := filepath.Join(t.TempDir(), "body.xml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+// writeTempFile writes content to name under a fresh temporary directory and
+// returns its path. name may carry subdirectories; its base name is kept as
+// given because commands derive things from it — a default output filename, an
+// attachment's name.
+func writeTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	return path
