@@ -89,7 +89,7 @@ type jiraIssueResult struct {
 	Summary     string           `json:"summary"`
 	Type        string           `json:"type"`
 	Status      string           `json:"status"`
-	Priority    string           `json:"priority"`
+	Priority    string           `json:"priority,omitempty"`
 	Assignee    string           `json:"assignee,omitempty"`
 	Reporter    string           `json:"reporter,omitempty"`
 	Labels      []string         `json:"labels,omitempty"`

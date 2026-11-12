@@ -397,7 +397,7 @@ func TestJiraIssueReadWritesNothingWithoutRichText(t *testing.T) {
 			if err := json.Unmarshal([]byte(run.stdout), &got); err != nil {
 				t.Fatalf("Unmarshal(%q) error = %v", run.stdout, err)
 			}
-			wantKeys := []string{"created_at", "key", "priority", "status", "summary", "type", "updated_at", "url"}
+			wantKeys := []string{"created_at", "key", "status", "summary", "type", "updated_at", "url"}
 			if keys := slices.Sorted(maps.Keys(got)); !slices.Equal(keys, wantKeys) {
 				t.Errorf("JSON keys = %v, want %v", keys, wantKeys)
 			}
