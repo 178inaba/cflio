@@ -244,3 +244,56 @@ func TestAPIErrorSurfacesJiraMessages(t *testing.T) {
 		})
 	}
 }
+
+// searchPage renders a search response holding the issues KAN-<from> to
+// KAN-<to>, with next as its nextPageToken when non-empty.
+func searchPage(from, to int, next string) string {
+	issues := make([]string, 0, to-from+1)
+	for n := from; n <= to; n++ {
+		issues = append(issues, fmt.Sprintf(`{"id":"%d","key":"KAN-%d","fields":{"summary":"S%d"}}`, 10000+n, n, n))
+	}
+	page := `{"issues":[` + strings.Join(issues, ",") + `]`
+	if next != "" {
+		page += `,"nextPageToken":"` + next + `"`
+	}
+	return page + `}`
+}
+
+func TestSearchSizesPagesToTheLimit(t *testing.T) {
+	type request struct{ jql, fields, maxResults, token string }
+	var got []request
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/rest/api/3/search/jql" {
+			t.Errorf("request = %s %s, want GET /rest/api/3/search/jql", r.Method, r.URL.Path)
+		}
+		q := r.URL.Query()
+		got = append(got, request{q.Get("jql"), q.Get("fields"), q.Get("maxResults"), q.Get("nextPageToken")})
+		// The first page comes back full, so the second asks only for what
+		// is left plus the one issue that tells a cut-short listing apart.
+		if q.Get("nextPageToken") == "" {
+			_, _ = fmt.Fprint(w, searchPage(1, 100, "page-2"))
+			return
+		}
+		_, _ = fmt.Fprint(w, searchPage(101, 151, ""))
+	})
+
+	issues, hasMore, err := client.Search(t.Context(), "project = KAN", 150)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	const fields = "summary,issuetype,status,assignee,updated"
+	want := []request{
+		{"project = KAN", fields, "100", ""},
+		{"project = KAN", fields, "51", "page-2"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("requests = %+v, want %+v", got, want)
+	}
+	if len(issues) != 150 || !hasMore {
+		t.Fatalf("Search() = %d issues, hasMore %t; want 150 issues and hasMore", len(issues), hasMore)
+	}
+	if issues[0].Key != "KAN-1" || issues[0].Fields.Summary != "S1" || issues[149].Key != "KAN-150" {
+		t.Errorf("Search() issues run %s..%s, want KAN-1..KAN-150 decoded in order", issues[0].Key, issues[149].Key)
+	}
+}
