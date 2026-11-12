@@ -148,7 +148,8 @@ type credentialChecks struct {
 // A check cut short by the deadline is not an answer, though: it says nothing
 // about whether the site has that product. So when the deadline expired and
 // a check failed, the login fails too rather than recording a product as
-// absent, and exits with the timeout's code.
+// absent; the check the deadline cut short carries the deadline in its error,
+// which is what makes the run exit with the timeout's code.
 func verifyCredentials(ctx context.Context, site, email, token string) (credentialChecks, error) {
 	confluenceClient, err := confluenceFactory(site, email, token)
 	if err != nil {
