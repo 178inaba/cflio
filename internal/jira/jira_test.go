@@ -448,7 +448,7 @@ func TestCommentsFollowsTheOffsetPagination(t *testing.T) {
 
 func TestCommentsKeepsTheAPIFields(t *testing.T) {
 	const body = `{"type":"doc","version":1,"content":[]}`
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprintf(w, `{"total":2,"comments":[
 			{"id":"10","author":{"displayName":"Ada"},"body":%s,"created":"2026-01-01T00:00:00.000+0000","updated":"2026-01-02T00:00:00.000+0000"},
 			{"id":"11","body":%s,"created":"c","updated":"c"}]}`, body, body)
