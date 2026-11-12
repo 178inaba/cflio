@@ -127,19 +127,12 @@ func runCreatePage(cmd *cobra.Command, g *globalFlags, parent, title, file strin
 	}
 
 	created, err := client.CreatePage(ctx, confluence.NewCreatePageRequest(
-		parentPage.SpaceID, ref.PageID, statusCurrent, title, string(body)))
+		parentPage.SpaceID, ref.PageID, title, string(body)))
 	if err != nil {
 		return err
 	}
 
-	meta := sidecar.Meta{
-		PageID:  created.ID,
-		Version: created.Version.Number,
-		Title:   created.Title,
-		Status:  created.Status,
-		PageURL: pageref.PageURL(client.BaseURL(), created.Links.WebUI, created.ID),
-		Subtype: &created.Subtype,
-	}
+	meta := checkoutMeta(client, created)
 	if err := sidecar.Create(file, meta); err != nil {
 		// No -o in the advice: a read into this file would remove whatever
 		// is at the sidecar's path, which may be the entry Create just

@@ -30,7 +30,7 @@ const (
 // createdWebUI is the relative web link the create stub returns for a page
 // with the given title.
 func createdWebUI(title string) string {
-	return "/spaces/DEV/pages/" + testCreatedID + "/" + strings.ReplaceAll(title, " ", "+")
+	return webUIFor(testCreatedID, title)
 }
 
 // recordedRequest is one request a stub received.
@@ -111,15 +111,29 @@ func (s *createStub) recorded() []recordedRequest {
 	return append([]recordedRequest(nil), s.requests...)
 }
 
-// writeBodyFile writes body to a fresh file and returns its path.
-func writeBodyFile(t *testing.T, body string) string {
+// sentCreate returns the create payload of a run that made exactly the parent
+// GET and the create POST.
+func (s *createStub) sentCreate(t *testing.T) confluence.CreatePageRequest {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "new.xml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
+	reqs := s.recorded()
+	if len(reqs) != 2 {
+		t.Fatalf("requests = %+v, want one GET and one POST", reqs)
 	}
-	return path
+	var sent confluence.CreatePageRequest
+	if err := json.Unmarshal([]byte(reqs[1].body), &sent); err != nil {
+		t.Fatalf("Unmarshal(POST body) error = %v", err)
+	}
+	return sent
+}
+
+// assertNoSidecar fails the test if anything is at file's sidecar path.
+func assertNoSidecar(t *testing.T, file string) {
+	t.Helper()
+
+	if _, err := os.Lstat(sidecar.Path(file)); !os.IsNotExist(err) {
+		t.Errorf("Lstat(sidecar) = %v, want no sidecar", err)
+	}
 }
 
 func runCreate(t *testing.T, parent, title, file string, extra ...string) (cliRun, error) {
@@ -152,32 +166,20 @@ func TestCreateSendsOnePublishedPageUnderTheParent(t *testing.T) {
 		t.Fatalf("create error = %v", err)
 	}
 
+	// The payload's exact key set, subtype absent, is pinned by the client's
+	// own test; what is left here is that the command fills it from the
+	// parent and the file.
+	sent := stub.sentCreate(t)
 	reqs := stub.recorded()
-	if len(reqs) != 2 {
-		t.Fatalf("requests = %+v, want one GET and one POST", reqs)
-	}
 	if get := reqs[0]; get.method != http.MethodGet || get.path != "/wiki/api/v2/pages/123456" || get.query != "" {
 		t.Errorf("first request = %s %s?%s, want a GET of the parent with no body-format",
 			get.method, get.path, get.query)
 	}
-	post := reqs[1]
-	if post.method != http.MethodPost || post.path != "/wiki/api/v2/pages" || post.query != "" {
+	if post := reqs[1]; post.method != http.MethodPost || post.path != "/wiki/api/v2/pages" || post.query != "" {
 		t.Errorf("second request = %s %s?%s, want a POST to /wiki/api/v2/pages with no query",
 			post.method, post.path, post.query)
 	}
-
-	var fields map[string]any
-	if err := json.Unmarshal([]byte(post.body), &fields); err != nil {
-		t.Fatalf("Unmarshal(POST body) error = %v", err)
-	}
-	if _, ok := fields["subtype"]; ok {
-		t.Errorf("payload = %s, want no subtype", post.body)
-	}
-	var sent confluence.CreatePageRequest
-	if err := json.Unmarshal([]byte(post.body), &sent); err != nil {
-		t.Fatalf("Unmarshal(POST body) error = %v", err)
-	}
-	want := confluence.NewCreatePageRequest(testParentSpaceID, "123456", "current", "New Page", body)
+	want := confluence.NewCreatePageRequest(testParentSpaceID, "123456", "New Page", body)
 	if sent != want {
 		t.Errorf("payload = %+v, want %+v", sent, want)
 	}
@@ -296,16 +298,8 @@ func TestCreateAcceptsEveryParentForm(t *testing.T) {
 			if _, err := runCreate(t, parent, "New Page", writeBodyFile(t, "<p>hi</p>")); err != nil {
 				t.Fatalf("create error = %v", err)
 			}
-			reqs := stub.recorded()
-			if len(reqs) != 2 {
-				t.Fatalf("requests = %+v, want one GET and one POST", reqs)
-			}
-			var sent confluence.CreatePageRequest
-			if err := json.Unmarshal([]byte(reqs[1].body), &sent); err != nil {
-				t.Fatalf("Unmarshal(POST body) error = %v", err)
-			}
-			if sent.ParentID != "123456" {
-				t.Errorf("parentId = %q, want 123456", sent.ParentID)
+			if got := stub.sentCreate(t).ParentID; got != "123456" {
+				t.Errorf("parentId = %q, want 123456", got)
 			}
 		})
 	}
@@ -350,15 +344,7 @@ func TestCreateWithAnEmptyBody(t *testing.T) {
 	if _, err := runCreate(t, testPageURL, "New Page", writeBodyFile(t, "")); err != nil {
 		t.Fatalf("create error = %v", err)
 	}
-	reqs := stub.recorded()
-	if len(reqs) != 2 {
-		t.Fatalf("requests = %+v, want one GET and one POST", reqs)
-	}
-	var sent confluence.CreatePageRequest
-	if err := json.Unmarshal([]byte(reqs[1].body), &sent); err != nil {
-		t.Fatalf("Unmarshal(POST body) error = %v", err)
-	}
-	if sent.Body.Representation != "storage" || sent.Body.Value != "" {
+	if sent := stub.sentCreate(t); sent.Body.Representation != "storage" || sent.Body.Value != "" {
 		t.Errorf("body = %+v, want an empty storage body", sent.Body)
 	}
 }
@@ -489,9 +475,7 @@ func TestCreateSurfacesAnAPIErrorAndWritesNoSidecar(t *testing.T) {
 			if !strings.Contains(err.Error(), "A page with this title already exists") {
 				t.Errorf("error = %q, want the server's message", err)
 			}
-			if _, err := os.Lstat(sidecar.Path(file)); !os.IsNotExist(err) {
-				t.Errorf("Lstat(sidecar) = %v, want no sidecar", err)
-			}
+			assertNoSidecar(t, file)
 		})
 	}
 }
@@ -531,9 +515,7 @@ func TestCreateReportsTheCreatedPageWhenTheSidecarCannotBeWritten(t *testing.T) 
 	file := writeBodyFile(t, "<p>hi</p>")
 	_, err := runCreate(t, testPageURL, "New Page", file)
 	assertCreatedButNoCheckout(t, err, file)
-	if _, err := os.Lstat(sidecar.Path(file)); !os.IsNotExist(err) {
-		t.Errorf("Lstat(sidecar) = %v, want no sidecar", err)
-	}
+	assertNoSidecar(t, file)
 }
 
 // TestCreateLeavesAnEntryThatAppearedDuringTheRequest covers the window
@@ -588,9 +570,7 @@ func TestCreateReportsADeadlineThatExpiresDuringTheCreate(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("error = %v, want it to carry context.DeadlineExceeded", err)
 	}
-	if _, err := os.Lstat(sidecar.Path(file)); !os.IsNotExist(err) {
-		t.Errorf("Lstat(sidecar) = %v, want no sidecar", err)
-	}
+	assertNoSidecar(t, file)
 }
 
 // TestCreatingCommandsDocumentTheCheckAfterATimeout pins the help text an

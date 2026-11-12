@@ -181,14 +181,13 @@ func Create(bodyPath string, meta Meta) error {
 	if err != nil {
 		return fmt.Errorf("create sidecar %s: %w", path, err)
 	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return fmt.Errorf("write sidecar %s: %w", path, err)
+	// The close error counts too, so a failed flush takes the partial file
+	// with it rather than leaving a sidecar Load cannot parse.
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	// Closed explicitly so a flush failure is reported, and the partial file
-	// it left goes with it.
-	if err := f.Close(); err != nil {
+	if err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("write sidecar %s: %w", path, err)
 	}

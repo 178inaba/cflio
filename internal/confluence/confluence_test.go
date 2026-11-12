@@ -200,7 +200,7 @@ func TestCreatePagePostsAPublishedStorageBodyUnescaped(t *testing.T) {
 			`"version":{"number":1},"_links":{"webui":"/spaces/DEV/pages/777/New"}}`)
 	})
 
-	req := NewCreatePageRequest("42", "123", "current", "New", body)
+	req := NewCreatePageRequest("42", "123", "New", body)
 	page, err := client.CreatePage(t.Context(), req)
 	if err != nil {
 		t.Fatalf("CreatePage() error = %v", err)

@@ -80,14 +80,14 @@ func (s *updateStub) handler(t *testing.T) http.HandlerFunc {
 		// from them.
 		_, _ = fmt.Fprintf(w,
 			`{"id":"123456","status":"current","title":%q,"version":{"number":%d},"_links":{"webui":%q}}`,
-			req.Title, req.Version.Number, webUIFor(req.Title))
+			req.Title, req.Version.Number, webUIFor("123456", req.Title))
 	}
 }
 
-// webUIFor builds the relative web link the API returns for the test page
-// under the given title, whose slug follows the title.
-func webUIFor(title string) string {
-	return "/spaces/DEV/pages/123456/" + strings.ReplaceAll(title, " ", "+")
+// webUIFor builds the relative web link the API returns for a test page under
+// the given title, whose slug follows the title.
+func webUIFor(pageID, title string) string {
+	return "/spaces/DEV/pages/" + pageID + "/" + strings.ReplaceAll(title, " ", "+")
 }
 
 func runUpdate(t *testing.T, path string, extra ...string) (cliRun, error) {
@@ -442,7 +442,7 @@ func TestUpdateRenamesThePage(t *testing.T) {
 			if meta.Title != newTitle {
 				t.Errorf("sidecar title = %q, want the server's %q", meta.Title, newTitle)
 			}
-			if want := testWikiBase + webUIFor(newTitle); meta.PageURL != want {
+			if want := testWikiBase + webUIFor("123456", newTitle); meta.PageURL != want {
 				t.Errorf("sidecar page_url = %q, want the renamed page's %q", meta.PageURL, want)
 			}
 			if meta.Version != 8 {
@@ -483,7 +483,7 @@ func TestUpdateRefreshesTheSidecarWithoutRenaming(t *testing.T) {
 	if updated.Title != "Some Page" {
 		t.Errorf("sidecar title = %q, want it left at the server's %q", updated.Title, "Some Page")
 	}
-	if want := testWikiBase + webUIFor("Some Page"); updated.PageURL != want {
+	if want := testWikiBase + webUIFor("123456", "Some Page"); updated.PageURL != want {
 		t.Errorf("sidecar page_url = %q, want the response's link %q", updated.PageURL, want)
 	}
 }

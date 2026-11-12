@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,6 +55,18 @@ func seedProfile(t *testing.T, name, siteURL string) {
 	if err := file.Save(); err != nil {
 		t.Fatalf("config.Save() error = %v", err)
 	}
+}
+
+// writeBodyFile writes a page or comment body to a fresh file and returns its
+// path.
+func writeBodyFile(t *testing.T, body string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "body.xml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
 }
 
 // neverCalled is the handler for the cases a command must reject before it

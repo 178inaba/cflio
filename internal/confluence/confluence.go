@@ -220,13 +220,10 @@ func (c *Client) GetPage(ctx context.Context, id string, withBody bool) (*Page, 
 // UpdatePageRequest is the v2 page-update payload. Every field is required
 // by the API; atlio fills them from the sidecar written at read time.
 type UpdatePageRequest struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Title  string `json:"title"`
-	Body   struct {
-		Representation string `json:"representation"`
-		Value          string `json:"value"`
-	} `json:"body"`
+	ID      string      `json:"id"`
+	Status  string      `json:"status"`
+	Title   string      `json:"title"`
+	Body    storageBody `json:"body"`
 	Version struct {
 		Number  int    `json:"number"`
 		Message string `json:"message"`
@@ -239,8 +236,7 @@ func NewUpdatePageRequest(id, status, title, body string, version int, message s
 	req.ID = id
 	req.Status = status
 	req.Title = title
-	req.Body.Representation = "storage"
-	req.Body.Value = body
+	req.Body = storage(body)
 	req.Version.Number = version
 	req.Version.Message = message
 	return req
@@ -258,30 +254,28 @@ func (c *Client) UpdatePage(ctx context.Context, req UpdatePageRequest) (*Page, 
 
 // CreatePageRequest is the v2 page-create payload.
 //
-// It has no subtype field, and CreatePage sends no query parameters: a live
-// doc, a draft or a private page could not be written by `confluence update`
+// NewCreatePageRequest fixes the status at "current" and the payload has no
+// subtype field, while CreatePage sends no query parameters: a draft, a live
+// doc or a private page could not be written by `confluence update`
 // afterwards, so there is no way to ask for one here.
 type CreatePageRequest struct {
-	SpaceID  string `json:"spaceId"`
-	Status   string `json:"status"`
-	Title    string `json:"title"`
-	ParentID string `json:"parentId"`
-	Body     struct {
-		Representation string `json:"representation"`
-		Value          string `json:"value"`
-	} `json:"body"`
+	SpaceID  string      `json:"spaceId"`
+	Status   string      `json:"status"`
+	Title    string      `json:"title"`
+	ParentID string      `json:"parentId"`
+	Body     storageBody `json:"body"`
 }
 
-// NewCreatePageRequest builds a create payload for a storage-format body.
-func NewCreatePageRequest(spaceID, parentID, status, title, body string) CreatePageRequest {
-	var req CreatePageRequest
-	req.SpaceID = spaceID
-	req.Status = status
-	req.Title = title
-	req.ParentID = parentID
-	req.Body.Representation = "storage"
-	req.Body.Value = body
-	return req
+// NewCreatePageRequest builds the payload that creates a published page under
+// parentID, in spaceID, with a storage-format body.
+func NewCreatePageRequest(spaceID, parentID, title, body string) CreatePageRequest {
+	return CreatePageRequest{
+		SpaceID:  spaceID,
+		Status:   "current",
+		Title:    title,
+		ParentID: parentID,
+		Body:     storage(body),
+	}
 }
 
 // CreatePage creates a page and returns it as the server created it, which is
@@ -381,27 +375,30 @@ func (c *Client) CommentReplies(ctx context.Context, kind CommentKind, commentID
 // a reply is a different request shape and not an extra field to leave empty.
 type createCommentRequest struct {
 	PageID string      `json:"pageId"`
-	Body   commentBody `json:"body"`
+	Body   storageBody `json:"body"`
 }
 
-// commentBody is the representation-tagged body a comment is written with.
-type commentBody struct {
+// storageBody is the representation-tagged body every write — a page update,
+// a page create, a comment — carries.
+type storageBody struct {
 	Representation string `json:"representation"`
 	Value          string `json:"value"`
+}
+
+// storage tags value as the storage representation, the only one atlio
+// writes. The API also accepts "wiki" and "atlas_doc_format", neither of which
+// atlio sends: they are conversions, and a body that is converted on the way
+// in is no longer the one the caller wrote.
+func storage(value string) storageBody {
+	return storageBody{Representation: "storage", Value: value}
 }
 
 // CreateFooterComment posts body as a new footer comment on a page and
 // returns the comment the server created.
 //
-// The body travels as the storage representation, unchanged. The API also
-// accepts "wiki" and "atlas_doc_format", neither of which atlio sends: they
-// are conversions, and a body that is converted on the way in is no longer
-// the one the caller wrote.
+// The body travels as the storage representation, unchanged.
 func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (*Comment, error) {
-	req := createCommentRequest{
-		PageID: pageID,
-		Body:   commentBody{Representation: "storage", Value: body},
-	}
+	req := createCommentRequest{PageID: pageID, Body: storage(body)}
 
 	var comment Comment
 	if err := c.post(ctx, "/api/v2/"+string(FooterComments), req, &comment); err != nil {
