@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const spacesPath = "/wiki/api/v2/spaces"
-
 // spaceHomepageAPI answers the space lookup with spacesJSON and a page read of
 // the homepage it names, recording the keys each lookup asked for and every
 // path requested. Paths are matched exactly so that a request the command
@@ -48,7 +46,7 @@ func readInto(t *testing.T, arg string, extra ...string) (cliRun, error) {
 
 func TestReadResolvesASpaceURLToItsHomepage(t *testing.T) {
 	for _, arg := range []string{
-		testWikiBase + "/spaces/DEV/overview",
+		testSpaceOverviewURL,
 		testWikiBase + "/spaces/DEV",
 		testWikiBase + "/spaces/DEV/",
 	} {
@@ -57,7 +55,7 @@ func TestReadResolvesASpaceURLToItsHomepage(t *testing.T) {
 			seedProfile(t, "example", testSite)
 
 			api := &spaceHomepageAPI{
-				spacesJSON: `{"results":[{"id":"9","key":"DEV","homepageId":"123456"}]}`,
+				spacesJSON: testSpaceJSON,
 				pagePath:   "/wiki/api/v2/pages/123456",
 			}
 			startAPI(t, api.handler(t))
@@ -189,6 +187,8 @@ func TestReadReportsADeadlineThatExpiresDuringTheSpaceLookup(t *testing.T) {
 	}
 }
 
+// The refusal's wording, including its list of accepted forms, is
+// TestParseErrors' job; what is left here is that nothing is sent.
 func TestReadRefusesOtherSpaceURLsBeforeAnyRequest(t *testing.T) {
 	for _, arg := range []string{
 		testWikiBase + "/spaces/DEV/pages",
@@ -199,12 +199,8 @@ func TestReadRefusesOtherSpaceURLsBeforeAnyRequest(t *testing.T) {
 			seedProfile(t, "example", testSite)
 			startAPI(t, neverCalled(t, "for a URL that names no page"))
 
-			_, err := readInto(t, arg)
-			if err == nil {
-				t.Fatal("read error = nil, want an error")
-			}
-			if !strings.Contains(err.Error(), "/wiki/spaces/DEV/overview") {
-				t.Errorf("error = %q, want it to list the space homepage URL", err)
+			if _, err := readInto(t, arg); err == nil {
+				t.Error("read error = nil, want an error")
 			}
 		})
 	}
