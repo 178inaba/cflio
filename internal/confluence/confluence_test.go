@@ -288,6 +288,16 @@ func TestSpaceHomepageIDPicksTheResultWhoseKeyMatches(t *testing.T) {
 			want:    "163938",
 		},
 		{
+			// A space whose key was changed in its settings keeps its key
+			// and takes the new one as its alias, which is what its URLs
+			// carry. The filter matches the alias; the result's key does
+			// not.
+			name:    "alias the space's URLs carry",
+			key:     "MFSX",
+			results: `[{"key":"MFS","currentActiveAlias":"MFSX","homepageId":"295028"}]`,
+			want:    "295028",
+		},
+		{
 			name:    "matching result after one that does not match",
 			key:     "DEV",
 			results: `[{"key":"OTHER","homepageId":"1"},{"key":"DEV","homepageId":"163938"}]`,

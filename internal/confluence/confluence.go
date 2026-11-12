@@ -296,13 +296,16 @@ func (c *Client) CreatePage(ctx context.Context, req CreatePageRequest) (*Page, 
 // path, so it filters the space listing by key and takes the first page of
 // results only, which is where a key filter's one match lands.
 //
-// The filter matches keys regardless of case, so the result is picked the
+// key may also be the space's alias: a key changed in the space's settings
+// stays the space's key, and the new one becomes the alias its URLs carry.
+// The filter matches either, regardless of case, so the result is picked the
 // same way. A key that names no space the token can see answers with no
 // results rather than a 404, so that case is reported here.
 func (c *Client) SpaceHomepageID(ctx context.Context, key string) (string, error) {
 	var result struct {
 		Results []struct {
 			Key        string `json:"key"`
+			Alias      string `json:"currentActiveAlias"`
 			HomepageID string `json:"homepageId"`
 		} `json:"results"`
 	}
@@ -311,7 +314,7 @@ func (c *Client) SpaceHomepageID(ctx context.Context, key string) (string, error
 	}
 
 	for _, space := range result.Results {
-		if !strings.EqualFold(space.Key, key) {
+		if !strings.EqualFold(space.Key, key) && !strings.EqualFold(space.Alias, key) {
 			continue
 		}
 		if space.HomepageID == "" {
