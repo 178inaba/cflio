@@ -244,3 +244,34 @@ func TestADFToMarkdownKeepsGoingOnMalformedInput(t *testing.T) {
 		})
 	}
 }
+
+// TestADFSectionsToMarkdownReportsOneResult covers what a file of several
+// documents adds over one: each later document under its heading, and the
+// losses of all of them reported together, names merged and counts summed.
+func TestADFSectionsToMarkdownReportsOneResult(t *testing.T) {
+	const (
+		description = `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Intro"}]},
+			{"type":"mediaSingle","content":[{"type":"media","attrs":{"id":"a","type":"file","collection":"c"}}]}]}`
+		environment = `{"type":"doc","content":[{"type":"mediaSingle","content":[{"type":"media","attrs":{"id":"b","type":"file","collection":"c"}}]},
+			{"type":"extension","attrs":{"extensionKey":"k"}}]}`
+		empty = `{"type":"doc","content":[]}`
+	)
+
+	got := ADFSectionsToMarkdown([]ADFSection{
+		{Doc: []byte(description)},
+		{Heading: "Environment", Doc: []byte(environment)},
+		{Heading: "Notes *draft*", Doc: []byte(empty)},
+	})
+
+	want := "Intro\n\n[unsupported mediaSingle]\n\n## Environment\n\n[unsupported mediaSingle]\n\n" +
+		"[unsupported extension: k]\n\n## Notes \\*draft\\*\n"
+	if got.Markdown != want {
+		t.Errorf("Markdown =\n%s\nwant\n%s", got.Markdown, want)
+	}
+	if want := []string{"extension", "mediaSingle"}; !slices.Equal(got.Unsupported, want) {
+		t.Errorf("Unsupported = %v, want %v", got.Unsupported, want)
+	}
+	if got.UnsupportedCount != 3 {
+		t.Errorf("UnsupportedCount = %d, want 3", got.UnsupportedCount)
+	}
+}

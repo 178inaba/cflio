@@ -488,19 +488,27 @@ func (r *renderer) table(n *node) []block {
 		return nil
 	}
 
-	columns := len(tableCells(rows[0]))
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		cells = append(cells, r.rowCells(row))
+	}
+	return []block{tableBlock(cells, len(tableCells(rows[0])), isHeaderRow(rows[0]))}
+}
+
+// tableBlock lays rendered rows out as a pipe table as wide as columns, the
+// first row's width. Markdown requires a header row, so when the first row is
+// not one an empty header stands in for it.
+func tableBlock(rows [][]string, columns int, hasHeader bool) block {
 	header := make([]string, columns)
-	body := rows
-	if isHeaderRow(rows[0]) {
-		header = r.rowCells(rows[0])
-		body = rows[1:]
+	if hasHeader {
+		header, rows = rows[0], rows[1:]
 	}
 
 	lines := []string{tableLine(pad(header, columns)), tableLine(repeat("---", columns))}
-	for _, row := range body {
-		lines = append(lines, tableLine(pad(r.rowCells(row), columns)))
+	for _, row := range rows {
+		lines = append(lines, tableLine(pad(row, columns)))
 	}
-	return []block{{text: strings.Join(lines, "\n")}}
+	return block{text: strings.Join(lines, "\n")}
 }
 
 // tableRows collects the rows of a table, seeing through thead/tbody/tfoot.
@@ -617,13 +625,23 @@ func (r *renderer) macro(n *node) []block {
 	// declaring "this part is body text" — dropping it would silently delete
 	// everything an excerpt or a section wraps. Parameters and plain-text
 	// bodies are macro configuration, so they stay out.
-	return r.placeholder("[unsupported macro: "+name+"]", n.child("ac", "rich-text-body"))
+	return r.placeholder(placeholderText("macro", name), n.child("ac", "rich-text-body"))
 }
 
 // placeholder marks an element this converter cannot represent and keeps
 // whatever body text it wraps.
 func (r *renderer) placeholder(text string, body *node) []block {
 	return append([]block{{text: text}}, r.blocks(body.childNodes())...)
+}
+
+// placeholderText is the grep-able marker every converter leaves where it
+// could not represent something: [unsupported <label>], or
+// [unsupported <label>: <detail>] when there is a name to tell it by.
+func placeholderText(label, detail string) string {
+	if detail != "" {
+		return "[unsupported " + label + ": " + detail + "]"
+	}
+	return "[unsupported " + label + "]"
 }
 
 // expand renders a collapsible section as the <details> block GitHub-flavoured
@@ -666,7 +684,7 @@ func panelBlocks(heading string, body []block) []block {
 func (r *renderer) adfExtension(n *node) []block {
 	r.unrepresentable("adf-extension")
 
-	return r.placeholder("[unsupported adf-extension]", n.child("ac", "adf-fallback"))
+	return r.placeholder(placeholderText("adf-extension", ""), n.child("ac", "adf-fallback"))
 }
 
 // childNodes is nil-safe so callers can reach into a body element that may

@@ -35,29 +35,60 @@ type adfMark struct {
 // the members it filled before the error in place, which for a cut-off
 // document is everything up to the cut.
 func ADFToMarkdown(doc []byte) Result {
-	var root adfNode
-	_ = json.Unmarshal(doc, &root)
+	return ADFSectionsToMarkdown([]ADFSection{{Doc: doc}})
+}
 
+// ADFSection is one ADF document to render as part of a larger Markdown file.
+type ADFSection struct {
+	// Heading, when set, is rendered as a level-2 heading ahead of the
+	// document's content.
+	Heading string
+	Doc     []byte
+}
+
+// ADFSectionsToMarkdown renders several ADF documents as one Markdown file,
+// each under its heading, and reports what none of them could represent as
+// one Result, the way a single document's losses are reported.
+func ADFSectionsToMarkdown(sections []ADFSection) Result {
 	r := &adfRenderer{}
-	if root.Type == "doc" {
-		return r.result(r.blocks(root.Content))
-	}
-
-	// Anything else at the root is not a document, but it may still hold
-	// one's content, so it is kept behind a placeholder like any other node
-	// this converter cannot place.
-	r.unrepresentable("invalid-adf")
-	blocks := []block{{text: placeholderText("invalid-adf", "")}}
-	if root.Type == "" {
-		blocks = append(blocks, r.blocks(root.Content)...)
-	} else {
-		blocks = append(blocks, r.blocks([]adfNode{root})...)
+	var blocks []block
+	for _, section := range sections {
+		if section.Heading != "" {
+			blocks = append(blocks, block{text: "## " + escapeText(section.Heading)})
+		}
+		blocks = append(blocks, r.document(section.Doc)...)
 	}
 	return r.result(blocks)
 }
 
 type adfRenderer struct {
 	losses
+}
+
+func (r *adfRenderer) document(doc []byte) []block {
+	var root adfNode
+	_ = json.Unmarshal(doc, &root)
+
+	if root.Type == "doc" {
+		return r.blocks(root.Content)
+	}
+
+	// Anything else at the root is not a document, but it may still hold
+	// one's content, so it is kept behind a placeholder like any other node
+	// this converter cannot place.
+	blocks := []block{{text: r.placeholder("invalid-adf", "")}}
+	if root.Type == "" {
+		return append(blocks, r.blocks(root.Content)...)
+	}
+	return append(blocks, r.blocks([]adfNode{root})...)
+}
+
+// placeholder records a node this converter cannot represent and returns the
+// marker that stands in for it. The two go together so that no placeholder
+// can reach the output without being counted.
+func (r *adfRenderer) placeholder(name, key string) string {
+	r.unrepresentable(name)
+	return placeholderText(name, key)
 }
 
 // adfInlineTypes are the inline node types the spec defines. Every other type
@@ -121,8 +152,10 @@ func (r *adfRenderer) block(n adfNode) []block {
 		return r.list(n)
 	case "listItem":
 		return listBlock([]string{itemText(r.blocks(n.Content), "- ")})
-	case "taskList", "taskItem":
+	case "taskList":
 		return r.taskList(n)
+	case "taskItem":
+		return listBlock([]string{taskItemText(r.blocks(n.Content), taskBox(n))})
 	case "codeBlock":
 		return []block{{text: fence(attrString(n.Attrs, "language"), adfRawText(n.Content))}}
 	case "blockquote":
@@ -183,10 +216,6 @@ func (r *adfRenderer) list(n adfNode) []block {
 // items rather than inside one, so it is hung under the item before it, which
 // is where the editor shows it.
 func (r *adfRenderer) taskList(n adfNode) []block {
-	if n.Type == "taskItem" {
-		return listBlock([]string{taskItemText(r.blocks(n.Content), taskBox(n))})
-	}
-
 	var items []string
 	var box string
 	var body []block
@@ -239,19 +268,12 @@ func (r *adfRenderer) table(n adfNode) []block {
 		return r.blocks(stray)
 	}
 
-	columns := len(rows[0].Content)
-	header := make([]string, columns)
-	body := rows
-	if isADFHeaderRow(rows[0]) {
-		header = r.rowCells(rows[0])
-		body = rows[1:]
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		cells = append(cells, r.rowCells(row))
 	}
-
-	lines := []string{tableLine(pad(header, columns)), tableLine(repeat("---", columns))}
-	for _, row := range body {
-		lines = append(lines, tableLine(pad(r.rowCells(row), columns)))
-	}
-	return append([]block{{text: strings.Join(lines, "\n")}}, r.blocks(stray)...)
+	table := tableBlock(cells, len(rows[0].Content), isADFHeaderRow(rows[0]))
+	return append([]block{table}, r.blocks(stray)...)
 }
 
 func isADFHeaderRow(row adfNode) bool {
@@ -284,8 +306,7 @@ func (r *adfRenderer) rowCells(row adfNode) []string {
 // counted, since counting its children too would report one picture as two
 // losses. A caption is text the author wrote and is kept.
 func (r *adfRenderer) mediaContainer(n adfNode) []block {
-	r.unrepresentable(n.Type)
-	out := []block{{text: placeholderText(n.Type, "")}}
+	out := []block{{text: r.placeholder(n.Type, "")}}
 	for _, child := range n.Content {
 		if child.Type == "media" {
 			continue
@@ -299,9 +320,8 @@ func (r *adfRenderer) mediaContainer(n adfNode) []block {
 // content it wraps: an extension's body or an unknown node's children are
 // still the author's text.
 func (r *adfRenderer) unknownBlock(n adfNode) []block {
-	name := cmp.Or(n.Type, "unnamed")
-	r.unrepresentable(name)
-	return append([]block{{text: placeholderText(name, attrString(n.Attrs, "extensionKey"))}}, r.blocks(n.Content)...)
+	text := r.placeholder(cmp.Or(n.Type, "unnamed"), attrString(n.Attrs, "extensionKey"))
+	return append([]block{{text: text}}, r.blocks(n.Content)...)
 }
 
 func (r *adfRenderer) inlines(nodes []adfNode) string {
@@ -336,9 +356,7 @@ func (r *adfRenderer) inline(n adfNode) string {
 		}
 	}
 
-	name := cmp.Or(n.Type, "unnamed")
-	r.unrepresentable(name)
-	return placeholderText(name, attrString(n.Attrs, "extensionKey")) + r.inlines(n.Content)
+	return r.placeholder(cmp.Or(n.Type, "unnamed"), attrString(n.Attrs, "extensionKey")) + r.inlines(n.Content)
 }
 
 // adfText renders a text node with the marks Markdown has a form for. code
@@ -419,13 +437,6 @@ func adfRawText(nodes []adfNode) string {
 		out.WriteString(adfRawText(n.Content))
 	}
 	return out.String()
-}
-
-func placeholderText(name, key string) string {
-	if key != "" {
-		return "[unsupported " + name + ": " + key + "]"
-	}
-	return "[unsupported " + name + "]"
 }
 
 func attrString(attrs map[string]any, key string) string {

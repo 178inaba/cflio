@@ -132,16 +132,6 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		}
 	}
 
-	// Any sidecar already sitting next to the output path describes whatever
-	// was read there before, so it is dropped first. Writing the body while
-	// a stale sidecar survives would leave a pair that names one page and
-	// holds another's content, and a later `confluence update` would happily
-	// write this body to that page. Failing here instead leaves no sidecar at
-	// all, which `confluence update` refuses outright.
-	if err := sidecar.Remove(bodyPath); err != nil {
-		return err
-	}
-
 	body := page.Body.Storage.Value
 	var (
 		converted format.Result
@@ -163,7 +153,7 @@ func runReadPage(cmd *cobra.Command, args []string, g *globalFlags, outPath stri
 		converted = format.ToMarkdown(body, resolved.opts)
 		body = converted.Markdown
 	}
-	if err := writeBody(bodyPath, body); err != nil {
+	if err := writeFreshBody(bodyPath, body); err != nil {
 		return err
 	}
 
@@ -426,6 +416,20 @@ func fetchAttachment(ctx context.Context, client *confluence.Client, p plannedDo
 // because what is being built is a link rather than a filesystem path.
 func attachmentLink(dir, filename string) string {
 	return strings.TrimRight(dir, "/") + "/" + filename
+}
+
+// writeFreshBody writes a body that a read has just fetched, as opposed to
+// rewriting one in place. Any sidecar already sitting next to the path
+// describes whatever was read there before, so it is dropped first: writing
+// the body while a stale sidecar survives would leave a pair that names one
+// page and holds other content, and a later `confluence update` would happily
+// write this body to that page. Failing here instead leaves no sidecar at
+// all, which `confluence update` refuses outright.
+func writeFreshBody(path, body string) error {
+	if err := sidecar.Remove(path); err != nil {
+		return err
+	}
+	return writeBody(path, body)
 }
 
 // writeBody writes the page body verbatim, with no trailing newline added:

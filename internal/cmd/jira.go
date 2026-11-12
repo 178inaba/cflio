@@ -1,16 +1,14 @@
 package cmd
 
 import (
+	"cmp"
 	"encoding/json/jsontext"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/178inaba/atlio/internal/issueref"
 	"github.com/178inaba/atlio/internal/jira"
-	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
 
@@ -157,34 +155,21 @@ func runJiraIssueRead(cmd *cobra.Command, arg string, g *globalFlags, outPath st
 	result := newJiraIssueResult(client.BrowseURL(issue.Key), issue)
 
 	if fields := issue.ADFFields(); len(fields) > 0 {
-		bodyPath := outPath
-		if bodyPath == "" {
-			bodyPath = issue.Key + ".adf.json"
-			if markdown {
-				bodyPath = issue.Key + ".md"
-			}
-		}
-
-		var body string
+		var name, body string
 		if markdown {
-			converted := issueMarkdown(fields, issue.Names)
-			body = converted.Markdown
+			converted := format.ADFSectionsToMarkdown(issueSections(fields, issue.Names))
+			name, body = issue.Key+".md", converted.Markdown
 			result.Unsupported = converted.Unsupported
 			result.UnsupportedCount = converted.UnsupportedCount
 		} else {
-			body, err = adfFile(fields)
-			if err != nil {
+			name = issue.Key + ".adf.json"
+			if body, err = adfFile(fields); err != nil {
 				return err
 			}
 		}
 
-		// A sidecar beside the destination belongs to a Confluence page read
-		// there before. Left in place, it would pair that page with this
-		// file, and `confluence update` would send the issue to the page.
-		if err := sidecar.Remove(bodyPath); err != nil {
-			return err
-		}
-		if err := writeBody(bodyPath, body); err != nil {
+		bodyPath := cmp.Or(outPath, name)
+		if err := writeFreshBody(bodyPath, body); err != nil {
 			return err
 		}
 		result.writtenBody = &writtenBody{BodyPath: bodyPath, Bytes: len(body)}
@@ -266,46 +251,19 @@ func adfFile(fields []jira.Field) (string, error) {
 	return out.String(), nil
 }
 
-// issueMarkdown converts the ADF fields into one Markdown file: the
+// issueSections lays the ADF fields out as the Markdown file's sections: the
 // description first and unheaded, since it is what the issue says, then one
-// section per other field under its display name. What the conversions could
-// not represent is reported over all of them, the way one document's would.
-func issueMarkdown(fields []jira.Field, names map[string]string) format.Result {
-	var parts []string
-	unsupported := make(map[string]struct{})
-	var count int
-
+// section per other field under its display name.
+func issueSections(fields []jira.Field, names map[string]string) []format.ADFSection {
+	sections := make([]format.ADFSection, 0, len(fields))
 	for _, f := range fields {
-		converted := format.ADFToMarkdown(f.Value)
-		for _, name := range converted.Unsupported {
-			unsupported[name] = struct{}{}
+		section := format.ADFSection{Doc: f.Value}
+		if f.ID != "description" {
+			section.Heading = fieldName(f.ID, names)
 		}
-		count += converted.UnsupportedCount
-
-		body := strings.TrimSuffix(converted.Markdown, "\n")
-		if f.ID == "description" {
-			if body != "" {
-				parts = append(parts, body)
-			}
-			continue
-		}
-
-		section := "## " + fieldName(f.ID, names)
-		if body != "" {
-			section += "\n\n" + body
-		}
-		parts = append(parts, section)
+		sections = append(sections, section)
 	}
-
-	markdown := strings.Join(parts, "\n\n")
-	if markdown != "" {
-		markdown += "\n"
-	}
-	return format.Result{
-		Markdown:         markdown,
-		Unsupported:      slices.Sorted(maps.Keys(unsupported)),
-		UnsupportedCount: count,
-	}
+	return sections
 }
 
 // fieldName is the name Jira displays for a field, or its ID when the
