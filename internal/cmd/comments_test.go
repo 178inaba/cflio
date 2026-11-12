@@ -415,3 +415,36 @@ func TestCommentsCreateSendsNothingForAnUnreadableFile(t *testing.T) {
 		t.Error("comments create error = nil for a missing file, want an error")
 	}
 }
+
+func TestCommentsAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	footer := `{"results":[{"id":"c1","status":"current","body":{"storage":{"value":"<p>On the homepage</p>"}}}],"_links":{}}`
+	startAPI(t, withSpaceLookup(t, commentsAPI(t, footer, emptyComments, nil)))
+
+	run, err := runCommentsCmd(t, testSpaceOverviewURL, 25)
+	if err != nil {
+		t.Fatalf("comments error = %v", err)
+	}
+	if !strings.Contains(run.stdout, "On the homepage") {
+		t.Errorf("output = %q, want the homepage's comments", run.stdout)
+	}
+}
+
+func TestCommentsCreateAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	var raw string
+	startAPI(t, withSpaceLookup(t, createCommentAPI(t, &raw)))
+
+	if _, err := runCLI(t, "confluence", "comments", "create", testSpaceOverviewURL,
+		"-f", writeBodyFile(t, "<p>note</p>")); err != nil {
+		t.Fatalf("comments create error = %v", err)
+	}
+	// commentBodySent also checks the comment went to page 123456.
+	if got := commentBodySent(t, raw); got != "<p>note</p>" {
+		t.Errorf("body = %q, want the file's contents", got)
+	}
+}

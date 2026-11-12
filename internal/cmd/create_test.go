@@ -280,20 +280,23 @@ func TestCreateJSONOutput(t *testing.T) {
 }
 
 // TestCreateAcceptsEveryParentForm pins the page-addressing parity the other
-// commands have: a URL, a short link and a bare ID all name the same parent.
+// commands have: a URL, a short link, a bare ID and the space overview whose
+// homepage it is all name the same parent. The overview is how a page
+// "directly under the space" is asked for.
 func TestCreateAcceptsEveryParentForm(t *testing.T) {
 	for _, parent := range []string{
 		testPageURL,
 		// QOIB encodes 123456.
 		"https://example.atlassian.net/wiki/x/QOIB",
 		"123456",
+		testSpaceOverviewURL,
 	} {
 		t.Run(parent, func(t *testing.T) {
 			isolateConfig(t)
 			seedProfile(t, "example", testSite)
 
 			stub := &createStub{}
-			startAPI(t, stub.handler(t))
+			startAPI(t, withSpaceLookup(t, stub.handler(t)))
 
 			if _, err := runCreate(t, parent, "New Page", writeBodyFile(t, "<p>hi</p>")); err != nil {
 				t.Fatalf("create error = %v", err)

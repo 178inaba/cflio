@@ -209,3 +209,19 @@ func TestChildrenRejectsAnOutOfRangeLimit(t *testing.T) {
 		t.Error("children error = nil for --limit 0, want an error")
 	}
 }
+
+func TestChildrenAcceptsASpaceOverviewURL(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+
+	_, handler := childrenAPI(t, `{"results":[{"id":"11","type":"page","title":"Child One"}],"_links":{}}`, testPageWebUI)
+	startAPI(t, withSpaceLookup(t, handler))
+
+	run, err := runChildrenCmd(t, testSpaceOverviewURL, 100)
+	if err != nil {
+		t.Fatalf("children error = %v", err)
+	}
+	if !strings.Contains(run.stdout, "Child One") {
+		t.Errorf("output = %q, want the homepage's children", run.stdout)
+	}
+}

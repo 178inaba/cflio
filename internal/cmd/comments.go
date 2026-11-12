@@ -125,28 +125,23 @@ func runCommentsCreate(cmd *cobra.Command, args []string, g *globalFlags, file s
 		return err
 	}
 
-	ref, err := pageref.Parse(args[0])
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	comment, err := client.CreateFooterComment(ctx, ref.PageID, string(body))
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
+	if err != nil {
+		return err
+	}
+
+	comment, err := client.CreateFooterComment(ctx, pageID, string(body))
 	if err != nil {
 		return err
 	}
 
 	return writeCommentResult(cmd, outFormat, commentResult{
 		CommentID:  comment.ID,
-		PageID:     ref.PageID,
-		CommentURL: pageref.PageURL(client.BaseURL(), comment.Links.WebUI, ref.PageID),
+		PageID:     pageID,
+		CommentURL: pageref.PageURL(client.BaseURL(), comment.Links.WebUI, pageID),
 	})
 }
 
@@ -225,18 +220,13 @@ func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 		return err
 	}
 
-	ref, err := pageref.Parse(args[0])
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
+
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
+	if err != nil {
+		return err
+	}
 
 	var payload commentsPayload
 	for _, family := range []struct {
@@ -247,7 +237,7 @@ func runComments(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 		{confluence.FooterComments, "Footer comments", &payload.Footer},
 		{confluence.InlineComments, "Inline comments", &payload.Inline},
 	} {
-		section, err := collectComments(ctx, client, family.kind, ref.PageID, limit)
+		section, err := collectComments(ctx, client, family.kind, pageID, limit)
 		if err != nil {
 			return err
 		}

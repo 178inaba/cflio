@@ -7,7 +7,6 @@ import (
 
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
-	"github.com/178inaba/atlio/internal/pageref"
 	"github.com/178inaba/atlio/internal/sidecar"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +31,11 @@ characters you typed, not as formatting. An empty file creates an empty page.
 
 The page is created in the parent's space, as a published classic page:
 not a draft, not a live doc, and never at the root of a space. --parent
-takes a page URL, a short link or a page ID, and a URL selects the profile.
+takes a page URL, a short link, a page ID, or a space URL
+(/wiki/spaces/<key>/overview or /wiki/spaces/<key>), which names the
+space's homepage: that is how a page "directly under the space" is made.
+A space URL costs one lookup unless it carries ?homepageId=. A URL selects
+the profile.
 
 On success the file becomes a checkout of the new page: a sidecar is
 written next to it, as ` + "`atlio confluence read`" + ` would, so the file can be
@@ -60,7 +63,7 @@ it to get a checkout instead.`,
 	// No backticks in flag usage strings: cobra reads the first backtick
 	// pair as the flag's argument placeholder.
 	cmd.Flags().StringVar(&parent, "parent", "",
-		"page to create the new page under, as a URL, short link or page ID")
+		"page to create the new page under, as a URL, short link or page ID, or a space URL for its homepage")
 	cmd.Flags().StringVar(&title, "title", "", "title of the new page")
 	cmd.Flags().StringVarP(&file, "file", "f", "",
 		"file holding the body as storage XHTML; the sidecar is written next to it")
@@ -112,26 +115,21 @@ func runCreatePage(cmd *cobra.Command, g *globalFlags, parent, title, file strin
 			"or pass a file with no sidecar to create a new one", sidecar.Path(file), file)
 	}
 
-	ref, err := pageref.Parse(parent)
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	parentPage, err := client.GetPage(ctx, ref.PageID, false)
+	client, pageID, err := resolvePage(ctx, parent, g.profile)
+	if err != nil {
+		return err
+	}
+
+	parentPage, err := client.GetPage(ctx, pageID, false)
 	if err != nil {
 		return err
 	}
 
 	created, err := client.CreatePage(ctx, confluence.NewCreatePageRequest(
-		parentPage.SpaceID, ref.PageID, title, string(body)))
+		parentPage.SpaceID, pageID, title, string(body)))
 	if err != nil {
 		return err
 	}

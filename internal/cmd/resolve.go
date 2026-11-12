@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"os"
 
 	"github.com/178inaba/atlio/internal/config"
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/jira"
+	"github.com/178inaba/atlio/internal/pageref"
 )
 
 // defaultConfluenceFactory builds a production client. Tests override
@@ -43,6 +46,44 @@ func resolveConfluence(profile, urlHost string) (*confluence.Client, error) {
 		return nil, err
 	}
 	return confluenceFactory(creds.SiteURL, creds.Email, creds.Token)
+}
+
+// resolvePage turns a page argument into the client for the site it names
+// and the page's ID. Every command that addresses a page goes through here,
+// so the forms a page can be named in, and the profile a URL selects, are the
+// same on each of them.
+//
+// It takes the command's context because a space URL that carries no
+// homepageId costs one request to look its homepage up.
+func resolvePage(ctx context.Context, arg, profile string) (*confluence.Client, string, error) {
+	ref, err := pageref.Parse(arg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	client, err := resolveConfluence(profile, ref.Host)
+	if err != nil {
+		return nil, "", err
+	}
+
+	pageID, err := pageIDOf(ctx, client, ref.Target)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, pageID, nil
+}
+
+// pageIDOf is the one place a page ID is read out of a reference.
+func pageIDOf(ctx context.Context, client *confluence.Client, target pageref.Target) (string, error) {
+	switch t := target.(type) {
+	case pageref.PageID:
+		return string(t), nil
+	case pageref.SpaceHomepage:
+		return client.SpaceHomepageID(ctx, t.Key)
+	default:
+		// Falling through with an empty ID would send GET /pages/ instead.
+		return "", fmt.Errorf("page reference names no page: %#v", target)
+	}
 }
 
 // resolveJira picks the profile for this invocation and builds a Jira client

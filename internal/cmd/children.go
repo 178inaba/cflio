@@ -52,20 +52,15 @@ func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 		return err
 	}
 
-	ref, err := pageref.Parse(args[0])
-	if err != nil {
-		return err
-	}
-
-	client, err := resolveConfluence(g.profile, ref.Host)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
-	children, hasMore, err := client.ChildPages(ctx, ref.PageID, limit)
+	client, pageID, err := resolvePage(ctx, args[0], g.profile)
+	if err != nil {
+		return err
+	}
+
+	children, hasMore, err := client.ChildPages(ctx, pageID, limit)
 	if err != nil {
 		return err
 	}
@@ -76,7 +71,7 @@ func runChildren(cmd *cobra.Command, args []string, g *globalFlags, limit int, o
 	// the whole listing, and none at all when there is nothing to build.
 	parentWebUI := ""
 	if len(children) > 0 {
-		parent, err := client.GetPage(ctx, ref.PageID, false)
+		parent, err := client.GetPage(ctx, pageID, false)
 		if err != nil {
 			return err
 		}

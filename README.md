@@ -136,8 +136,10 @@ atlio jira comments list KAN-1
 ```
 
 Commands that address a page accept the URL as copied from the browser, the short link the Share
-dialog copies, and a bare page ID. Commands that address an issue accept its key or its URL (see
-[Reading a Jira issue](#reading-a-jira-issue)).
+dialog copies, a bare page ID, and a space's URL (`/wiki/spaces/<key>/overview` or
+`/wiki/spaces/<key>`) for the space's homepage. A space URL costs one lookup of the homepage's ID,
+unless it carries `?homepageId=<id>`, as the sidebar's space link does. Commands that address an
+issue accept its key or its URL (see [Reading a Jira issue](#reading-a-jira-issue)).
 Add `--format json` to any of them for structured output instead of Markdown. Run `atlio --help` or
 `atlio <command> --help` for the full flag reference.
 
@@ -177,7 +179,8 @@ before anything is sent — it is already a checkout of a page, so write to that
 sidecar has nowhere to go.
 
 Only published classic pages are created, and only under a parent page: no drafts, no live docs, and
-nothing at the root of a space. The space is the parent's.
+nothing at the root of a space. The space is the parent's. A page "directly under the space" is
+created with `--parent` set to the space's URL, which names its homepage.
 
 ### Reading a page without editing it
 

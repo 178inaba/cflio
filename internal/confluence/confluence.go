@@ -291,6 +291,40 @@ func (c *Client) CreatePage(ctx context.Context, req CreatePageRequest) (*Page, 
 	return &page, nil
 }
 
+// SpaceHomepageID returns the ID of the homepage of the space whose key is
+// key. It costs one request: v2 has no endpoint that takes the key in its
+// path, so it filters the space listing by key and takes the first page of
+// results only, which is where a key filter's one match lands.
+//
+// key may also be the space's alias: a key changed in the space's settings
+// stays the space's key, and the new one becomes the alias its URLs carry.
+// The filter matches either, regardless of case, so the result is picked the
+// same way. A key that names no space the token can see answers with no
+// results rather than a 404, so that case is reported here.
+func (c *Client) SpaceHomepageID(ctx context.Context, key string) (string, error) {
+	var result struct {
+		Results []struct {
+			Key        string `json:"key"`
+			Alias      string `json:"currentActiveAlias"`
+			HomepageID string `json:"homepageId"`
+		} `json:"results"`
+	}
+	if err := c.get(ctx, "/api/v2/spaces", url.Values{"keys": {key}}, &result); err != nil {
+		return "", err
+	}
+
+	for _, space := range result.Results {
+		if !strings.EqualFold(space.Key, key) && !strings.EqualFold(space.Alias, key) {
+			continue
+		}
+		if space.HomepageID == "" {
+			return "", fmt.Errorf("space %q has no homepage", key)
+		}
+		return space.HomepageID, nil
+	}
+	return "", fmt.Errorf("no space with key %q: it does not exist or this account cannot see it", key)
+}
+
 // Child is one entry of a page's direct children. Type distinguishes pages
 // from whiteboards, folders, databases and embeds. The API returns no space
 // for a child, so callers that need one read it off the parent page.

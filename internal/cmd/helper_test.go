@@ -32,6 +32,36 @@ const (
 	testPageWebUI = "/spaces/DEV/pages/123456/Some+Page"
 )
 
+// testSpaceOverviewURL is the overview of the test space, whose homepage
+// withSpaceLookup answers is page 123456: the page every command's stub
+// serves, so a stub written for testPageURL serves this URL too.
+const testSpaceOverviewURL = testWikiBase + "/spaces/DEV/overview"
+
+const (
+	// spacesPath is the endpoint a space's homepage is looked up on.
+	spacesPath = "/wiki/api/v2/spaces"
+
+	// testSpaceJSON is the lookup's answer for the test space.
+	testSpaceJSON = `{"results":[{"id":"9","key":"DEV","homepageId":"123456"}]}`
+)
+
+// withSpaceLookup answers the lookup of space DEV with homepage 123456 and
+// passes every other request to next.
+func withSpaceLookup(t *testing.T, next http.HandlerFunc) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != spacesPath {
+			next(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("keys"); got != "DEV" {
+			t.Errorf("keys = %q, want DEV", got)
+		}
+		_, _ = w.Write([]byte(testSpaceJSON))
+	}
+}
+
 // isolateConfig points the config package at a temporary directory and
 // clears the environment overrides, so tests never touch the real config.
 func isolateConfig(t *testing.T) {

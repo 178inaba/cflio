@@ -1,6 +1,7 @@
 // Package pageref parses the ways a caller can name a Confluence page —
 // the URL as copied from the browser, the short link from the Share dialog,
-// or a bare page ID — and builds page URLs from the pieces the API returns.
+// a bare page ID, or a space's URL for its homepage — and builds page URLs
+// from the pieces the API returns.
 package pageref
 
 import (
@@ -17,9 +18,29 @@ import (
 // bare page ID, in which case there is nothing to auto-select a profile
 // from and the default profile applies.
 type Ref struct {
-	PageID string
 	Host   string
+	Target Target
 }
+
+// Target is what a reference names: a PageID, or a SpaceHomepage whose ID
+// is not known yet. The unexported method keeps the set closed, so a type
+// switch over the two is exhaustive.
+type Target interface {
+	isTarget()
+}
+
+// PageID names a page by its ID.
+type PageID string
+
+// SpaceHomepage names the homepage of the space with Key. It deliberately
+// carries no page ID: the only way to one is looking the key up, so a
+// reference that knows just the key cannot be sent as a page request.
+type SpaceHomepage struct {
+	Key string
+}
+
+func (PageID) isTarget()        {}
+func (SpaceHomepage) isTarget() {}
 
 var (
 	pageIDPattern = regexp.MustCompile(`^[0-9]+$`)
@@ -33,6 +54,11 @@ var (
 
 	pageURLPattern = regexp.MustCompile(`^/wiki` + pagePath)
 	webUIPattern   = regexp.MustCompile(`^` + pagePath)
+
+	// A space's overview, or the space URL, both of which open its
+	// homepage. Matched against the decoded path, so a personal space's
+	// key is captured as ~accountid whether or not the `~` was escaped.
+	spaceHomepagePattern = regexp.MustCompile(`^/wiki/spaces/([^/]+)(?:/overview)?$`)
 
 	// Confluence writes `/` as `-` and `+` as `_`, the reverse of the RFC
 	// 4648 URL-safe pairing — so base64.URLEncoding decodes a token to the
@@ -49,12 +75,15 @@ const (
 	tinyTokenPad = "AAAAAAAAAAA"
 )
 
-// Parse accepts a page URL, a short link, or a bare page ID.
+// Parse accepts a page URL, a short link, a bare page ID, or a space's
+// overview or space URL, which name the space's homepage. It sends no
+// request: a space URL without a homepageId yields a SpaceHomepage, and
+// turning that into a page ID is left to the caller.
 func Parse(arg string) (Ref, error) {
 	arg = strings.TrimSpace(arg)
 
 	if pageIDPattern.MatchString(arg) {
-		return Ref{PageID: arg}, nil
+		return Ref{Target: PageID(arg)}, nil
 	}
 
 	u, err := url.Parse(arg)
@@ -71,17 +100,25 @@ func Parse(arg string) (Ref, error) {
 			return Ref{}, fmt.Errorf("%q is a Confluence short link whose token does not decode to a page ID; "+
 				"open it in a browser and pass the full page URL instead", arg)
 		}
-		return Ref{PageID: pageID, Host: u.Host}, nil
+		return Ref{Host: u.Host, Target: PageID(pageID)}, nil
 	}
 	if match := pageURLPattern.FindStringSubmatch(path); match != nil {
-		return Ref{PageID: match[2], Host: u.Host}, nil
+		return Ref{Host: u.Host, Target: PageID(match[2])}, nil
 	}
 	// The page-ID query form, which is what `atlio confluence read` records in
 	// a sidecar when the API returns no web link.
 	if strings.HasSuffix(path, "/pages/viewpage.action") {
 		if id := u.Query().Get("pageId"); pageIDPattern.MatchString(id) {
-			return Ref{PageID: id, Host: u.Host}, nil
+			return Ref{Host: u.Host, Target: PageID(id)}, nil
 		}
+	}
+	if match := spaceHomepagePattern.FindStringSubmatch(path); match != nil {
+		// The sidebar's space link carries the homepage's ID; anything but
+		// a number there is ignored in favour of the key.
+		if id := u.Query().Get("homepageId"); pageIDPattern.MatchString(id) {
+			return Ref{Host: u.Host, Target: PageID(id)}, nil
+		}
+		return Ref{Host: u.Host, Target: SpaceHomepage{Key: match[1]}}, nil
 	}
 
 	return Ref{}, unrecognizedError(arg)
@@ -115,8 +152,9 @@ func decodeTinyToken(token string) (string, bool) {
 }
 
 func unrecognizedError(arg string) error {
-	return fmt.Errorf("%q is not a page URL or page ID; pass either a page ID (e.g. 123456) "+
-		"or a page URL (e.g. https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title)", arg)
+	return fmt.Errorf("%q is not a page URL or page ID; pass a page ID (e.g. 123456), "+
+		"a page URL (e.g. https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Title), "+
+		"or a space URL for its homepage (e.g. https://example.atlassian.net/wiki/spaces/DEV/overview)", arg)
 }
 
 // PageURL builds a page's absolute URL from the Confluence base URL
