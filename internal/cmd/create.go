@@ -31,7 +31,11 @@ characters you typed, not as formatting. An empty file creates an empty page.
 
 The page is created in the parent's space, as a published classic page:
 not a draft, not a live doc, and never at the root of a space. --parent
-takes a page URL, a short link or a page ID, and a URL selects the profile.
+takes a page URL, a short link, a page ID, or a space URL
+(/wiki/spaces/<key>/overview or /wiki/spaces/<key>), which names the
+space's homepage: that is how a page "directly under the space" is made.
+A space URL costs one lookup unless it carries ?homepageId=. A URL selects
+the profile.
 
 On success the file becomes a checkout of the new page: a sidecar is
 written next to it, as ` + "`atlio confluence read`" + ` would, so the file can be
@@ -59,7 +63,7 @@ it to get a checkout instead.`,
 	// No backticks in flag usage strings: cobra reads the first backtick
 	// pair as the flag's argument placeholder.
 	cmd.Flags().StringVar(&parent, "parent", "",
-		"page to create the new page under, as a URL, short link or page ID")
+		"page to create the new page under, as a URL, short link or page ID, or a space URL for its homepage")
 	cmd.Flags().StringVar(&title, "title", "", "title of the new page")
 	cmd.Flags().StringVarP(&file, "file", "f", "",
 		"file holding the body as storage XHTML; the sidecar is written next to it")
