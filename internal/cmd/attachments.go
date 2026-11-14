@@ -14,6 +14,7 @@ import (
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/unicode/norm"
 )
 
 const defaultAttachmentsLimit = 100
@@ -74,7 +75,11 @@ error rather than a silent success.
 
 An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
-cannot leave some files replaced and others not.`,
+cannot leave some files replaced and others not.
+
+Two matching attachments that would be one file are refused the same way:
+names are compared ignoring case and Unicode normalisation (a.png and A.png
+are one file on a case-insensitive filesystem), on every platform.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsDownload(cmd, args, g, pattern, outDir, outFormat)
@@ -495,15 +500,41 @@ func isPlainFilename(name string) bool {
 	return name != "" && name != "." && name != ".." && filepath.Base(name) == name
 }
 
+// sameLocalFile reports whether two names would be one file on a filesystem
+// that ignores case and Unicode normalisation, as macOS's default APFS does.
+// The answer is the same on every platform, so a page or issue downloads the
+// same files everywhere.
+func sameLocalFile(a, b string) bool {
+	return strings.EqualFold(norm.NFC.String(a), norm.NFC.String(b))
+}
+
 // planDownloads resolves where each matched attachment will be written, and
-// refuses the whole run if any of those files already exists.
+// refuses the whole run if two of them would be one file or any of those files
+// already exists.
 //
 // Checking every destination up front is what keeps the refusal from being
 // half-applied: finding the collision after two of three transfers would leave
 // a directory neither the caller nor a re-run can reason about. Lstat rather
 // than Stat, so a dangling symlink counts as an existing entry here — which is
 // what the O_EXCL create would say about it too.
+//
+// Two destinations of one run are compared here rather than left to the
+// server's naming rules: which names are one file is a property of the local
+// filesystem, and neither product documents what it lets a listing hold.
 func planDownloads(matched []attachmentFile, outDir string) ([]plannedDownload, error) {
+	var sameFile []string
+	for i, a := range matched {
+		for _, b := range matched[i+1:] {
+			if sameLocalFile(a.localName(), b.localName()) {
+				sameFile = append(sameFile, a.localName()+" and "+b.localName())
+			}
+		}
+	}
+	if len(sameFile) > 0 {
+		return nil, fmt.Errorf("%s would be written to the same file; narrow --pattern (nothing was downloaded)",
+			strings.Join(sameFile, ", "))
+	}
+
 	planned := make([]plannedDownload, 0, len(matched))
 	var collisions []string
 

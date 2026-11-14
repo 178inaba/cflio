@@ -453,7 +453,8 @@ func (c *Client) CreateFooterComment(ctx context.Context, pageID, body string) (
 // already carries it, and it is nothing a caller could use — downloads select
 // by filename, and Confluence keeps same-named attachments as versions of one
 // attachment rather than as separate ones, so no two listing entries share a
-// name for an id to tell apart.
+// name for an id to tell apart. Names are matched ignoring case: an upload of
+// A.png to a page holding a.png becomes a new version of a.png.
 type Attachment struct {
 	Title        string `json:"title"`
 	MediaType    string `json:"mediaType"`

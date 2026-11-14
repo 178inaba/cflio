@@ -340,6 +340,12 @@ func TestJiraAttachmentsDownloadWritesFilenamesThatCollideIgnoringCaseUnderTheir
 			filenames: []string{"a.png", "A.png"},
 			wantNames: []string{"a-10002.png", "A-10003.png"},
 		},
+		{
+			// NFC and NFD spellings of が, one file on APFS.
+			name:      "filenames differing only in Unicode normalisation",
+			filenames: []string{"が.png", "が.png"},
+			wantNames: []string{"が-10002.png", "が-10003.png"},
+		},
 	}
 
 	for _, tt := range tests {

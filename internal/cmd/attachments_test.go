@@ -341,6 +341,56 @@ func TestAttachmentsDownloadRefusesToOverwriteBeforeFetchingAnything(t *testing.
 	}
 }
 
+func TestAttachmentsDownloadRefusesAttachmentsThatWouldBeOneFile(t *testing.T) {
+	tests := []struct {
+		name   string
+		titles []string
+	}{
+		{
+			// One file on a case-insensitive filesystem. Confluence itself
+			// files these as versions of one attachment, so this is the guard
+			// that does not rest on that.
+			name:   "titles differing only in case",
+			titles: []string{"a.png", "A.png"},
+		},
+		{
+			// NFC and NFD spellings of が, one file on APFS.
+			name:   "titles differing only in Unicode normalisation",
+			titles: []string{"が.png", "が.png"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+			attachments := []attachment{{title: "other.png", mediaType: "image/png", size: len(pngBytes)}}
+			for _, title := range tt.titles {
+				attachments = append(attachments, attachment{title: title, mediaType: "image/png", size: len(pngBytes)})
+			}
+			downloads, handler := attachmentsAPI(t, attachments...)
+			startAPI(t, handler)
+
+			dir := filepath.Join(t.TempDir(), "assets")
+			_, err := runDownload(t, dir, "*.png")
+			if err == nil {
+				t.Fatal("attachments download error = nil, want the collision refused")
+			}
+			for _, title := range tt.titles {
+				if !strings.Contains(err.Error(), title) {
+					t.Errorf("error = %q, want it to name %s", err, title)
+				}
+			}
+			if *downloads != 0 {
+				t.Errorf("downloads = %d, want 0 requests once a collision is known", *downloads)
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("Stat(-o) error = %v, want nothing written, not even the directory", err)
+			}
+		})
+	}
+}
+
 func TestAttachmentsDownloadWithNoMatchFails(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)
