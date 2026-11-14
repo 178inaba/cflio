@@ -347,9 +347,7 @@ func TestAttachmentsDownloadRefusesAttachmentsThatWouldBeOneFile(t *testing.T) {
 		titles []string
 	}{
 		{
-			// One file on a case-insensitive filesystem. Confluence itself
-			// files these as versions of one attachment, so this is the guard
-			// that does not rest on that.
+			// One file on a case-insensitive filesystem.
 			name:   "titles differing only in case",
 			titles: []string{"a.png", "A.png"},
 		},

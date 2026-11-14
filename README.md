@@ -487,8 +487,9 @@ created if it does not exist.
 Jira lets two attachments on one issue share a filename, and `--pattern` cannot pick one of them.
 When two matched attachments have filenames that would be one file — equal ignoring case and
 Unicode normalisation, as `a.png` and `A.png` are on macOS's default filesystem — each is written
-with its attachment ID before the extension — `screen.png` becomes `screen-10002.png` — so both are downloaded. The output's
-`filename` is still the attachment's own name, and `path` is the file written.
+with its attachment ID before the extension — `screen.png` becomes `screen-10002.png` — so both
+are downloaded. The output's `filename` is still the attachment's own name, and `path` is the file
+written.
 
 ### Multiple sites
 

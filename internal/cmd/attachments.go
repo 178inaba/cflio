@@ -14,6 +14,7 @@ import (
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -500,12 +501,36 @@ func isPlainFilename(name string) bool {
 	return name != "" && name != "." && name != ".." && filepath.Base(name) == name
 }
 
-// sameLocalFile reports whether two names would be one file on a filesystem
-// that ignores case and Unicode normalisation, as macOS's default APFS does.
+// localFileKey is equal for two names exactly when they would be one file on
+// a filesystem that ignores case and Unicode normalisation, as macOS's default
+// APFS does. It is Unicode's canonical caseless matching, NFD(fold(NFD(name))),
+// whose inner NFD is what lets a decomposed spelling fold like a composed one.
 // The answer is the same on every platform, so a page or issue downloads the
 // same files everywhere.
-func sameLocalFile(a, b string) bool {
-	return strings.EqualFold(norm.NFC.String(a), norm.NFC.String(b))
+func localFileKey(name string) string {
+	return norm.NFD.String(cases.Fold().String(norm.NFD.String(name)))
+}
+
+// sameLocalFileGroups returns, in first-appearance order, every group of two or
+// more names that would be one file, as localFileKey defines it.
+func sameLocalFileGroups(names []string) [][]string {
+	byKey := map[string][]string{}
+	var order []string
+	for _, name := range names {
+		key := localFileKey(name)
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+		}
+		byKey[key] = append(byKey[key], name)
+	}
+
+	var groups [][]string
+	for _, key := range order {
+		if len(byKey[key]) > 1 {
+			groups = append(groups, byKey[key])
+		}
+	}
+	return groups
 }
 
 // planDownloads resolves where each matched attachment will be written, and
@@ -522,13 +547,13 @@ func sameLocalFile(a, b string) bool {
 // server's naming rules: which names are one file is a property of the local
 // filesystem, and neither product documents what it lets a listing hold.
 func planDownloads(matched []attachmentFile, outDir string) ([]plannedDownload, error) {
+	names := make([]string, 0, len(matched))
+	for _, a := range matched {
+		names = append(names, a.localName())
+	}
 	var sameFile []string
-	for i, a := range matched {
-		for _, b := range matched[i+1:] {
-			if sameLocalFile(a.localName(), b.localName()) {
-				sameFile = append(sameFile, a.localName()+" and "+b.localName())
-			}
-		}
+	for _, group := range sameLocalFileGroups(names) {
+		sameFile = append(sameFile, strings.Join(group, " and "))
 	}
 	if len(sameFile) > 0 {
 		return nil, fmt.Errorf("%s would be written to the same file; narrow --pattern (nothing was downloaded)",

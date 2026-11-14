@@ -72,9 +72,10 @@ cannot leave some files replaced and others not.
 Jira lets two attachments on one issue share a filename, which --pattern
 cannot pick one of. When two matched attachments have filenames that would
 be one file -- equal ignoring case and Unicode normalisation, as a.png and
-A.png are on a case-insensitive filesystem -- each is written with its attachment ID before the extension
-(screen.png becomes screen-10002.png); the output's filename is still the
-attachment's own and its path is the file written.
+A.png are on a case-insensitive filesystem -- each is written with its
+attachment ID before the extension (screen.png becomes screen-10002.png);
+the output's filename is still the attachment's own and its path is the
+file written.
 
 Read-only against Jira: every request is a GET.`,
 		Args: cobra.ExactArgs(1),
@@ -182,12 +183,13 @@ func jiraAttachmentFile(client *jira.Client, a jira.Attachment) attachmentFile {
 // in. A name that still collides once the IDs are in is planDownloads' to
 // refuse.
 func nameCollisionsByID(matched []attachmentFile) {
+	count := map[string]int{}
+	for _, a := range matched {
+		count[localFileKey(a.filename)]++
+	}
 	for i, a := range matched {
-		for j, b := range matched {
-			if i != j && sameLocalFile(a.filename, b.filename) {
-				matched[i].saveAs = withID(a.filename, a.id)
-				break
-			}
+		if count[localFileKey(a.filename)] > 1 {
+			matched[i].saveAs = withID(a.filename, a.id)
 		}
 	}
 }
