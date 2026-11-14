@@ -341,6 +341,57 @@ func TestAttachmentsDownloadRefusesToOverwriteBeforeFetchingAnything(t *testing.
 	}
 }
 
+func TestAttachmentsDownloadRefusesAttachmentsThatWouldBeOneFile(t *testing.T) {
+	tests := []struct {
+		name   string
+		titles []string
+	}{
+		{
+			// One file on a case-insensitive filesystem.
+			name:   "titles differing only in case",
+			titles: []string{"a.png", "A.png"},
+		},
+		{
+			// NFC and NFD spellings of が, one file on APFS.
+			name:   "titles differing only in Unicode normalisation",
+			titles: []string{"が.png", "が.png"},
+		},
+		{
+			// One group, not one entry per pair.
+			name:   "three titles on one file",
+			titles: []string{"ab.png", "Ab.png", "AB.png"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+			attachments := []attachment{{title: "other.png", mediaType: "image/png", size: len(pngBytes)}}
+			for _, title := range tt.titles {
+				attachments = append(attachments, attachment{title: title, mediaType: "image/png", size: len(pngBytes)})
+			}
+			downloads, handler := attachmentsAPI(t, attachments...)
+			startAPI(t, handler)
+
+			dir := filepath.Join(t.TempDir(), "assets")
+			_, err := runDownload(t, dir, "*.png")
+			if err == nil {
+				t.Fatal("attachments download error = nil, want the collision refused")
+			}
+			if group := strings.Join(tt.titles, " and "); !strings.Contains(err.Error(), group) {
+				t.Errorf("error = %q, want it to name the group %q", err, group)
+			}
+			if *downloads != 0 {
+				t.Errorf("downloads = %d, want 0 requests once a collision is known", *downloads)
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("Stat(-o) error = %v, want nothing written, not even the directory", err)
+			}
+		})
+	}
+}
+
 func TestAttachmentsDownloadWithNoMatchFails(t *testing.T) {
 	isolateConfig(t)
 	seedProfile(t, "example", testSite)

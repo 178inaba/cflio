@@ -294,6 +294,12 @@ fails before downloading anything and names the file, so a run can never leave s
 and others not — delete them, or point `-o` somewhere else. `-o` defaults to the working directory
 and is created if it does not exist.
 
+Two matching attachments that would be one file are refused the same way, before anything is
+downloaded. Names are compared ignoring case and Unicode normalisation — `a.png` and `A.png`, or the
+NFC and NFD spellings of a name, are one file on macOS's default filesystem — on every platform, so
+the same page downloads the same files everywhere. Confluence itself files an upload whose name
+differs only in case as a new version of the existing attachment, so a page rarely lists such a pair.
+
 ### Putting an image on a page
 
 `confluence attachments upload` attaches local regular files to a page, each under its base name
@@ -479,10 +485,12 @@ fails before downloading anything and names it — and `-o` defaults to the work
 created if it does not exist.
 
 Jira lets two attachments on one issue share a filename, and `--pattern` cannot pick one of them.
-When two matched attachments have filenames that are equal ignoring case (`a.png` and `A.png` are
-one file on macOS's default filesystem), each is written with its attachment ID before the
-extension — `screen.png` becomes `screen-10002.png` — so both are downloaded. The output's
-`filename` is still the attachment's own name, and `path` is the file written.
+When two matched attachments have filenames that would be one file — equal ignoring case and
+Unicode normalisation, as `a.png` and `A.png` are on macOS's default filesystem — each is written
+with its attachment ID before the extension (`screen.png` becomes `screen-10002.png`), so both
+are downloaded. The output's `filename` is still the attachment's own name, and `path` is the file
+written. Names that would still be one file with the IDs in are refused before anything is
+downloaded, as `confluence attachments download` refuses its own.
 
 ### Multiple sites
 

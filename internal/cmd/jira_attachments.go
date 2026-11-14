@@ -70,11 +70,13 @@ the command fails before downloading anything and names the file, so a run
 cannot leave some files replaced and others not.
 
 Jira lets two attachments on one issue share a filename, which --pattern
-cannot pick one of. When two matched attachments have filenames that are
-equal ignoring case (a.png and A.png are one file on a case-insensitive
-filesystem), each is written with its attachment ID before the extension
-(screen.png becomes screen-10002.png); the output's filename is still the
-attachment's own and its path is the file written.
+cannot pick one of. When two matched attachments have filenames that would
+be one file -- equal ignoring case and Unicode normalisation, as a.png and
+A.png are on a case-insensitive filesystem -- each is written with its
+attachment ID before the extension (screen.png becomes screen-10002.png);
+the output's filename is still the attachment's own and its path is the
+file written. Names that would still be one file with the IDs in are
+refused before anything is downloaded, naming them.
 
 Read-only against Jira: every request is a GET.`,
 		Args: cobra.ExactArgs(1),
@@ -148,9 +150,7 @@ func runJiraAttachmentsDownload(cmd *cobra.Command, arg string, g *globalFlags, 
 	if len(matched) == 0 {
 		return fmt.Errorf("no attachment matches %q (%d on the issue)", pattern, len(attachments))
 	}
-	if err := nameCollisionsByID(matched); err != nil {
-		return err
-	}
+	nameCollisionsByID(matched)
 
 	planned, err := planDownloads(matched, outDir)
 	if err != nil {
@@ -174,40 +174,25 @@ func jiraAttachmentFile(client *jira.Client, a jira.Attachment) attachmentFile {
 	}
 }
 
-// nameCollisionsByID gives every matched attachment whose filename equals
-// another's ignoring case a name carrying its ID, and fails if that still
-// leaves two of them on one file.
+// nameCollisionsByID gives every matched attachment whose filename would be
+// one file with another's a name carrying its ID.
 //
 // Jira allows two attachments on an issue to share a filename, and no glob
 // can pick one of them; a.png and A.png are one file on a case-insensitive
 // filesystem. Every member of such a group is renamed, not all but one, so
 // which file gets which name does not depend on the order Jira lists them
-// in. The check runs on every platform and before any transfer, so the same
-// issue downloads the same files everywhere and a collision writes nothing.
-// Filenames that differ only in Unicode normalisation are not detected.
-func nameCollisionsByID(matched []attachmentFile) error {
+// in. A name that still collides once the IDs are in is planDownloads' to
+// refuse.
+func nameCollisionsByID(matched []attachmentFile) {
+	count := map[string]int{}
+	for _, a := range matched {
+		count[localFileKey(a.filename)]++
+	}
 	for i, a := range matched {
-		for j, b := range matched {
-			if i != j && strings.EqualFold(a.filename, b.filename) {
-				matched[i].saveAs = withID(a.filename, a.id)
-				break
-			}
+		if count[localFileKey(a.filename)] > 1 {
+			matched[i].saveAs = withID(a.filename, a.id)
 		}
 	}
-
-	var collisions []string
-	for i, a := range matched {
-		for _, b := range matched[i+1:] {
-			if strings.EqualFold(a.localName(), b.localName()) {
-				collisions = append(collisions, a.localName()+" and "+b.localName())
-			}
-		}
-	}
-	if len(collisions) > 0 {
-		return fmt.Errorf("%s would be written to the same file even with attachment IDs in the names; "+
-			"narrow --pattern (nothing was downloaded)", strings.Join(collisions, ", "))
-	}
-	return nil
 }
 
 // withID inserts id before the filename's extension: screen.png becomes

@@ -14,6 +14,8 @@ import (
 	"github.com/178inaba/atlio/internal/confluence"
 	"github.com/178inaba/atlio/internal/format"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 const defaultAttachmentsLimit = 100
@@ -74,7 +76,11 @@ error rather than a silent success.
 
 An existing file is never replaced. If any attachment would overwrite one,
 the command fails before downloading anything and names the file, so a run
-cannot leave some files replaced and others not.`,
+cannot leave some files replaced and others not.
+
+Two matching attachments that would be one file are refused the same way:
+names are compared ignoring case and Unicode normalisation (a.png and A.png
+are one file on a case-insensitive filesystem), on every platform.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttachmentsDownload(cmd, args, g, pattern, outDir, outFormat)
@@ -495,15 +501,65 @@ func isPlainFilename(name string) bool {
 	return name != "" && name != "." && name != ".." && filepath.Base(name) == name
 }
 
+// localFileKey is equal for two names exactly when they would be one file on
+// a filesystem that ignores case and Unicode normalisation, as macOS's default
+// APFS does. It is Unicode's canonical caseless matching, NFD(fold(NFD(name))),
+// whose inner NFD is what lets a decomposed spelling fold like a composed one.
+// The answer is the same on every platform, so a page or issue downloads the
+// same files everywhere.
+func localFileKey(name string) string {
+	return norm.NFD.String(cases.Fold().String(norm.NFD.String(name)))
+}
+
+// sameLocalFileGroups returns, in first-appearance order, every group of two or
+// more names that would be one file, as localFileKey defines it.
+func sameLocalFileGroups(names []string) [][]string {
+	byKey := map[string][]string{}
+	var order []string
+	for _, name := range names {
+		key := localFileKey(name)
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+		}
+		byKey[key] = append(byKey[key], name)
+	}
+
+	var groups [][]string
+	for _, key := range order {
+		if len(byKey[key]) > 1 {
+			groups = append(groups, byKey[key])
+		}
+	}
+	return groups
+}
+
 // planDownloads resolves where each matched attachment will be written, and
-// refuses the whole run if any of those files already exists.
+// refuses the whole run if two of them would be one file or any of those files
+// already exists.
 //
 // Checking every destination up front is what keeps the refusal from being
 // half-applied: finding the collision after two of three transfers would leave
 // a directory neither the caller nor a re-run can reason about. Lstat rather
 // than Stat, so a dangling symlink counts as an existing entry here — which is
 // what the O_EXCL create would say about it too.
+//
+// Two destinations of one run are compared here rather than left to the
+// server's naming rules: which names are one file is a property of the local
+// filesystem, and neither product documents what it lets a listing hold.
 func planDownloads(matched []attachmentFile, outDir string) ([]plannedDownload, error) {
+	names := make([]string, 0, len(matched))
+	for _, a := range matched {
+		names = append(names, a.localName())
+	}
+	var sameFile []string
+	for _, group := range sameLocalFileGroups(names) {
+		sameFile = append(sameFile, strings.Join(group, " and "))
+	}
+	if len(sameFile) > 0 {
+		return nil, fmt.Errorf("%s would be written to the same file; narrow --pattern (nothing was downloaded)",
+			strings.Join(sameFile, ", "))
+	}
+
 	planned := make([]plannedDownload, 0, len(matched))
 	var collisions []string
 
