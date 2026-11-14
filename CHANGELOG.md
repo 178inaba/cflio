@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.1.1](https://github.com/178inaba/atlio/compare/v1.1.0...v1.1.1) - 2026-11-14
+
+### Changes
+- Tell an agent to check before re-running a create whenever the request may have been carried out by @178inaba in https://github.com/178inaba/atlio/pull/125
+- Refuse matched attachments that would be written to one file by @178inaba in https://github.com/178inaba/atlio/pull/126
+
 ## [v1.1.0](https://github.com/178inaba/atlio/compare/v1.0.6...v1.1.0) - 2026-11-12
 
 ### Changes
