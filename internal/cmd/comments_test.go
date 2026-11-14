@@ -289,6 +289,27 @@ func createCommentAPI(t *testing.T, raw *string) http.HandlerFunc {
 	}
 }
 
+// TestCommentsCreateSaysWhenTheCommentMayHaveBeenPosted covers the outcomes of
+// the post: when the server may have posted the comment, the error names the
+// check to make before posting it again.
+func TestCommentsCreateSaysWhenTheCommentMayHaveBeenPosted(t *testing.T) {
+	for _, fc := range creatingFailures {
+		t.Run(fc.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
+
+			fail, release := failCreating(fc)
+			defer release()
+			startAPI(t, fail)
+
+			_, err := runCLI(t, "confluence", "comments", "create", testPageURL,
+				"-f", creatingBody(t, fc), fc.timeoutFlag())
+
+			assertCreatingFailure(t, err, fc, commentsCheckHint)
+		})
+	}
+}
+
 // commentBodySent returns the body value out of a recorded request payload.
 func commentBodySent(t *testing.T, raw string) string {
 	t.Helper()

@@ -541,6 +541,36 @@ func TestUpdateSurfacesADuplicateTitle(t *testing.T) {
 	}
 }
 
+// TestUpdateNamesNoCheckAfterAServerError covers the one write that needs no
+// check before it is run again: the version lock turns a re-run after a write
+// that landed into a refusal rather than a second write.
+func TestUpdateNamesNoCheckAfterAServerError(t *testing.T) {
+	isolateConfig(t)
+	seedProfile(t, "example", testSite)
+	path := seedReadPage(t, "<p>hi</p>", currentMeta())
+
+	stub := &updateStub{serverVersion: 7}
+	inner := stub.handler(t)
+	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			inner(w, r)
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusBadGateway)
+	})
+
+	_, err := runUpdate(t, path)
+	if err == nil {
+		t.Fatal("update error = nil, want the server's failure")
+	}
+	for _, h := range checkHints {
+		if strings.Contains(err.Error(), h) {
+			t.Errorf("error = %q, want no %q check for update", err, h)
+		}
+	}
+}
+
 // TestUpdateKeepsTheRecordedSubtype covers the field `confluence update`
 // neither sends nor learns anything new about: it rewrites the sidecar from the
 // response, so a subtype dropped here would send the next

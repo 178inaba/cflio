@@ -564,72 +564,269 @@ func TestSendMultipartKeepsTheDeadlineWhenTheServerStopsReading(t *testing.T) {
 	}
 }
 
-func TestSendMultipartMarksAnUnreadableSuccessAsSentInFull(t *testing.T) {
-	client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+// answerWithATruncatedBody answers status with a body shorter than the
+// Content-Length it declares, after reading the request body to its end, so
+// the client has the whole status line but fails reading what follows it.
+func answerWithATruncatedBody(status int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
-		_, _ = fmt.Fprint(w, "<html>not json</html>")
-	})
-
-	var out struct{}
-	err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
-		writeFilePart("a.png", fileBytes), &out)
-
-	// A 2xx means the server accepted the request; only its answer is lost.
-	if !errors.Is(err, ErrSentInFull) {
-		t.Errorf("SendMultipart() error = %v, want ErrSentInFull for a 2xx that could not be parsed", err)
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(status)
+		_, _ = fmt.Fprint(w, "short")
 	}
 }
 
-func TestSendMultipartMarksAFailureAfterTheWholeBodyWasSent(t *testing.T) {
+// smallPayload is a Send body small enough to sit in the socket buffers, so a
+// server that reads it to its end is what the transport's record sees.
+var smallPayload = map[string]string{"title": "x"}
+
+// bodySenders are the two ways a request with a body is sent. Both go through
+// the one place that decides whether a failure is marked, so every marking
+// case runs against each.
+var bodySenders = []struct {
+	name string
+	send func(ctx context.Context, c *Client, out any) error
+	// replayable is whether the body can be sent again, which a 307 or 308
+	// needs: a streamed body cannot, so the client hands that 3xx back.
+	replayable bool
+}{
+	{"Send", func(ctx context.Context, c *Client, out any) error {
+		return c.Send(ctx, http.MethodPost, "/rest/create", smallPayload, out)
+	}, true},
+	{"SendMultipart", func(ctx context.Context, c *Client, out any) error {
+		return c.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, writeFilePart("a.png", fileBytes), out)
+	}, false},
+}
+
+// TestOnlyAClientErrorSettlesAFullySentRequest covers the
+// responses to a body the server read to its end: a 4xx refuses the request,
+// while no 5xx definition says whether the request was carried out.
+func TestOnlyAClientErrorSettlesAFullySentRequest(t *testing.T) {
+	for _, s := range bodySenders {
+		for _, tc := range []struct {
+			status  int
+			unknown bool
+		}{
+			{http.StatusBadRequest, false},
+			{http.StatusNotFound, false},
+			{http.StatusInternalServerError, true},
+			{http.StatusBadGateway, true},
+			{http.StatusServiceUnavailable, true},
+			{http.StatusGatewayTimeout, true},
+		} {
+			t.Run(s.name+"/"+strconv.Itoa(tc.status), func(t *testing.T) {
+				client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+					_, _ = io.Copy(io.Discard, r.Body)
+					w.WriteHeader(tc.status)
+				})
+
+				err := s.send(t.Context(), client, nil)
+
+				if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != tc.status {
+					t.Fatalf("%s() error = %v, want an *APIError with status %d", s.name, err, tc.status)
+				}
+				if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
+					t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
+				}
+			})
+		}
+	}
+}
+
+// TestTheStatusAloneDecidesWhenTheErrorBodyIsLost covers a response whose
+// status arrived but whose body could not be read: a 4xx still refuses the
+// request, and a 5xx still leaves it unknown.
+func TestTheStatusAloneDecidesWhenTheErrorBodyIsLost(t *testing.T) {
+	for _, s := range bodySenders {
+		for _, tc := range []struct {
+			status  int
+			unknown bool
+		}{
+			{http.StatusBadRequest, false},
+			{http.StatusBadGateway, true},
+		} {
+			t.Run(s.name+"/"+strconv.Itoa(tc.status), func(t *testing.T) {
+				client := newTestClient(t, nil, answerWithATruncatedBody(tc.status))
+
+				err := s.send(t.Context(), client, nil)
+
+				if err == nil {
+					t.Fatalf("%s() error = nil, want the failure", s.name)
+				}
+				// An *APIError would mean the body was read after all, and the
+				// case would be the plain status one above.
+				if _, ok := errors.AsType[*APIError](err); ok {
+					t.Fatalf("%s() error = %v, want the failed read of the error body", s.name, err)
+				}
+				if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
+					t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
+				}
+			})
+		}
+	}
+}
+
+// TestARedirectIsJudgedByTheRequestItLeadsTo covers a 3xx the client follows.
+// A 301, 302 or 303 turns the request into a GET without its body: the 3xx
+// settled the original, so what the GET meets marks nothing. A 307 or 308
+// sends the body again, so the outcome of that resend decides; one whose body
+// cannot be sent again gets the 307 or 308 back unfollowed, which settles it.
+func TestARedirectIsJudgedByTheRequestItLeadsTo(t *testing.T) {
+	for _, s := range bodySenders {
+		for _, tc := range []struct {
+			redirect int
+			resends  bool
+		}{
+			{http.StatusMovedPermanently, false},
+			{http.StatusFound, false},
+			{http.StatusSeeOther, false},
+			{http.StatusTemporaryRedirect, true},
+			{http.StatusPermanentRedirect, true},
+		} {
+			t.Run(s.name+"/"+strconv.Itoa(tc.redirect), func(t *testing.T) {
+				wantStatus, unknown := http.StatusBadGateway, tc.resends
+				if tc.resends && !s.replayable {
+					wantStatus, unknown = tc.redirect, false
+				}
+
+				client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+					_, _ = io.Copy(io.Discard, r.Body)
+					if !strings.HasSuffix(r.URL.Path, "/moved") {
+						w.Header().Set("Location", "/api/moved")
+						w.WriteHeader(tc.redirect)
+						return
+					}
+					w.WriteHeader(http.StatusBadGateway)
+				})
+
+				err := s.send(t.Context(), client, nil)
+
+				if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != wantStatus {
+					t.Fatalf("%s() error = %v, want an *APIError with status %d", s.name, err, wantStatus)
+				}
+				if got := errors.Is(err, ErrSentInFull); got != unknown {
+					t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, unknown, err)
+				}
+			})
+		}
+	}
+}
+
+// TestARedirectLoopIsNotMarked covers a client that gives up following
+// redirects: the last answer it had was a 3xx, which settled the request.
+func TestARedirectLoopIsNotMarked(t *testing.T) {
+	for _, s := range bodySenders {
+		t.Run(s.name, func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Location", r.URL.Path)
+				w.WriteHeader(http.StatusFound)
+			})
+
+			err := s.send(t.Context(), client, nil)
+
+			if err == nil || errors.Is(err, ErrSentInFull) {
+				t.Errorf("%s() error = %v, want the redirect failure without ErrSentInFull", s.name, err)
+			}
+		})
+	}
+}
+
+func TestAnUnreadableSuccessIsMarkedAsSentInFull(t *testing.T) {
+	for _, s := range bodySenders {
+		t.Run(s.name, func(t *testing.T) {
+			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_, _ = fmt.Fprint(w, "<html>not json</html>")
+			})
+
+			var out struct{}
+			err := s.send(t.Context(), client, &out)
+
+			// A 2xx means the server accepted the request; only its answer is lost.
+			if !errors.Is(err, ErrSentInFull) {
+				t.Errorf("%s() error = %v, want ErrSentInFull for a 2xx that could not be parsed", s.name, err)
+			}
+		})
+	}
+}
+
+func TestADeadlineAfterTheWholeBodyWasSentIsMarked(t *testing.T) {
+	for _, s := range bodySenders {
+		t.Run(s.name, func(t *testing.T) {
+			release := make(chan struct{})
+			client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				<-release
+			})
+			defer close(release)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+			defer cancel()
+
+			err := s.send(ctx, client, nil)
+			if !errors.Is(err, ErrSentInFull) {
+				t.Errorf("%s() error = %v, want ErrSentInFull: the server had the whole body", s.name, err)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("%s() error = %v, want it to still wrap context.DeadlineExceeded", s.name, err)
+			}
+		})
+	}
+}
+
+func TestSendDoesNotMarkADeadlineBeforeTheBodyWasSent(t *testing.T) {
+	// Released by the test: a server that has not read the body to its end
+	// never sees the client go away.
 	release := make(chan struct{})
-	client := newTestClient(t, nil, func(_ http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
+	client := newTestClient(t, nil, func(_ http.ResponseWriter, _ *http.Request) {
 		<-release
 	})
 	defer close(release)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	err := client.SendMultipart(ctx, http.MethodPost, "/rest/upload", nil, writeFilePart("a.png", fileBytes), nil)
-	if !errors.Is(err, ErrSentInFull) {
-		t.Errorf("SendMultipart() error = %v, want ErrSentInFull: the server had the whole body", err)
-	}
+	// Far past what the socket buffers absorb, so the body cannot all be
+	// handed over while the server stops reading.
+	payload := map[string]string{"body": strings.Repeat("x", 16<<20)}
+
+	err := client.Send(ctx, http.MethodPost, "/rest/create", payload, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("SendMultipart() error = %v, want it to still wrap context.DeadlineExceeded", err)
+		t.Errorf("Send() error = %v, want it to wrap context.DeadlineExceeded", err)
+	}
+	if errors.Is(err, ErrSentInFull) {
+		t.Errorf("Send() error = %v, want no ErrSentInFull for a body cut short", err)
 	}
 }
 
-// TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest covers the
-// responses to a body the server read to its end: a 4xx refuses the request,
-// while no 5xx definition says whether the request was carried out.
-func TestSendMultipartLetsOnlyAClientErrorSettleAFullySentRequest(t *testing.T) {
-	for _, tc := range []struct {
-		status  int
-		unknown bool
-	}{
-		{http.StatusBadRequest, false},
-		{http.StatusNotFound, false},
-		{http.StatusInternalServerError, true},
-		{http.StatusBadGateway, true},
-		{http.StatusServiceUnavailable, true},
-		{http.StatusGatewayTimeout, true},
-	} {
-		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
-			client := newTestClient(t, nil, func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				w.WriteHeader(tc.status)
-			})
-
-			err := client.SendMultipart(t.Context(), http.MethodPost, "/rest/upload", nil,
-				writeFilePart("a.png", fileBytes), nil)
-
-			if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.Status != tc.status {
-				t.Fatalf("SendMultipart() error = %v, want an *APIError with status %d", err, tc.status)
-			}
-			if got := errors.Is(err, ErrSentInFull); got != tc.unknown {
-				t.Errorf("errors.Is(err, ErrSentInFull) = %v, want %v for %v", got, tc.unknown, err)
-			}
+// TestGetIsNeverMarked covers the one method that changes nothing: whatever
+// happened to it, running it again cannot repeat an effect.
+func TestGetIsNeverMarked(t *testing.T) {
+	t.Run("5xx", func(t *testing.T) {
+		client := newTestClient(t, nil, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
 		})
-	}
+
+		err := client.Get(t.Context(), "/rest/page", nil, nil)
+		if err == nil || errors.Is(err, ErrSentInFull) {
+			t.Errorf("Get() error = %v, want a failure without ErrSentInFull", err)
+		}
+	})
+
+	t.Run("deadline", func(t *testing.T) {
+		release := make(chan struct{})
+		client := newTestClient(t, nil, func(_ http.ResponseWriter, _ *http.Request) {
+			<-release
+		})
+		defer close(release)
+
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err := client.Get(ctx, "/rest/page", nil, nil)
+		if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrSentInFull) {
+			t.Errorf("Get() error = %v, want the deadline without ErrSentInFull", err)
+		}
+	})
 }

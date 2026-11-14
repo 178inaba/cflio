@@ -813,56 +813,29 @@ func TestAttachmentsUploadReportsADeadlineThatExpiresMidUpload(t *testing.T) {
 	}
 }
 
-// TestAttachmentsUploadSaysATimedOutUploadMayHaveLanded covers the deadline
-// that lands after the whole body was sent, while the response is awaited:
-// Confluence may have stored the files, so the error says how to find out
-// before the run is repeated, and the exit code is still the deadline's.
-func TestAttachmentsUploadSaysATimedOutUploadMayHaveLanded(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
+// TestAttachmentsUploadSaysWhenTheUploadMayHaveLanded covers the outcomes of
+// the upload: when Confluence may have stored the files, the error names the
+// check to make before uploading them again.
+func TestAttachmentsUploadSaysWhenTheUploadMayHaveLanded(t *testing.T) {
+	for _, fc := range creatingFailures {
+		t.Run(fc.name, func(t *testing.T) {
+			isolateConfig(t)
+			seedProfile(t, "example", testSite)
 
-	release := make(chan struct{})
-	startAPI(t, func(_ http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		<-release
-	})
-	defer close(release)
+			fail, release := failCreating(fc)
+			defer release()
+			startAPI(t, fail)
 
-	file := writeTempFile(t, "a.png", string(pngBytes))
+			_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL,
+				creatingBody(t, fc), fc.timeoutFlag())
 
-	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file, "--timeout=300ms")
-
-	if code, _ := describeFailure(err, 300*time.Millisecond); code != timeoutExitCode {
-		t.Errorf("exit code = %d for %v, want %d", code, err, timeoutExitCode)
-	}
-	if err == nil || !strings.Contains(err.Error(), "atlio confluence attachments list") {
-		t.Errorf("error = %v, want it to point at attachments list before a retry", err)
-	}
-}
-
-// TestAttachmentsUploadSaysAServerErrorAfterTheWholeBodyMayHaveLanded covers a
-// 5xx to a body Confluence read in full: unlike a 4xx it does not say the
-// request was refused, so the error points at the same check as a deadline.
-func TestAttachmentsUploadSaysAServerErrorAfterTheWholeBodyMayHaveLanded(t *testing.T) {
-	isolateConfig(t)
-	seedProfile(t, "example", testSite)
-	startAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(http.StatusBadGateway)
-	})
-
-	file := writeTempFile(t, "a.png", string(pngBytes))
-
-	_, err := runCLI(t, "confluence", "attachments", "upload", testPageURL, file)
-
-	if code, _ := describeFailure(err, time.Minute); code != 1 {
-		t.Errorf("exit code = %d for %v, want 1", code, err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "atlio confluence attachments list") {
-		t.Fatalf("error = %v, want it to point at attachments list before a retry", err)
-	}
-	if strings.Contains(err.Error(), "--replace") {
-		t.Errorf("error = %v, want no --replace hint for a 5xx", err)
+			assertCreatingFailure(t, err, fc, uploadCheckHint)
+			// --replace answers a 400 refusing a name the page already has,
+			// not a request whose outcome is unknown.
+			if fc.wantHint && strings.Contains(err.Error(), "--replace") {
+				t.Errorf("error = %v, want no --replace hint", err)
+			}
+		})
 	}
 }
 
