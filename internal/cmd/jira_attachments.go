@@ -75,7 +75,8 @@ be one file -- equal ignoring case and Unicode normalisation, as a.png and
 A.png are on a case-insensitive filesystem -- each is written with its
 attachment ID before the extension (screen.png becomes screen-10002.png);
 the output's filename is still the attachment's own and its path is the
-file written.
+file written. Names that would still be one file with the IDs in are
+refused before anything is downloaded, naming them.
 
 Read-only against Jira: every request is a GET.`,
 		Args: cobra.ExactArgs(1),

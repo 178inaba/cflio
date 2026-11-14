@@ -356,6 +356,11 @@ func TestAttachmentsDownloadRefusesAttachmentsThatWouldBeOneFile(t *testing.T) {
 			name:   "titles differing only in Unicode normalisation",
 			titles: []string{"が.png", "が.png"},
 		},
+		{
+			// One group, not one entry per pair.
+			name:   "three titles on one file",
+			titles: []string{"ab.png", "Ab.png", "AB.png"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,10 +379,8 @@ func TestAttachmentsDownloadRefusesAttachmentsThatWouldBeOneFile(t *testing.T) {
 			if err == nil {
 				t.Fatal("attachments download error = nil, want the collision refused")
 			}
-			for _, title := range tt.titles {
-				if !strings.Contains(err.Error(), title) {
-					t.Errorf("error = %q, want it to name %s", err, title)
-				}
+			if group := strings.Join(tt.titles, " and "); !strings.Contains(err.Error(), group) {
+				t.Errorf("error = %q, want it to name the group %q", err, group)
 			}
 			if *downloads != 0 {
 				t.Errorf("downloads = %d, want 0 requests once a collision is known", *downloads)
