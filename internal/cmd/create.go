@@ -49,11 +49,11 @@ A failure after the whole request was sent — the deadline expiring while the
 response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
 parsed (exit code 1) — may have made the page anyway, and its error says so.
 Only a 3xx or 4xx says it was not carried out, and a failure before the whole
-request was sent cannot have made anything. Running create again after a page was made
-fails on the duplicate title rather than making a second page, and still
-leaves no checkout; that error alone does not say the first create landed,
-since the title may already be taken elsewhere in the space. So when the
-error says the page may have been made, check with
+request was sent cannot have made anything. Running create again after a
+page was made fails on the duplicate title rather than making a second page,
+and still leaves no checkout; that error alone does not say the first create
+landed, since the title may already be taken elsewhere in the space. So when
+the error says the page may have been made, check with
 ` + "`atlio confluence children <parent>`" + ` before running create again (raise
 --limit if it says more child pages are available); if the page is there,
 run ` + "`atlio confluence read`" + ` on it to get a checkout instead.`,

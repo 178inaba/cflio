@@ -84,10 +84,10 @@ response is awaited (exit code 124), a 5xx answer, or a 2xx that could not be
 parsed (exit code 1) — may have posted the comment anyway, and its error
 says so; running create again would then post a second one. Only a 3xx or
 4xx says it was not carried out, and a failure before the whole request was
-sent cannot have posted anything. When the error says the comment may have been posted,
-check with ` + "`atlio confluence comments list <page>`" + ` before running create
-again (raise --limit if it says more comments are available); if the
-comment is there, nothing is left to do.`,
+sent cannot have posted anything. When the error says the comment may have
+been posted, check with ` + "`atlio confluence comments list <page>`" + ` before
+running create again (raise --limit if it says more comments are
+available); if the comment is there, nothing is left to do.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommentsCreate(cmd, args, g, file, outFormat)
